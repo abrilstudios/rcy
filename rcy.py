@@ -69,6 +69,7 @@ class AudioSplitterGUI(QMainWindow):
             delta = self.slider.value() / 100.0
             onset_frames = librosa.onset.onset_detect(y=self.y, sr=self.sr, delta=delta)
             self.onset_samples = librosa.frames_to_samples(onset_frames)
+            self.onset_samples = np.insert(self.onset_samples, 0, 0)
             self.onset_samples = np.append(self.onset_samples, len(self.y))
             
             self.plot_waveform()
