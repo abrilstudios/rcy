@@ -4,6 +4,7 @@ import librosa
 import soundfile as sf
 import matplotlib.pyplot as plt
 import sounddevice as sd
+import os
 from PyQt6.QtWidgets import QApplication, QMainWindow, QFileDialog, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QSlider, QLabel
 from PyQt6.QtCore import Qt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -45,13 +46,14 @@ class AudioSplitterGUI(QMainWindow):
         self.y = None
         self.sr = None
         self.onset_samples = None
+        self.file_path = None
 
         self.canvas.mpl_connect('button_press_event', self.on_click)
 
     def load_audio(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "Open Audio File", "", "Audio Files (*.wav *.mp3)")
-        if file_path:
-            self.y, self.sr = librosa.load(file_path)
+        self.file_path, _ = QFileDialog.getOpenFileName(self, "Open Audio File", "", "Audio Files (*.wav *.mp3)")
+        if self.file_path:
+            self.y, self.sr = librosa.load(self.file_path)
             self.plot_waveform()
             self.update_splits()
 
@@ -75,12 +77,27 @@ class AudioSplitterGUI(QMainWindow):
             self.canvas.draw()
 
     def save_splits(self):
-        if self.onset_samples is not None:
+        if self.onset_samples is not None and self.file_path is not None:
             output_dir = QFileDialog.getExistingDirectory(self, "Select Output Directory")
             if output_dir:
+                base_filename = os.path.splitext(os.path.basename(self.file_path))[0]
+                sfz_content = "<group>\nampeg_release=0.5\n\n"
+                
                 for i, (start, end) in enumerate(zip(self.onset_samples[:-1], self.onset_samples[1:])):
                     audio_slice = self.y[start:end]
-                    sf.write(f"{output_dir}/slice_{i}.wav", audio_slice, self.sr)
+                    slice_filename = f"{base_filename}_slice_{i}.wav"
+                    sf.write(os.path.join(output_dir, slice_filename), audio_slice, self.sr)
+                    
+                    # Add region to SFZ content
+                    sfz_content += f"<region>\nsample={slice_filename}\n"
+                    sfz_content += f"key={60 + i}\npitch_keycenter={60 + i}\n\n"
+                
+                # Write SFZ file
+                sfz_filename = os.path.join(output_dir, f"{base_filename}.sfz")
+                with open(sfz_filename, 'w') as sfz_file:
+                    sfz_file.write(sfz_content)
+                
+                print(f"Splits saved as WAV files and SFZ in {output_dir}")
 
     def on_click(self, event):
         if self.onset_samples is not None and event.xdata is not None:
