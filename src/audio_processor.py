@@ -1,5 +1,7 @@
 import numpy as np
 import soundfile as sf
+import sounddevice as sd
+import librosa
 from abc import ABC, abstractmethod
 
 class AudioProcessor(ABC):
@@ -146,3 +148,42 @@ class WavAudioProcessor(AudioProcessor):
         total_time_minutes = self.total_time / 60
         tempo = total_beats / total_time_minutes
         return tempo
+
+    def split_by_bars(self, num_bars, bar_resolution):
+        samples_per_bar = len(self.data) // num_bars
+        samples_per_slice = samples_per_bar // bar_resolution
+        slices = [i * samples_per_slice for i in range(num_bars * bar_resolution)]
+        return slices
+
+    def split_by_transients(self, threshold=0.2):
+        # Convert threshold to librosa's delta parameter
+        delta = threshold * 0.1  # Adjust this scaling factor as needed
+
+        # Compute onset strength
+        onset_env = librosa.onset.onset_strength(y=self.data,
+                                                 sr=self.sample_rate)
+
+        # Detect onsets
+        onsets = librosa.onset.onset_detect(
+            onset_envelope=onset_env, 
+            sr=self.sample_rate,
+            delta=delta,
+            wait=1,  # number of samples to wait after an onset
+            pre_max=1,  # number of samples before onset for comparison
+            post_max=1,  # number of samples after onset for comparison
+        )
+
+        # Convert frame indices to sample indices
+        onset_samples = librosa.frames_to_samples(onsets)
+
+        return onset_samples.tolist()
+
+    def play_segment(self, start_sample, end_sample):
+        segment = self.data[start_sample:end_sample]
+        sd.play(segment, self.sample_rate)
+        sd.wait()  # Wait for playback to finish
+
+    def get_sample_at_time(self, time):
+        return int(time * self.sample_rate)
+
+
