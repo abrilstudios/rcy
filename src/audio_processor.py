@@ -4,7 +4,9 @@ import sounddevice as sd
 import librosa
 
 class WavAudioProcessor:
-    def __init__(self, duration = 2.0, sample_rate=44100):
+    def __init__(self,
+                 duration = 2.0,
+                 sample_rate=44100):
         self.filename = None
         self.total_time = duration
         self.sample_rate = sample_rate
@@ -24,7 +26,8 @@ class WavAudioProcessor:
             self.total_time = len(sound_file) / self.sample_rate
         self.time = np.linspace(0, self.total_time, int(self.total_time * self.sample_rate))
         self.data = self._generate_data()
-        self.segments = [0, len(self.data) - 1]
+        #self.segments = [0, len(self.data) - 1]
+        self.segments = []
 
     def _generate_data(self) -> np.ndarray:
         audio_data, _ = sf.read(self.filename, always_2d=True)
@@ -39,7 +42,8 @@ class WavAudioProcessor:
         end_idx = int(end_time * self.sample_rate)
         return self.time[start_idx:end_idx], self.data[start_idx:end_idx]
 
-    def get_tempo(self, num_bars: int, beats_per_bar: int = 4) -> float:
+    def get_tempo(self, num_bars: int,
+                        beats_per_bar: int = 4) -> float:
         total_beats = num_bars * beats_per_bar
         total_time_minutes = self.total_time / 60
         tempo = total_beats / total_time_minutes

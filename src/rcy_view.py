@@ -81,9 +81,9 @@ class RcyView(QMainWindow):
         info_layout.addWidget(self.tempo_display)
 
         ## Load Button
-        self.load_button = QPushButton("Load Audio")
-        self.load_button.clicked.connect(self.load_audio_file)
-        info_layout.addWidget(self.load_button)
+        #self.load_button = QPushButton("Load Audio")
+        #self.load_button.clicked.connect(self.load_audio_file)
+        #info_layout.addWidget(self.load_button)
 
         ## add split buttons
         self.split_bars_button = QPushButton("Split by Bars")

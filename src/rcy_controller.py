@@ -1,7 +1,9 @@
 import os
 import soundfile as sf
 from audio_processor import WavAudioProcessor
-
+from midiutil import MIDIFile
+from math import ceil
+from export_utils import ExportUtils
 
 class RcyController:
     def __init__(self, model):
@@ -9,6 +11,7 @@ class RcyController:
         self.visible_time = 10  # Initial visible time window
         self.num_bars = 1
         self.bar_resolution = 4
+        self.tempo = 120
         self.threshold = 0.20
         self.view = None
 
@@ -24,50 +27,19 @@ class RcyController:
         self.threshold = threshold
         self.split_audio(method='transients')
 
-    def load_audio_file(self, filename):
-        try:
-            self.model.set_filename(filename)
-            tempo = self.model.get_tempo(self.num_bars)
-            self.update_view()
-            self.view.update_scroll_bar(self.visible_time, self.model.total_time)
-            self.view.update_tempo(tempo)
-            return True
-        except Exception as e:
-            print(f"Error loading audio file : {e}")
-            return False
-
     def export_segments(self, directory):
-        if not isinstance(self.model, WavAudioProcessor):
-            return
+        return ExportUtils.export_segments(self.model,
+                                           self.tempo,
+                                           self.num_bars,
+                                           directory)
 
-        segments = self.model.get_segments()
-        audio_data = self.model.data
-        sample_rate = self.model.sample_rate
-
-        sfz_content = []
-
-        for i, (start, end) in enumerate(zip([0] + segments, segments + [len(audio_data)])):
-            # Export audio segment
-            segment_data = audio_data[start:end]
-            segment_filename = f"segment_{i+1}.wav"
-            segment_path = os.path.join(directory, segment_filename)
-            sf.write(segment_path, segment_data, sample_rate)
-
-            # Add to SFZ content
-            sfz_content.append(f"""
-<region>
-sample={segment_filename}
-pitch_keycenter={60 + i}  // Adjust as needed
-lokey={60 + i}
-hikey={60 + i}
-""")
-
-        # Write SFZ file
-        sfz_path = os.path.join(directory, "instrument.sfz")
-        with open(sfz_path, 'w') as sfz_file:
-            sfz_file.write("\n".join(sfz_content))
-
-        print(f"Exported {len(segments)} segments and SFZ file to {directory}")
+    def load_audio_file(self, filename):
+        self.model.set_filename(filename)
+        self.tempo = self.model.get_tempo(self.num_bars)
+        self.update_view()
+        self.view.update_scroll_bar(self.visible_time, self.model.total_time)
+        self.view.update_tempo(self.tempo)
+        return True
 
     def update_view(self):
         start_time = self.view.get_scroll_position() * (self.model.total_time - self.visible_time) / 100
@@ -91,18 +63,12 @@ hikey={60 + i}
                                     self.model.total_time)
 
     def get_tempo(self):
-        if isinstance(self.model, WavAudioProcessor):
-            return self.model.get_tempo(self.num_bars)
-        return None
+        return self.tempo
 
     def on_bars_changed(self, num_bars):
         self.num_bars = num_bars
-        tempo = self.model.get_tempo(self.num_bars)
-        self.update_tempo()
-
-    def update_tempo(self):
-        tempo = self.model.get_tempo(self.num_bars)
-        self.view.update_tempo(tempo)
+        self.tempo = self.model.get_tempo(self.num_bars)
+        self.view.update_tempo(self.tempo)
 
     def set_bar_resolution(self, resolution):
         self.bar_resolution = resolution
