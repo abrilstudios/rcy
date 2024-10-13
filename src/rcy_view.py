@@ -1,16 +1,56 @@
-from PyQt6.QtWidgets import QLabel, QLineEdit, QComboBox, QMessageBox, QMainWindow, QFileDialog, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QScrollBar
-from PyQt6.QtGui import QValidator, QIntValidator
+from PyQt6.QtWidgets import QApplication, QLabel, QLineEdit, QComboBox, QMessageBox, QMainWindow, QFileDialog, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QScrollBar ,QSlider
+from PyQt6.QtGui import QAction, QValidator, QIntValidator
 from PyQt6.QtCore import Qt, pyqtSignal
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
 class RcyView(QMainWindow):
     bars_changed = pyqtSignal(int)
+    threshold_changed = pyqtSignal(float)
+    add_segment = pyqtSignal(float)
+    remove_segment = pyqtSignal(float)
+    play_segment = pyqtSignal(float)
 
     def __init__(self, controller):
         super().__init__()
         self.controller = controller
         self.init_ui()
+        self.create_menu_bar()
+
+    def create_menu_bar(self):
+        menubar = self.menuBar()
+
+        # File menu
+        file_menu = menubar.addMenu('File')
+
+        # Open action
+        open_action = QAction('Open', self)
+        open_action.setShortcut('Ctrl+O')
+        open_action.setStatusTip('Open an audio file')
+        open_action.triggered.connect(self.load_audio_file)
+        file_menu.addAction(open_action)
+
+        # Export action
+        export_action = QAction('Export', self)
+        export_action.setShortcut('Ctrl+E')
+        export_action.setStatusTip('Export segments and SFZ file')
+        export_action.triggered.connect(self.export_segments)
+        file_menu.addAction(export_action)
+
+        # Save As action
+        save_as_action = QAction('Save As', self)
+        save_as_action.triggered.connect(self.save_as)
+        file_menu.addAction(save_as_action)
+
+    def export_segments(self):
+        directory = QFileDialog.getExistingDirectory(self,
+                                                     "Select Export Directory")
+        if directory:
+            self.controller.export_segments(directory)
+
+    def save_as(self):
+        # Implement save as functionality
+        pass
 
     def init_ui(self):
         self.setWindowTitle("Recycle View")
@@ -65,6 +105,29 @@ class RcyView(QMainWindow):
         main_layout.addLayout(info_layout)
         main_layout.addLayout(slice_layout)
 
+        # create the slider and label for transient detection
+        threshold_layout = QHBoxLayout()
+
+        # Create a label for the slider
+        threshold_label = QLabel("Onset Threshold:")
+        threshold_layout.addWidget(threshold_label)
+
+        # Create the slider
+        self.threshold_slider = QSlider(Qt.Orientation.Horizontal)
+        self.threshold_slider.setRange(1, 100)  # Range from 0.01 to 1.00
+        self.threshold_slider.setValue(10)  # Default value 0.10
+        self.threshold_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.threshold_slider.setTickInterval(10)
+        self.threshold_slider.valueChanged.connect(self.on_threshold_changed)
+        threshold_layout.addWidget(self.threshold_slider)
+
+        # Create a label to display the current value
+        self.threshold_value_label = QLabel("0.10")
+        threshold_layout.addWidget(self.threshold_value_label)
+
+        # Add the slider layout to your main layout
+        main_layout.addLayout(threshold_layout)
+
         # Create plot
         self.figure = Figure(figsize=(5, 4), dpi=100)
         self.canvas = FigureCanvas(self.figure)
@@ -95,10 +158,23 @@ class RcyView(QMainWindow):
 
     def on_plot_click(self, event):
         print("on_plot_click")
-        if event.inaxes == self.ax:
-            click_time = event.xdata
-            self.controller.handle_plot_click(click_time)
+        if event.inaxes != self.ax:
+            return
 
+        modifiers = QApplication.keyboardModifiers()
+        print(f"    {modifiers}")
+        print(f"    {event.modifiers}")
+        if modifiers & Qt.KeyboardModifier.MetaModifier:
+            self.remove_segment.emit(event.xdata)
+        elif modifiers & Qt.KeyboardModifier.AltModifier:
+            self.add_segment.emit(event.xdata)
+        else:
+            self.play_segment.emit(event.xdata)
+
+    def on_threshold_changed(self, value):
+        threshold = value / 100.0
+        self.threshold_value_label.setText(f"{threshold:.2f}")
+        self.threshold_changed.emit(threshold)
 
     def update_slices(self, slices):
         print("Convert slice points to times")
