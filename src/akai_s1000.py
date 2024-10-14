@@ -10,15 +10,25 @@ class TimestretchBuilder:
         self.sample_rate = sample_rate
     
     def stretch_with_grains(self, target_length, grain_size_ms=50):
-        grain_size = int((grain_size_ms / 1000.0) * self.sample_rate)
+        # Calculate the stretch ratio
         original_length = len(self.audio)
         stretch_ratio = target_length / original_length
 
-        grains = [self.audio[i:i+grain_size] for i in range(0, original_length, grain_size)]
-        stretched_grains = [librosa.effects.time_stretch(grain, stretch_ratio) for grain in grains]
-        
-        self.audio = np.concatenate(stretched_grains)[:target_length]
+        # Time-stretch the entire audio using librosa's time_stretch
+        stretched_audio = librosa.effects.time_stretch(self.audio, rate = stretch_ratio)
+
+        # If you want to divide into grains again for processing
+        # Calculate grain size in samples
+        grain_size = int((grain_size_ms / 1000.0) * self.sample_rate)
+
+        # Break the stretched audio into grains (optional)
+        grains = [stretched_audio[i:i+grain_size] for i in range(0, len(stretched_audio), grain_size)]
+
+        # Concatenate grains back together (optional, only needed if you process grains further)
+        self.audio = np.concatenate(grains)
+
         return self
+
     
     def lowpass_filter(self, cutoff_freq=16000):
         nyquist = 0.5 * self.sample_rate
@@ -28,8 +38,10 @@ class TimestretchBuilder:
         return self
     
     def add_aliasing(self, downsample_rate=22050):
-        downsampled_audio = librosa.resample(self.audio, self.sample_rate, downsample_rate)
-        self.audio = librosa.resample(downsampled_audio, downsample_rate, self.sample_rate)
+        downsampled_audio = librosa.resample(self.audio,
+                                             orig_sr = self.sample_rate,
+                                             target_sr =  downsample_rate)
+        self.audio = librosa.resample(downsampled_audio, orig_sr=downsample_rate, target_sr = self.sample_rate)
         return self
 
     def add_warble(self, depth=0.005, rate=1.5):
@@ -62,9 +74,33 @@ class TimestretchBuilder:
         return self
 
     def add_pitch_drift(self, max_drift=0.005):
+        """
+        Adds subtle pitch drift over time to simulate pitch imperfections.
+
+        Parameters:
+            max_drift (float): The maximum pitch drift factor (default is 0.005).
+
+        Returns:
+            self: Allows for method chaining.
+        """
+        # Create a time vector for drift
         t = np.arange(len(self.audio)) / self.sample_rate
-        drift = max_drift * np.sin(2 * np.pi * 0.1 * t)
-        self.audio = librosa.effects.pitch_shift(self.audio, self.sample_rate, drift)
+        drift = max_drift * np.sin(2 * np.pi * 0.1 * t)  # Slow pitch drift (0.1 Hz)
+
+        # Process pitch shift in small chunks
+        chunk_size = 1024  # Size of audio chunks to process
+        drifted_audio = []
+    
+        # Iterate over the audio in chunks and apply pitch shift with varying drift
+        for i in range(0, len(self.audio), chunk_size):
+            chunk = self.audio[i:i + chunk_size]
+            # Apply pitch shift based on the drift value at the chunk's midpoint
+            chunk_drift = drift[i:i + chunk_size].mean()  # Use the average drift for this chunk
+            shifted_chunk = librosa.effects.pitch_shift(y=chunk, sr=self.sample_rate, n_steps=chunk_drift)
+            drifted_audio.append(shifted_chunk)
+
+        # Concatenate all processed chunks back together
+        self.audio = np.concatenate(drifted_audio)
         return self
 
     def save(self, output_file):
