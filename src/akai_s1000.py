@@ -2,6 +2,7 @@ import numpy as np
 import librosa
 import soundfile as sf
 import argparse
+from time_stretching import TimeStretchManager, PHASE_VOCODER, RUBBERBAND, LIBROSA_TIME_STRETCH, STRETCH_WITH_GRAINS
 from scipy.signal import butter, lfilter
 
 class TimestretchBuilder:
@@ -10,25 +11,12 @@ class TimestretchBuilder:
         self.sample_rate = sample_rate
     
     def stretch_with_grains(self, target_length, grain_size_ms=50):
-        # Calculate the stretch ratio
-        original_length = len(self.audio)
-        stretch_ratio = target_length / original_length
-
-        # Time-stretch the entire audio using librosa's time_stretch
-        stretched_audio = librosa.effects.time_stretch(self.audio, rate = stretch_ratio)
-
-        # If you want to divide into grains again for processing
-        # Calculate grain size in samples
-        grain_size = int((grain_size_ms / 1000.0) * self.sample_rate)
-
-        # Break the stretched audio into grains (optional)
-        grains = [stretched_audio[i:i+grain_size] for i in range(0, len(stretched_audio), grain_size)]
-
-        # Concatenate grains back together (optional, only needed if you process grains further)
-        self.audio = np.concatenate(grains)
-
+        # Instantiate StretchWithGrains from the time_stretching module
+        grain_stretch = StretchWithGrains(self.audio, self.sample_rate)
+        
+        # Call the stretch method with grain size
+        self.audio = grain_stretch.stretch(target_length, grain_size_ms=grain_size_ms)
         return self
-
     
     def lowpass_filter(self, cutoff_freq=16000):
         nyquist = 0.5 * self.sample_rate
