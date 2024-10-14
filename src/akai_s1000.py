@@ -1,72 +1,23 @@
 import numpy as np
 import librosa
 import soundfile as sf
+import argparse
 from scipy.signal import butter, lfilter
 
-
 class TimestretchBuilder:
-    """
-    The TimestretchBuilder class allows the composition of various audio transformations
-    in a flexible and arbitrary order using the builder pattern. This class processes the audio
-    file by passing a NumPy ndarray around for transformation, simulating the behavior of the Akai S1000.
-
-    Each method in the builder modifies the audio ndarray in-place and returns the builder object (self),
-    enabling method chaining for easy combination of transformations. The final transformed audio can be
-    saved to a file using the save() method.
-
-    Methods:
-        stretch_with_grains(target_length, grain_size_ms=50):
-            Applies grain-based time-stretching to the audio, simulating the Akai S1000's "choppy" timestretching artifact.
-            - target_length: The desired length of the audio in samples.
-            - grain_size_ms: Size of each audio grain in milliseconds (default is 50ms).
-
-        lowpass_filter(cutoff_freq=16000):
-            Applies a low-pass filter to the audio to simulate the lo-fi frequency response of older samplers.
-            - cutoff_freq: The cutoff frequency for the low-pass filter in Hz (default is 16,000 Hz).
-
-        add_aliasing(downsample_rate=22050):
-            Simulates aliasing by downsampling and upsampling the audio, introducing digital noise.
-            - downsample_rate: The rate to downsample the audio before upsampling again (default is 22,050 Hz).
-
-        add_warble(depth=0.005, rate=1.5):
-            Introduces a warble effect by modulating a delay across the audio, creating slight pitch fluctuations.
-            - depth: The intensity of the warble effect (default is 0.005).
-            - rate: The frequency of the warble in Hz (default is 1.5 Hz).
-
-        reduce_bit_depth(bit_depth=12):
-            Reduces the bit depth of the audio to simulate the gritty, low-fidelity sound of older hardware samplers.
-            - bit_depth: The target bit depth (default is 12 bits).
-
-        add_loop_glitch(glitch_intensity=0.02):
-            Introduces a simulated glitch by zeroing out a small, random segment of the audio to emulate imperfect loop points.
-            - glitch_intensity: The fraction of the audio length that will be affected by the glitch (default is 0.02).
-
-        add_pitch_drift(max_drift=0.005):
-            Adds subtle pitch drift over time to simulate the pitch imperfections of older samplers.
-            - max_drift: The maximum pitch drift factor (default is 0.005).
-
-        save(output_file):
-            Saves the transformed audio to the specified file.
-            - output_file: The path to save the final processed audio file.
-    """
     def __init__(self, audio, sample_rate):
         self.audio = audio
         self.sample_rate = sample_rate
     
     def stretch_with_grains(self, target_length, grain_size_ms=50):
-        # Calculate grain size in samples
         grain_size = int((grain_size_ms / 1000.0) * self.sample_rate)
         original_length = len(self.audio)
         stretch_ratio = target_length / original_length
 
-        # Break the audio into grains
         grains = [self.audio[i:i+grain_size] for i in range(0, original_length, grain_size)]
-        
-        # Time-stretch each grain individually
         stretched_grains = [librosa.effects.time_stretch(grain, stretch_ratio) for grain in grains]
         
-        # Concatenate the grains back together
-        self.audio = np.concatenate(stretched_grains)[:target_length]  # Trim to target length if necessary
+        self.audio = np.concatenate(stretched_grains)[:target_length]
         return self
     
     def lowpass_filter(self, cutoff_freq=16000):
@@ -77,15 +28,11 @@ class TimestretchBuilder:
         return self
     
     def add_aliasing(self, downsample_rate=22050):
-        # Downsample to a lower sample rate
         downsampled_audio = librosa.resample(self.audio, self.sample_rate, downsample_rate)
-        
-        # Upsample back to original sample rate
         self.audio = librosa.resample(downsampled_audio, downsample_rate, self.sample_rate)
         return self
 
     def add_warble(self, depth=0.005, rate=1.5):
-        # Create a sine wave to modulate delay time
         t = np.arange(len(self.audio)) / self.sample_rate
         modulation = depth * np.sin(2 * np.pi * rate * t)
 
@@ -116,7 +63,7 @@ class TimestretchBuilder:
 
     def add_pitch_drift(self, max_drift=0.005):
         t = np.arange(len(self.audio)) / self.sample_rate
-        drift = max_drift * np.sin(2 * np.pi * 0.1 * t)  # Slow pitch drift (0.1 Hz)
+        drift = max_drift * np.sin(2 * np.pi * 0.1 * t)
         self.audio = librosa.effects.pitch_shift(self.audio, self.sample_rate, drift)
         return self
 
@@ -124,28 +71,78 @@ class TimestretchBuilder:
         sf.write(output_file, self.audio, self.sample_rate)
 
 
-def main():
-    input_file = "input.wav"
-    output_file = "output.wav"
-    sample_rate = 44100
-    target_length = 100000
-    
-    # Load the audio and start building the process
-    audio, sr = librosa.load(file_path, sr=sample_rate)
-    builder = TimestretchBuilder(audio, src)
-    
-    # Apply transformations in arbitrary order
-    builder \
-        .stretch_with_grains(target_length, grain_size_ms=50) \
-        .lowpass_filter(cutoff_freq=12000) \
-        .add_aliasing(downsample_rate=22050) \
-        .add_warble(depth=0.005, rate=1.5) \
-        .reduce_bit_depth(bit_depth=12) \
-        .add_loop_glitch(glitch_intensity=0.02) \
-        .add_pitch_drift(max_drift=0.005) \
-        .save(output_file)
+def compute_target_length_for_tempo(original_tempo, new_tempo, original_length):
+    """
+    Computes the new length in samples when time-stretching to a different tempo.
+    Stretch ratio = original_tempo / new_tempo.
+    """
+    stretch_ratio = original_tempo / new_tempo
+    target_length = int(original_length * stretch_ratio)
+    return target_length
 
-    print(f"Stretched and processed audio saved to {output_file}")
+
+def main():
+    parser = argparse.ArgumentParser(description="Apply Akai S1000-style timestretching to an audio file.")
+    
+    # Required arguments
+    parser.add_argument('input_file', type=str, help='Input audio file')
+    parser.add_argument('output_file', type=str, help='Output file to save stretched audio')
+    
+    # Optional arguments
+    parser.add_argument('--bars', type=int, default=1, help='Number of bars in the audio (default: 1 bar)')
+    parser.add_argument('--original_tempo', type=float, help='Original tempo of the audio in BPM')
+    parser.add_argument('--new_tempo', type=float, help='New tempo to stretch the audio to in BPM')
+    parser.add_argument('--sample_rate', type=int, default=44100, help='Sample rate (default: 44100 Hz)')
+    parser.add_argument('--grain_size', type=int, default=50, help='Grain size in ms (default: 50ms)')
+    parser.add_argument('--cutoff_freq', type=int, default=16000, help='Low-pass filter cutoff frequency in Hz (default: 16000 Hz)')
+    parser.add_argument('--aliasing', action='store_true', help='Enable aliasing effect (downsample/upsample)')
+    parser.add_argument('--warble', action='store_true', help='Enable warble effect (modulated delay)')
+    parser.add_argument('--bit_depth', type=int, default=12, help='Bit depth for quantization (default: 12-bit)')
+    parser.add_argument('--loop_glitch', action='store_true', help='Enable loop glitch effect (random zeroing of audio segments)')
+    parser.add_argument('--pitch_drift', action='store_true', help='Enable pitch drift effect (subtle pitch modulations over time)')
+
+    args = parser.parse_args()
+
+    # Load the audio
+    audio, sr = librosa.load(args.input_file, sr=args.sample_rate)
+    original_length = len(audio)
+
+    # Compute original tempo if provided and stretch to a new tempo if given
+    if args.original_tempo and args.new_tempo:
+        print(f"Original tempo: {args.original_tempo} BPM, New tempo: {args.new_tempo} BPM")
+        target_length = compute_target_length_for_tempo(args.original_tempo, args.new_tempo, original_length)
+    else:
+        # Default to original length if tempo not provided
+        target_length = original_length
+    
+    # Build the transformation process
+    builder = TimestretchBuilder(audio, sr)
+
+    # Apply transformations
+    builder.stretch_with_grains(target_length, grain_size_ms=args.grain_size)
+
+    if args.cutoff_freq:
+        builder.lowpass_filter(cutoff_freq=args.cutoff_freq)
+
+    if args.aliasing:
+        builder.add_aliasing()
+
+    if args.warble:
+        builder.add_warble()
+
+    if args.bit_depth:
+        builder.reduce_bit_depth(bit_depth=args.bit_depth)
+
+    if args.loop_glitch:
+        builder.add_loop_glitch()
+
+    if args.pitch_drift:
+        builder.add_pitch_drift()
+
+    # Save the processed audio
+    builder.save(args.output_file)
+
+    print(f"Stretched and processed audio saved to {args.output_file}")
 
 
 if __name__ == '__main__':
