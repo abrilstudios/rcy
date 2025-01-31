@@ -222,7 +222,7 @@ class RcyView(QMainWindow):
         filename, _ = QFileDialog.getOpenFileName(self,
             "Open audio file",
             "",
-            "Audio Files (*.wav *.mp3 *.ogg *.flac)")
+            "Audio Files (*.wav *.mp3 *.ogg *.flac *.aif *.aiff)")
         if filename:
             self.controller.load_audio_file(filename)
         else:
