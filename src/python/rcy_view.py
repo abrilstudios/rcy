@@ -32,9 +32,10 @@ class RcyView(QMainWindow):
         # Set key press handler for the entire window
         self.keyPressEvent = self.window_key_press
         
-        # Triangle dimensions (in pixels)
-        self.triangle_base = 16  # 16px base (was 12px, increased by ~30%)
-        self.triangle_height = 10  # 10px height (was 8px, increased by 25%)
+        # Get triangle dimensions from UI config
+        self.triangle_base = config.get_ui_setting("markerHandles", "width", 16)
+        self.triangle_height = config.get_ui_setting("markerHandles", "height", 10)
+        self.triangle_offset_y = config.get_ui_setting("markerHandles", "offsetY", 0)
 
     def create_menu_bar(self):
         menubar = self.menuBar()
@@ -592,12 +593,17 @@ class RcyView(QMainWindow):
         # Get marker position
         marker_x = marker.get_xdata()[0]
         
+        # Calculate y position with offset
+        # Convert offset from pixels to data coordinates
+        offset_data = (self.triangle_offset_y / fig_height_px) * ax_height
+        base_y = y_min + offset_data
+        
         # Create triangle coordinates (isosceles triangle pointing up)
         # Bottom left, bottom right, top (center)
         triangle_coords = np.array([
-            [marker_x - triangle_base_half_data, y_min],  # Bottom left 
-            [marker_x + triangle_base_half_data, y_min],  # Bottom right
-            [marker_x, y_min + triangle_height_data]      # Top center
+            [marker_x - triangle_base_half_data, base_y],  # Bottom left 
+            [marker_x + triangle_base_half_data, base_y],  # Bottom right
+            [marker_x, base_y + triangle_height_data]      # Top center
         ])
         
         # Update the triangle

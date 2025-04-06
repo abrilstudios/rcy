@@ -10,6 +10,7 @@ class ConfigManager:
         self.colors = {}
         self.fonts = {}
         self.strings = {}
+        self.ui = {}
         self.load_config()
     
     def load_config(self):
@@ -21,6 +22,7 @@ class ConfigManager:
             config_dir = os.path.join(project_root, "config")
             colors_path = os.path.join(config_dir, "colors.json")
             strings_path = os.path.join(config_dir, "strings.json")
+            ui_path = os.path.join(config_dir, "ui.json")
             
             # Load colors from JSON file
             if os.path.exists(colors_path):
@@ -41,10 +43,20 @@ class ConfigManager:
             else:
                 print(f"Strings config file not found: {strings_path}, using defaults")
                 self._set_string_defaults()
+                
+            # Load UI configuration from JSON file
+            if os.path.exists(ui_path):
+                with open(ui_path, 'r') as f:
+                    self.ui = json.load(f)
+                print(f"Loaded UI configuration from {ui_path}")
+            else:
+                print(f"UI config file not found: {ui_path}, using defaults")
+                self._set_ui_defaults()
         except Exception as e:
             print(f"Error loading config: {e}")
             self._set_color_defaults()
             self._set_string_defaults()
+            self._set_ui_defaults()
     
     def _set_color_defaults(self):
         """Set default colors and fonts if config can't be loaded"""
@@ -97,6 +109,16 @@ class ConfigManager:
             }
         }
     
+    def _set_ui_defaults(self):
+        """Set default UI configuration if ui.json can't be loaded"""
+        self.ui = {
+            "markerHandles": {
+                "width": 16,
+                "height": 10,
+                "offsetY": 0
+            }
+        }
+    
     def get_color(self, key, default=None):
         """Get a color from the palette by key"""
         color_hex = self.colors.get(key, default)
@@ -141,6 +163,12 @@ class ConfigManager:
                 return default or path
         
         return current if isinstance(current, (str, list)) else default or path
+        
+    def get_ui_setting(self, category, key, default=None):
+        """Get a UI setting value by category and key"""
+        if category in self.ui and key in self.ui[category]:
+            return self.ui[category][key]
+        return default
 
 # Create a singleton instance
 config = ConfigManager()
