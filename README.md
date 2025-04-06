@@ -1,19 +1,31 @@
 # RCY
 
-**RCY** is a tool designed to process breakbeat loops, enabling users to slice and export them in the **SFZ** format for seamless integration with samplers like the **TAL-Sampler**.
+**RCY** is a tool designed to process breakbeat loops, enabling users to slice and export them in the **SFZ** format for seamless integration with samplers like the **TAL-Sampler**. Inspired by the aesthetics of New Order's Movement, brutalist design, and hauntological software, RCY combines utility with an appreciation for drum break history.
 
-<img width="800" alt="Screenshot 2024-10-05 at 10 33 44 AM" src="https://github.com/user-attachments/assets/53442622-ae80-4a2b-830b-75135060a79a">
+<img width="800" alt="RCY Screenshot" src="screenshots/rcy.png">
 
 ## Features
 
-- **Breakbeat Slicing**: Automatically detects transients in breakbeat loops and slices them into individual hits.
-- **SFZ Export**: Generates SFZ files with mappings corresponding to the sliced samples, facilitating easy import into compatible samplers.
-- **User-Friendly Interface**: Provides a straightforward interface for loading audio files, adjusting slice parameters, and exporting results.
+- **Breakbeat Slicing**: Automatically detects transients in breakbeat loops and slices them into individual hits
+- **Manual Editing**: Precisely place slice points for customized break cutting patterns
+- **Selection & Trimming**: Trim audio with start/end markers for perfect loop isolation
+- **SFZ Export**: Generate SFZ files with mappings corresponding to the sliced samples for easy import into samplers
+- **Historically-Informed Presets**: Access artist-specific slice patterns based on classic jungle and drum & bass techniques
+- **Cohesive Design Language**: Distinctive aesthetic based on a consistent color palette and typography
+
+## Design Philosophy
+
+RCY isn't just a tool—it's a perspective on breakbeat culture. The design references hauntological approaches to music technology, with:
+
+- A color palette inspired by New Order's Movement album artwork
+- Brutalist interface elements that emphasize function and clarity
+- A typography system based on Futura PT Book
+- A careful balance between utility and historical resonance
 
 ## Requirements
 
-- **Python 3.x**: Ensure Python is installed on your system.
-- **Dependencies**: Install necessary Python packages using the provided `requirements.txt` file.
+- **Python 3.x**: Ensure Python is installed on your system
+- **Dependencies**: Install necessary Python packages using the provided `requirements.txt` file
 
 ## Installation
 
@@ -30,10 +42,36 @@
 
 ## Usage
 
-1. **Run python3 src/python/main.py**
-2. **Load an Audio File**: Import your breakbeat loop into the application.
-3. **Adjust Slicing Parameters**: Configure settings such as sensitivity to tailor the slicing process to your needs.
-4. **Export as SFZ**: Save the sliced samples and generate an SFZ file for use in samplers like the TAL-Sampler.
+1. **Launch the Application**:
+   ```bash
+   python3 src/python/main.py
+   ```
+
+2. **Work with Audio**:
+   - The application loads with the Amen break by default
+   - Load custom audio with File > Open
+   - Set slice points automatically with "Split by Transients" or manually with Alt+Click
+   - Adjust the Onset Threshold slider to control automatic transient detection sensitivity
+   - Use the bar-based slicing for rhythmically perfect divisions
+
+3. **Selection and Trimming**:
+   - Set a start marker with Shift+Click (blue)
+   - Set an end marker with Ctrl+Click (blue) 
+   - Click the "Cut Selection" button to trim audio to just the selected region
+
+4. **Export Results**:
+   - Export your sliced samples and SFZ file using File > Export
+   - Choose a destination directory for all exported files
+
+## Historical Presets
+
+The `presets/` directory contains historically-informed breakbeat slice patterns based on specific artists:
+
+- **Amen Break**: Dillinja and LTJ Bukem cutting styles
+- **Think Break**: Source Direct and Paradox approaches
+- **Apache Break**: Photek-inspired edits
+
+Each preset includes documentation about the artistic context and technical approach.
 
 ## Contributing
 
