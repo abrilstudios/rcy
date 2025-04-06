@@ -1,0 +1,10 @@
+// Dillinja-style Amen cuts
+// Inspired by tracks like "Deadly Deep Subs", "The Angels Fell", "Silver Blade"
+
+<region> sample=amen.wav start=0 end=12000 key=36 // Main kick
+<region> sample=amen.wav start=12001 end=18000 key=37 // Snare
+<region> sample=amen.wav start=18001 end=26000 key=38 // Break fill
+<region> sample=amen.wav start=26001 end=33000 key=39 // Hat section
+<region> sample=amen.wav start=33001 end=42000 key=40 // Kick + hat
+<region> sample=amen.wav start=42001 end=50000 key=41 // Snare + ride
+<region> sample=amen.wav start=50001 end=62000 key=42 // Final break section
