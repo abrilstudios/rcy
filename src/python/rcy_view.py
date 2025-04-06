@@ -1,6 +1,7 @@
 from PyQt6.QtWidgets import QApplication, QLabel, QLineEdit, QComboBox, QMessageBox, QMainWindow, QFileDialog, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QScrollBar, QSlider, QDialog, QTextBrowser
 from PyQt6.QtGui import QAction, QValidator, QIntValidator, QFont
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
+from config_manager import config
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
@@ -79,9 +80,18 @@ class RcyView(QMainWindow):
         self.setWindowTitle("Recycle View")
         self.setGeometry(100, 100, 800, 600)
 
+        # Set application-wide font
+        app = QApplication.instance()
+        if app:
+            app.setFont(config.get_font('primary'))
+
         main_widget = QWidget()
         main_layout = QVBoxLayout()
         main_widget.setLayout(main_layout)
+        
+        # Set background color
+        main_widget.setStyleSheet(f"background-color: {config.get_qt_color('background')};")
+        
         self.setCentralWidget(main_widget)
 
         # create top bar info row
@@ -153,17 +163,23 @@ class RcyView(QMainWindow):
 
         # Create plot
         self.figure = Figure(figsize=(5, 4), dpi=100)
+        self.figure.patch.set_facecolor(config.get_qt_color('background'))
         self.canvas = FigureCanvas(self.figure)
         self.ax = self.figure.add_subplot(111)
-        self.line, = self.ax.plot([], [])
+        self.ax.set_facecolor(config.get_qt_color('background'))
+        self.line, = self.ax.plot([], [], color=config.get_qt_color('waveform'), linewidth=1)
         self.ax.set_xlabel('')
         self.ax.tick_params(axis='x',
                             which='both',
                             labelbottom=False)
         
+        # Set grid color if grid is shown
+        self.ax.grid(False)  # Turn off grid by default
+        self.ax.tick_params(colors=config.get_qt_color('gridLines'))
+        
         # Initialize markers as hidden - using same width (1) as segment markers for consistency
-        self.start_marker = self.ax.axvline(x=0, color='g', linestyle='-', linewidth=1, alpha=0.8, visible=False)
-        self.end_marker = self.ax.axvline(x=0, color='r', linestyle='-', linewidth=1, alpha=0.8, visible=False)
+        self.start_marker = self.ax.axvline(x=0, color=config.get_qt_color('startMarker'), linestyle='-', linewidth=1, alpha=0.8, visible=False)
+        self.end_marker = self.ax.axvline(x=0, color=config.get_qt_color('endMarker'), linestyle='-', linewidth=1, alpha=0.8, visible=False)
         
         main_layout.addWidget(self.canvas)
         # Connect all event handlers and store the connection IDs for debugging
@@ -187,7 +203,7 @@ class RcyView(QMainWindow):
         self.cut_button = QPushButton("Cut Selection")
         
         # Style the cut button to stand out
-        self.cut_button.setStyleSheet("background-color: #ff6666; font-weight: bold;")
+        self.cut_button.setStyleSheet(f"background-color: {config.get_qt_color('cutButton')}; color: white; font-weight: bold;")
         
         # Connect button signals
         self.zoom_in_button.clicked.connect(self.controller.zoom_in)
@@ -276,12 +292,12 @@ class RcyView(QMainWindow):
             line.remove()
             
         # Re-add our markers with consistent width
-        self.start_marker = self.ax.axvline(x=start_pos, color='g', linestyle='-', linewidth=1, alpha=0.8, visible=start_visible)
-        self.end_marker = self.ax.axvline(x=end_pos, color='r', linestyle='-', linewidth=1, alpha=0.8, visible=end_visible)
+        self.start_marker = self.ax.axvline(x=start_pos, color=config.get_qt_color('startMarker'), linestyle='-', linewidth=1, alpha=0.8, visible=start_visible)
+        self.end_marker = self.ax.axvline(x=end_pos, color=config.get_qt_color('endMarker'), linestyle='-', linewidth=1, alpha=0.8, visible=end_visible)
         
         # Plot new slice lines
         for slice_time in slice_times:
-            self.ax.axvline(x=slice_time, color='blue', linestyle='--', alpha=0.5)
+            self.ax.axvline(x=slice_time, color=config.get_qt_color('sliceActive'), linestyle='--', alpha=0.5)
         
         self.canvas.draw()
         
@@ -431,6 +447,10 @@ class RcyView(QMainWindow):
                                 "Both start and end markers must be set to cut the audio.\n\n"
                                 "Use Shift+Click to set the start marker and Ctrl+Click to set the end marker.")
             return
+        
+        # Briefly highlight the selection
+        selection_area = self.ax.axvspan(start_pos, end_pos, color=config.get_qt_color('selectionHighlight'), alpha=0.3, zorder=10)
+        self.canvas.draw()
             
         # Confirm the action
         reply = QMessageBox.question(self,
@@ -438,6 +458,10 @@ class RcyView(QMainWindow):
                                     f"Are you sure you want to trim the audio to the selected region?\n\n"
                                     f"This will remove all audio outside the markers and reset all slices.",
                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        
+        # Remove highlight
+        selection_area.remove()
+        self.canvas.draw()
                                     
         if reply == QMessageBox.StandardButton.Yes:
             # Emit the signal to request cutting
@@ -503,25 +527,32 @@ class RcyView(QMainWindow):
         shortcuts_dialog.setWindowTitle("Keyboard Shortcuts")
         shortcuts_dialog.setMinimumSize(QSize(500, 400))
         
+        # Apply styling to dialog
+        shortcuts_dialog.setStyleSheet(f"background-color: {config.get_qt_color('background')};")
+        
         layout = QVBoxLayout()
         shortcuts_dialog.setLayout(layout)
         
         # Create text browser for shortcuts
         text_browser = QTextBrowser()
         text_browser.setOpenExternalLinks(True)
+        text_browser.setStyleSheet(f"background-color: {config.get_qt_color('background')};")
         
         # Set font
-        font = QFont("Monospace", 10)
-        text_browser.setFont(font)
+        text_browser.setFont(config.get_font('primary'))
+        
+        # Get marker colors for accurate documentation
+        start_marker_color = config.get_qt_color('startMarker')
+        end_marker_color = config.get_qt_color('endMarker')
         
         # Prepare HTML content
-        shortcuts_html = """
+        shortcuts_html = f"""
         <h2>Keyboard Shortcuts</h2>
         
         <h3>Markers</h3>
         <ul>
-            <li><b>Shift+Click</b>: Set start marker (green vertical line)</li>
-            <li><b>Ctrl+Click</b>: Set end marker (red vertical line)</li>
+            <li><b>Shift+Click</b>: Set start marker (<span style="color: {start_marker_color};">blue</span> vertical line)</li>
+            <li><b>Ctrl+Click</b>: Set end marker (<span style="color: {end_marker_color};">blue</span> vertical line)</li>
             <li><b>r</b>: Clear both markers</li>
             <li><b>Click+Drag</b> on marker: Reposition marker</li>
         </ul>
@@ -549,6 +580,7 @@ class RcyView(QMainWindow):
         
         # Add close button
         close_button = QPushButton("Close")
+        close_button.setFont(config.get_font('primary'))
         close_button.clicked.connect(shortcuts_dialog.accept)
         layout.addWidget(close_button)
         
@@ -558,12 +590,41 @@ class RcyView(QMainWindow):
         
     def show_about_dialog(self):
         """Show information about the application"""
-        QMessageBox.about(
-            self,
-            "About RCY",
-            """<h1>RCY</h1>
-            <p>An audio slicing and SFZ export tool for sample-based music production.</p>
-            <p>RCY lets you load breakbeat loops, slice them automatically or manually, 
-            and export them as SFZ files for use in samplers like TAL-Sampler.</p>
-            <p><a href="https://github.com/tnn1t1s/rcy">GitHub Repository</a></p>"""
-        )
+        # Create custom about dialog to apply styling
+        about_dialog = QDialog(self)
+        about_dialog.setWindowTitle("About RCY")
+        about_dialog.setMinimumSize(QSize(400, 300))
+        about_dialog.setStyleSheet(f"background-color: {config.get_qt_color('background')};")
+        
+        layout = QVBoxLayout()
+        about_dialog.setLayout(layout)
+        
+        # Create text browser for about content
+        text_browser = QTextBrowser()
+        text_browser.setOpenExternalLinks(True)
+        text_browser.setStyleSheet(f"background-color: {config.get_qt_color('background')};")
+        text_browser.setFont(config.get_font('primary'))
+        
+        about_html = f"""
+        <h1>RCY</h1>
+        <p>An audio slicing and SFZ export tool for sample-based music production.</p>
+        <p>RCY lets you load breakbeat loops, slice them automatically or manually, 
+        and export them as SFZ files for use in samplers like TAL-Sampler.</p>
+        <p><a href="https://github.com/tnn1t1s/rcy">GitHub Repository</a></p>
+        
+        <p>Designed with a color palette inspired by New Order's Movement, 
+        brutalist design, and hauntological software.</p>
+        """
+        
+        text_browser.setHtml(about_html)
+        layout.addWidget(text_browser)
+        
+        # Add close button
+        close_button = QPushButton("Close")
+        close_button.setFont(config.get_font('primary'))
+        close_button.clicked.connect(about_dialog.accept)
+        layout.addWidget(close_button)
+        
+        # Show dialog
+        about_dialog.setModal(True)
+        about_dialog.exec()
