@@ -114,3 +114,34 @@ class WavAudioProcessor:
 
     def get_sample_at_time(self, time):
         return int(time * self.sample_rate)
+        
+    def cut_audio(self, start_sample, end_sample):
+        """Trim audio to the region between start_sample and end_sample"""
+        try:
+            # Ensure valid range
+            if start_sample < 0:
+                start_sample = 0
+            if end_sample > len(self.data):
+                end_sample = len(self.data)
+            if start_sample >= end_sample:
+                return False
+                
+            # Extract the selected portion
+            trimmed_data = self.data[start_sample:end_sample]
+            
+            # Update the audio data
+            self.data = trimmed_data
+            
+            # Update total time based on new length
+            self.total_time = len(self.data) / self.sample_rate
+            
+            # Update time array
+            self.time = np.linspace(0, self.total_time, len(self.data))
+            
+            # Clear segments since they're now invalid
+            self.segments = []
+            
+            return True
+        except Exception as e:
+            print(f"Error in cut_audio: {e}")
+            return False

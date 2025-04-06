@@ -22,6 +22,13 @@ class RcyController:
         self.view.remove_segment.connect(self.remove_segment)
         self.view.add_segment.connect(self.add_segment)
         self.view.play_segment.connect(self.play_segment)
+        self.view.start_marker_changed.connect(self.on_start_marker_changed)
+        self.view.end_marker_changed.connect(self.on_end_marker_changed)
+        self.view.cut_requested.connect(self.cut_audio)
+        
+        # Initialize marker positions
+        self.start_marker_pos = None
+        self.end_marker_pos = None
 
     def on_threshold_changed(self, threshold):
         self.threshold = threshold
@@ -107,6 +114,47 @@ class RcyController:
                     return self.current_slices[i-1], slice_time
         return self.current_slices[-1], self.model.total_time
 
+    def on_start_marker_changed(self, position):
+        """Called when the start marker position changes"""
+        self.start_marker_pos = position
+        print(f"Start marker position updated: {position}")
+    
+    def on_end_marker_changed(self, position):
+        """Called when the end marker position changes"""
+        self.end_marker_pos = position
+        print(f"End marker position updated: {position}")
+    
+    def play_selected_region(self):
+        """Play the audio between start and end markers"""
+        if self.start_marker_pos is not None and self.end_marker_pos is not None:
+            self.model.play_segment(self.start_marker_pos, self.end_marker_pos)
+    
+    def cut_audio(self, start_time, end_time):
+        """Trim the audio to the selected region"""
+        print(f"Cutting audio between {start_time:.2f}s and {end_time:.2f}s")
+        
+        # Convert time positions to sample positions
+        start_sample = self.model.get_sample_at_time(start_time)
+        end_sample = self.model.get_sample_at_time(end_time)
+        
+        # Perform the cut operation in the model
+        success = self.model.cut_audio(start_sample, end_sample)
+        
+        if success:
+            # Reset tempo to initial values
+            self.tempo = self.model.get_tempo(self.num_bars)
+            self.view.update_tempo(self.tempo)
+            
+            # Clear segments
+            self.model.segments = []
+            
+            # Update the view with the new trimmed audio
+            self.update_view()
+            self.view.update_scroll_bar(self.visible_time, self.model.total_time)
+            print("Audio successfully trimmed")
+        else:
+            print("Failed to trim audio")
+    
     def handle_plot_click(self, click_time):
         start_time, end_time = self.get_segment_boundaries(click_time)
         print(f"handle plot click {start_time} {end_time}")
