@@ -1,6 +1,6 @@
-from PyQt6.QtWidgets import QApplication, QLabel, QLineEdit, QComboBox, QMessageBox, QMainWindow, QFileDialog, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QScrollBar ,QSlider
-from PyQt6.QtGui import QAction, QValidator, QIntValidator
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtWidgets import QApplication, QLabel, QLineEdit, QComboBox, QMessageBox, QMainWindow, QFileDialog, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QScrollBar, QSlider, QDialog, QTextBrowser
+from PyQt6.QtGui import QAction, QValidator, QIntValidator, QFont
+from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
@@ -51,6 +51,19 @@ class RcyView(QMainWindow):
         save_as_action = QAction('Save As', self)
         save_as_action.triggered.connect(self.save_as)
         file_menu.addAction(save_as_action)
+        
+        # Help menu
+        help_menu = menubar.addMenu('Help')
+        
+        # Keyboard shortcuts action
+        shortcuts_action = QAction('Keyboard Shortcuts', self)
+        shortcuts_action.triggered.connect(self.show_keyboard_shortcuts)
+        help_menu.addAction(shortcuts_action)
+        
+        # About action
+        about_action = QAction('About', self)
+        about_action.triggered.connect(self.show_about_dialog)
+        help_menu.addAction(about_action)
 
     def export_segments(self):
         directory = QFileDialog.getExistingDirectory(self,
@@ -152,17 +165,6 @@ class RcyView(QMainWindow):
         self.start_marker = self.ax.axvline(x=0, color='g', linestyle='-', linewidth=2, alpha=0.8, visible=False)
         self.end_marker = self.ax.axvline(x=0, color='r', linestyle='-', linewidth=2, alpha=0.8, visible=False)
         
-        # Add help text to plot
-        self.help_text = self.ax.text(0.02, 0.98, 
-                                      "Shift+Click: Set start marker (green)\n"
-                                      "Ctrl+Click: Set end marker (red)\n"
-                                      "'r' key: Clear both markers\n"
-                                      "Drag markers to reposition",
-                                      transform=self.ax.transAxes, 
-                                      verticalalignment='top',
-                                      fontsize=8,
-                                      bbox=dict(boxstyle='round', facecolor='white', alpha=0.7))
-        
         main_layout.addWidget(self.canvas)
         # Connect all event handlers and store the connection IDs for debugging
         self.cid_press = self.canvas.mpl_connect('button_press_event', self.on_plot_click)
@@ -186,7 +188,6 @@ class RcyView(QMainWindow):
         
         # Style the cut button to stand out
         self.cut_button.setStyleSheet("background-color: #ff6666; font-weight: bold;")
-        self.cut_button.setToolTip("Trim audio to the region between start and end markers")
         
         # Connect button signals
         self.zoom_in_button.clicked.connect(self.controller.zoom_in)
@@ -494,3 +495,74 @@ class RcyView(QMainWindow):
     def on_bar_resolution_changed(self, index):
         resolutions = [4, 8, 16]
         self.controller.set_bar_resolution(resolutions[index])
+        
+    def show_keyboard_shortcuts(self):
+        """Show a dialog with keyboard shortcuts information"""
+        shortcuts_dialog = QDialog(self)
+        shortcuts_dialog.setWindowTitle("Keyboard Shortcuts")
+        shortcuts_dialog.setMinimumSize(QSize(500, 400))
+        
+        layout = QVBoxLayout()
+        shortcuts_dialog.setLayout(layout)
+        
+        # Create text browser for shortcuts
+        text_browser = QTextBrowser()
+        text_browser.setOpenExternalLinks(True)
+        
+        # Set font
+        font = QFont("Monospace", 10)
+        text_browser.setFont(font)
+        
+        # Prepare HTML content
+        shortcuts_html = """
+        <h2>Keyboard Shortcuts</h2>
+        
+        <h3>Markers</h3>
+        <ul>
+            <li><b>Shift+Click</b>: Set start marker (green vertical line)</li>
+            <li><b>Ctrl+Click</b>: Set end marker (red vertical line)</li>
+            <li><b>r</b>: Clear both markers</li>
+            <li><b>Click+Drag</b> on marker: Reposition marker</li>
+        </ul>
+        
+        <h3>Playback</h3>
+        <ul>
+            <li><b>Click</b> on waveform: Play segment at click position</li>
+        </ul>
+        
+        <h3>Segments</h3>
+        <ul>
+            <li><b>Alt+Click</b>: Add segment at click position</li>
+            <li><b>Meta+Click</b> (Command on macOS): Remove segment nearest to click</li>
+        </ul>
+        
+        <h3>File Operations</h3>
+        <ul>
+            <li><b>Ctrl+O</b>: Open audio file</li>
+            <li><b>Ctrl+E</b>: Export segments and SFZ file</li>
+        </ul>
+        """
+        
+        text_browser.setHtml(shortcuts_html)
+        layout.addWidget(text_browser)
+        
+        # Add close button
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(shortcuts_dialog.accept)
+        layout.addWidget(close_button)
+        
+        # Show dialog
+        shortcuts_dialog.setModal(True)
+        shortcuts_dialog.exec()
+        
+    def show_about_dialog(self):
+        """Show information about the application"""
+        QMessageBox.about(
+            self,
+            "About RCY",
+            """<h1>RCY</h1>
+            <p>An audio slicing and SFZ export tool for sample-based music production.</p>
+            <p>RCY lets you load breakbeat loops, slice them automatically or manually, 
+            and export them as SFZ files for use in samplers like TAL-Sampler.</p>
+            <p><a href="https://github.com/tnn1t1s/rcy">GitHub Repository</a></p>"""
+        )
