@@ -161,9 +161,9 @@ class RcyView(QMainWindow):
                             which='both',
                             labelbottom=False)
         
-        # Initialize markers as hidden
-        self.start_marker = self.ax.axvline(x=0, color='g', linestyle='-', linewidth=2, alpha=0.8, visible=False)
-        self.end_marker = self.ax.axvline(x=0, color='r', linestyle='-', linewidth=2, alpha=0.8, visible=False)
+        # Initialize markers as hidden - using same width (1) as segment markers for consistency
+        self.start_marker = self.ax.axvline(x=0, color='g', linestyle='-', linewidth=1, alpha=0.8, visible=False)
+        self.end_marker = self.ax.axvline(x=0, color='r', linestyle='-', linewidth=1, alpha=0.8, visible=False)
         
         main_layout.addWidget(self.canvas)
         # Connect all event handlers and store the connection IDs for debugging
@@ -274,9 +274,9 @@ class RcyView(QMainWindow):
         for line in self.ax.lines[1:]:
             line.remove()
             
-        # Re-add our markers
-        self.start_marker = self.ax.axvline(x=start_pos, color='g', linestyle='-', linewidth=2, alpha=0.8, visible=start_visible)
-        self.end_marker = self.ax.axvline(x=end_pos, color='r', linestyle='-', linewidth=2, alpha=0.8, visible=end_visible)
+        # Re-add our markers with consistent width
+        self.start_marker = self.ax.axvline(x=start_pos, color='g', linestyle='-', linewidth=1, alpha=0.8, visible=start_visible)
+        self.end_marker = self.ax.axvline(x=end_pos, color='r', linestyle='-', linewidth=1, alpha=0.8, visible=end_visible)
         
         # Plot new slice lines
         for slice_time in slice_times:
