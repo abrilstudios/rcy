@@ -1,0 +1,9 @@
+// Source Direct-style Think cuts
+// Inspired by tracks like "Snake Style", "Secret Liaison", "The Cult"
+
+<region> sample=think.wav start=0 end=11000 key=36 // Main kick
+<region> sample=think.wav start=11001 end=19000 key=37 // First snare
+<region> sample=think.wav start=19001 end=27000 key=38 // Hat section
+<region> sample=think.wav start=27001 end=35000 key=39 // Second snare
+<region> sample=think.wav start=35001 end=43000 key=40 // Complex section
+<region> sample=think.wav start=43001 end=51000 key=41 // Final fill

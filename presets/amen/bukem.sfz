@@ -1,0 +1,10 @@
+// LTJ Bukem-style Amen cuts
+// Inspired by tracks like "Music", "Atlantis", "Horizons"
+
+<region> sample=amen.wav start=0 end=10000 key=36 // Clean kick
+<region> sample=amen.wav start=10001 end=15000 key=37 // Soft snare
+<region> sample=amen.wav start=15001 end=22000 key=38 // Brushed hats
+<region> sample=amen.wav start=22001 end=30000 key=39 // Gentle fill
+<region> sample=amen.wav start=30001 end=38000 key=40 // Ride section
+<region> sample=amen.wav start=38001 end=48000 key=41 // Full break section
+<region> sample=amen.wav start=48001 end=58000 key=42 // Outro hit

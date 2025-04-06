@@ -1,0 +1,10 @@
+// Photek-style Apache cuts
+// Inspired by tracks like "Hidden Camera", "Ni Ten Ichi Ryu", "Rings Around Saturn"
+
+<region> sample=apache.wav start=0 end=10000 key=36 // Clean kick
+<region> sample=apache.wav start=10001 end=18000 key=37 // First snare
+<region> sample=apache.wav start=18001 end=26000 key=38 // Hat cluster
+<region> sample=apache.wav start=26001 end=34000 key=39 // Second snare
+<region> sample=apache.wav start=34001 end=42000 key=40 // Ride section
+<region> sample=apache.wav start=42001 end=50000 key=41 // Fill section
+<region> sample=apache.wav start=50001 end=58000 key=42 // Complex ending
