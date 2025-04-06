@@ -4,11 +4,12 @@ import pathlib
 from PyQt6.QtGui import QColor, QFont
 
 class ConfigManager:
-    """Manages application configuration, including colors and fonts"""
+    """Manages application configuration, including colors, fonts, and strings"""
     
     def __init__(self):
         self.colors = {}
         self.fonts = {}
+        self.strings = {}
         self.load_config()
     
     def load_config(self):
@@ -17,7 +18,9 @@ class ConfigManager:
             # Get the path to the config directory
             current_file = pathlib.Path(__file__)
             project_root = current_file.parent.parent.parent
-            colors_path = os.path.join(project_root, "config", "colors.json")
+            config_dir = os.path.join(project_root, "config")
+            colors_path = os.path.join(config_dir, "colors.json")
+            strings_path = os.path.join(config_dir, "strings.json")
             
             # Load colors from JSON file
             if os.path.exists(colors_path):
@@ -27,13 +30,23 @@ class ConfigManager:
                     self.fonts = config.get('fonts', {})
                 print(f"Loaded color palette from {colors_path}")
             else:
-                print(f"Config file not found: {colors_path}, using defaults")
-                self._set_defaults()
+                print(f"Colors config file not found: {colors_path}, using defaults")
+                self._set_color_defaults()
+                
+            # Load strings from JSON file
+            if os.path.exists(strings_path):
+                with open(strings_path, 'r') as f:
+                    self.strings = json.load(f)
+                print(f"Loaded string resources from {strings_path}")
+            else:
+                print(f"Strings config file not found: {strings_path}, using defaults")
+                self._set_string_defaults()
         except Exception as e:
             print(f"Error loading config: {e}")
-            self._set_defaults()
+            self._set_color_defaults()
+            self._set_string_defaults()
     
-    def _set_defaults(self):
+    def _set_color_defaults(self):
         """Set default colors and fonts if config can't be loaded"""
         self.colors = {
             "background": "#cbe9f3",
@@ -48,6 +61,40 @@ class ConfigManager:
         }
         self.fonts = {
             "primary": "Futura PT Book"
+        }
+        
+    def _set_string_defaults(self):
+        """Set default strings if config can't be loaded"""
+        self.strings = {
+            "ui": {
+                "windowTitle": "Recycle View",
+                "applicationName": "RCY",
+                "organizationName": "Abril Audio Labs",
+                "organizationDomain": "abrilaudio.com"
+            },
+            "menus": {
+                "file": "File",
+                "help": "Help",
+                "open": "Open",
+                "export": "Export", 
+                "saveAs": "Save As",
+                "keyboardShortcuts": "Keyboard Shortcuts",
+                "about": "About"
+            },
+            "buttons": {
+                "zoomIn": "Zoom In",
+                "zoomOut": "Zoom Out",
+                "cut": "Cut Selection",
+                "splitBars": "Split by Bars",
+                "splitTransients": "Split by Transients",
+                "close": "Close"
+            },
+            "labels": {
+                "numBars": "Number of bars:",
+                "tempo": "Tempo:",
+                "onsetThreshold": "Onset Threshold:",
+                "barResolutions": ["4th notes", "8th notes", "16th notes"]
+            }
         }
     
     def get_color(self, key, default=None):
@@ -75,6 +122,25 @@ class ConfigManager:
                     font.insertSubstitution(font_name, fallback)
         
         return font
+    
+    def get_string(self, category, key, default=None):
+        """Get a string resource by category and key"""
+        if category in self.strings and key in self.strings[category]:
+            return self.strings[category][key]
+        return default or key
+    
+    def get_nested_string(self, path, default=None):
+        """Get a string resource by dot-notation path (e.g., 'ui.windowTitle')"""
+        parts = path.split('.')
+        current = self.strings
+        
+        for part in parts:
+            if part in current:
+                current = current[part]
+            else:
+                return default or path
+        
+        return current if isinstance(current, (str, list)) else default or path
 
 # Create a singleton instance
 config = ConfigManager()

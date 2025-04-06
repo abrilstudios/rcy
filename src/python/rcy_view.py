@@ -32,43 +32,43 @@ class RcyView(QMainWindow):
         menubar = self.menuBar()
 
         # File menu
-        file_menu = menubar.addMenu('File')
+        file_menu = menubar.addMenu(config.get_string("menus", "file"))
 
         # Open action
-        open_action = QAction('Open', self)
+        open_action = QAction(config.get_string("menus", "open"), self)
         open_action.setShortcut('Ctrl+O')
         open_action.setStatusTip('Open an audio file')
         open_action.triggered.connect(self.load_audio_file)
         file_menu.addAction(open_action)
 
         # Export action
-        export_action = QAction('Export', self)
+        export_action = QAction(config.get_string("menus", "export"), self)
         export_action.setShortcut('Ctrl+E')
         export_action.setStatusTip('Export segments and SFZ file')
         export_action.triggered.connect(self.export_segments)
         file_menu.addAction(export_action)
 
         # Save As action
-        save_as_action = QAction('Save As', self)
+        save_as_action = QAction(config.get_string("menus", "saveAs"), self)
         save_as_action.triggered.connect(self.save_as)
         file_menu.addAction(save_as_action)
         
         # Help menu
-        help_menu = menubar.addMenu('Help')
+        help_menu = menubar.addMenu(config.get_string("menus", "help"))
         
         # Keyboard shortcuts action
-        shortcuts_action = QAction('Keyboard Shortcuts', self)
+        shortcuts_action = QAction(config.get_string("menus", "keyboardShortcuts"), self)
         shortcuts_action.triggered.connect(self.show_keyboard_shortcuts)
         help_menu.addAction(shortcuts_action)
         
         # About action
-        about_action = QAction('About', self)
+        about_action = QAction(config.get_string("menus", "about"), self)
         about_action.triggered.connect(self.show_about_dialog)
         help_menu.addAction(about_action)
 
     def export_segments(self):
         directory = QFileDialog.getExistingDirectory(self,
-                                                     "Select Export Directory")
+                                                     config.get_string("dialogs", "exportDirectoryTitle"))
         if directory:
             self.controller.export_segments(directory)
 
@@ -77,7 +77,7 @@ class RcyView(QMainWindow):
         pass
 
     def init_ui(self):
-        self.setWindowTitle("Recycle View")
+        self.setWindowTitle(config.get_string("ui", "windowTitle"))
         self.setGeometry(100, 100, 800, 600)
 
         # Set application-wide font
@@ -99,7 +99,7 @@ class RcyView(QMainWindow):
         slice_layout = QHBoxLayout()
 
         ## Number of Bars Input
-        self.bars_label = QLabel("Number of bars:")
+        self.bars_label = QLabel(config.get_string("labels", "numBars"))
         self.bars_input = QLineEdit("1")
         self.bars_input.setValidator(QIntValidator(1, 1000))
         self.bars_input.editingFinished.connect(self.on_bars_changed)
@@ -107,7 +107,7 @@ class RcyView(QMainWindow):
         info_layout.addWidget(self.bars_input)
 
         ## Tempo Display
-        self.tempo_label = QLabel("Tempo:")
+        self.tempo_label = QLabel(config.get_string("labels", "tempo"))
         self.tempo_display = QLineEdit("N/A")
         self.tempo_display.setReadOnly(True)
         info_layout.addWidget(self.tempo_label)
@@ -119,15 +119,16 @@ class RcyView(QMainWindow):
         #info_layout.addWidget(self.load_button)
 
         ## add split buttons
-        self.split_bars_button = QPushButton("Split by Bars")
+        self.split_bars_button = QPushButton(config.get_string("buttons", "splitBars"))
         self.split_bars_button.clicked.connect(lambda: self.controller.split_audio('bars'))
 
-        self.split_transients_button = QPushButton("Split by Transients")
+        self.split_transients_button = QPushButton(config.get_string("buttons", "splitTransients"))
         self.split_transients_button.clicked.connect(lambda: self.controller.split_audio('transients'))
 
         # Add bar resolution dropdown
         self.bar_resolution_combo = QComboBox()
-        self.bar_resolution_combo.addItems(["4th notes", "8th notes", "16th notes"])
+        bar_resolutions = config.get_string("labels", "barResolutions")
+        self.bar_resolution_combo.addItems(bar_resolutions)
         self.bar_resolution_combo.currentIndexChanged.connect(self.on_bar_resolution_changed)
         # add to layout
         slice_layout.addWidget(self.split_bars_button)
@@ -142,7 +143,7 @@ class RcyView(QMainWindow):
         threshold_layout = QHBoxLayout()
 
         # Create a label for the slider
-        threshold_label = QLabel("Onset Threshold:")
+        threshold_label = QLabel(config.get_string("labels", "onsetThreshold"))
         threshold_layout.addWidget(threshold_label)
 
         # Create the slider
@@ -198,9 +199,9 @@ class RcyView(QMainWindow):
 
         # Create buttons
         button_layout = QHBoxLayout()
-        self.zoom_in_button = QPushButton("Zoom In")
-        self.zoom_out_button = QPushButton("Zoom Out")
-        self.cut_button = QPushButton("Cut Selection")
+        self.zoom_in_button = QPushButton(config.get_string("buttons", "zoomIn"))
+        self.zoom_out_button = QPushButton(config.get_string("buttons", "zoomOut"))
+        self.cut_button = QPushButton(config.get_string("buttons", "cut"))
         
         # Style the cut button to stand out
         self.cut_button.setStyleSheet(f"background-color: {config.get_qt_color('cutButton')}; color: white; font-weight: bold;")
@@ -443,9 +444,8 @@ class RcyView(QMainWindow):
         # Check if both markers are set
         if start_pos is None or end_pos is None:
             QMessageBox.warning(self, 
-                                "Cannot Cut", 
-                                "Both start and end markers must be set to cut the audio.\n\n"
-                                "Use Shift+Click to set the start marker and Ctrl+Click to set the end marker.")
+                                config.get_string("dialogs", "cannotCutTitle"), 
+                                config.get_string("dialogs", "cannotCutMessage"))
             return
         
         # Briefly highlight the selection
@@ -454,9 +454,8 @@ class RcyView(QMainWindow):
             
         # Confirm the action
         reply = QMessageBox.question(self,
-                                    "Confirm Cut",
-                                    f"Are you sure you want to trim the audio to the selected region?\n\n"
-                                    f"This will remove all audio outside the markers and reset all slices.",
+                                    config.get_string("dialogs", "confirmCutTitle"),
+                                    config.get_string("dialogs", "confirmCutMessage"),
                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         
         # Remove highlight
@@ -507,15 +506,15 @@ class RcyView(QMainWindow):
 
     def load_audio_file(self):
         filename, _ = QFileDialog.getOpenFileName(self,
-            "Open audio file",
+            config.get_string("dialogs", "openFileTitle"),
             "",
-            "Audio Files (*.wav *.mp3 *.ogg *.flac *.aif *.aiff)")
+            config.get_string("dialogs", "audioFileFilter"))
         if filename:
             self.controller.load_audio_file(filename)
         else:
             QMessageBox.critical(self,
-                                 "Error",
-                                 "Failed to load audio file.")
+                                 config.get_string("dialogs", "errorTitle"),
+                                 config.get_string("dialogs", "errorLoadingFile"))
 
     def on_bar_resolution_changed(self, index):
         resolutions = [4, 8, 16]
@@ -524,7 +523,7 @@ class RcyView(QMainWindow):
     def show_keyboard_shortcuts(self):
         """Show a dialog with keyboard shortcuts information"""
         shortcuts_dialog = QDialog(self)
-        shortcuts_dialog.setWindowTitle("Keyboard Shortcuts")
+        shortcuts_dialog.setWindowTitle(config.get_string("dialogs", "shortcutsTitle"))
         shortcuts_dialog.setMinimumSize(QSize(500, 400))
         
         # Apply styling to dialog
@@ -547,31 +546,31 @@ class RcyView(QMainWindow):
         
         # Prepare HTML content
         shortcuts_html = f"""
-        <h2>Keyboard Shortcuts</h2>
+        <h2>{config.get_string("dialogs", "shortcutsTitle")}</h2>
         
-        <h3>Markers</h3>
+        <h3>{config.get_string("shortcuts", "markersSection")}</h3>
         <ul>
-            <li><b>Shift+Click</b>: Set start marker (<span style="color: {start_marker_color};">blue</span> vertical line)</li>
-            <li><b>Ctrl+Click</b>: Set end marker (<span style="color: {end_marker_color};">blue</span> vertical line)</li>
-            <li><b>r</b>: Clear both markers</li>
-            <li><b>Click+Drag</b> on marker: Reposition marker</li>
+            <li><b>Shift+Click</b>: {config.get_string("shortcuts", "setStartMarker")} (<span style="color: {start_marker_color};">blue</span> vertical line)</li>
+            <li><b>Ctrl+Click</b>: {config.get_string("shortcuts", "setEndMarker")} (<span style="color: {end_marker_color};">blue</span> vertical line)</li>
+            <li><b>r</b>: {config.get_string("shortcuts", "clearMarkers")}</li>
+            <li><b>Click+Drag</b> on marker: {config.get_string("shortcuts", "repositionMarker")}</li>
         </ul>
         
-        <h3>Playback</h3>
+        <h3>{config.get_string("shortcuts", "playbackSection")}</h3>
         <ul>
-            <li><b>Click</b> on waveform: Play segment at click position</li>
+            <li><b>Click</b> on waveform: {config.get_string("shortcuts", "playSegment")}</li>
         </ul>
         
-        <h3>Segments</h3>
+        <h3>{config.get_string("shortcuts", "segmentsSection")}</h3>
         <ul>
-            <li><b>Alt+Click</b>: Add segment at click position</li>
-            <li><b>Meta+Click</b> (Command on macOS): Remove segment nearest to click</li>
+            <li><b>Alt+Click</b>: {config.get_string("shortcuts", "addSegment")}</li>
+            <li><b>Meta+Click</b> (Command on macOS): {config.get_string("shortcuts", "removeSegment")}</li>
         </ul>
         
-        <h3>File Operations</h3>
+        <h3>{config.get_string("shortcuts", "fileOperationsSection")}</h3>
         <ul>
-            <li><b>Ctrl+O</b>: Open audio file</li>
-            <li><b>Ctrl+E</b>: Export segments and SFZ file</li>
+            <li><b>Ctrl+O</b>: {config.get_string("shortcuts", "openFile")}</li>
+            <li><b>Ctrl+E</b>: {config.get_string("shortcuts", "exportSegments")}</li>
         </ul>
         """
         
@@ -579,7 +578,7 @@ class RcyView(QMainWindow):
         layout.addWidget(text_browser)
         
         # Add close button
-        close_button = QPushButton("Close")
+        close_button = QPushButton(config.get_string("buttons", "close"))
         close_button.setFont(config.get_font('primary'))
         close_button.clicked.connect(shortcuts_dialog.accept)
         layout.addWidget(close_button)
@@ -592,7 +591,7 @@ class RcyView(QMainWindow):
         """Show information about the application"""
         # Create custom about dialog to apply styling
         about_dialog = QDialog(self)
-        about_dialog.setWindowTitle("About RCY")
+        about_dialog.setWindowTitle(config.get_string("dialogs", "aboutTitle"))
         about_dialog.setMinimumSize(QSize(400, 300))
         about_dialog.setStyleSheet(f"background-color: {config.get_qt_color('background')};")
         
@@ -606,21 +605,19 @@ class RcyView(QMainWindow):
         text_browser.setFont(config.get_font('primary'))
         
         about_html = f"""
-        <h1>RCY</h1>
-        <p>An audio slicing and SFZ export tool for sample-based music production.</p>
-        <p>RCY lets you load breakbeat loops, slice them automatically or manually, 
-        and export them as SFZ files for use in samplers like TAL-Sampler.</p>
-        <p><a href="https://github.com/tnn1t1s/rcy">GitHub Repository</a></p>
+        <h1>{config.get_string("about", "title")}</h1>
+        <p>{config.get_string("about", "description")}</p>
+        <p>{config.get_string("about", "details")}</p>
+        <p><a href="{config.get_string("about", "repositoryUrl")}">{config.get_string("about", "repository")}</a></p>
         
-        <p>Designed with a color palette inspired by New Order's Movement, 
-        brutalist design, and hauntological software.</p>
+        <p>{config.get_string("about", "design")}</p>
         """
         
         text_browser.setHtml(about_html)
         layout.addWidget(text_browser)
         
         # Add close button
-        close_button = QPushButton("Close")
+        close_button = QPushButton(config.get_string("buttons", "close"))
         close_button.setFont(config.get_font('primary'))
         close_button.clicked.connect(about_dialog.accept)
         layout.addWidget(close_button)
