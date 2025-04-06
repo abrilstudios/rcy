@@ -5,6 +5,8 @@ from config_manager import config
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
+from matplotlib.patches import Polygon
+import numpy as np
 
 class RcyView(QMainWindow):
     bars_changed = pyqtSignal(int)
@@ -21,12 +23,18 @@ class RcyView(QMainWindow):
         self.controller = controller
         self.start_marker = None
         self.end_marker = None
+        self.start_marker_handle = None
+        self.end_marker_handle = None
         self.dragging_marker = None
         self.init_ui()
         self.create_menu_bar()
         
         # Set key press handler for the entire window
         self.keyPressEvent = self.window_key_press
+        
+        # Triangle dimensions (in pixels)
+        self.triangle_base = 16  # 16px base (was 12px, increased by ~30%)
+        self.triangle_height = 10  # 10px height (was 8px, increased by 25%)
 
     def create_menu_bar(self):
         menubar = self.menuBar()
@@ -182,6 +190,13 @@ class RcyView(QMainWindow):
         self.start_marker = self.ax.axvline(x=0, color=config.get_qt_color('startMarker'), linestyle='-', linewidth=1, alpha=0.8, visible=False)
         self.end_marker = self.ax.axvline(x=0, color=config.get_qt_color('endMarker'), linestyle='-', linewidth=1, alpha=0.8, visible=False)
         
+        # Initialize triangle handles (they'll be created properly when markers are shown)
+        self.start_marker_handle = None
+        self.end_marker_handle = None
+        
+        # Initialize triangle handles with empty data
+        self._create_marker_handles()
+        
         main_layout.addWidget(self.canvas)
         # Connect all event handlers and store the connection IDs for debugging
         self.cid_press = self.canvas.mpl_connect('button_press_event', self.on_plot_click)
@@ -228,11 +243,11 @@ class RcyView(QMainWindow):
         print(f"    Is Alt: {bool(modifiers & Qt.KeyboardModifier.AltModifier)}")
         print(f"    Is Meta: {bool(modifiers & Qt.KeyboardModifier.MetaModifier)}")
         
-        # Check if we're clicking near a marker
-        if self.is_near_marker(event.xdata, self.start_marker):
+        # Check if we're clicking near a marker or its handle
+        if self.is_near_marker(event.xdata, event.ydata, self.start_marker, self.start_marker_handle):
             self.dragging_marker = 'start'
             return
-        elif self.is_near_marker(event.xdata, self.end_marker):
+        elif self.is_near_marker(event.xdata, event.ydata, self.end_marker, self.end_marker_handle):
             self.dragging_marker = 'end'
             return
             
@@ -260,12 +275,42 @@ class RcyView(QMainWindow):
             # No modifiers
             self.play_segment.emit(event.xdata)
             
-    def is_near_marker(self, x, marker):
-        """Check if x coordinate is near the given marker"""
+    def is_near_marker(self, x, y, marker, marker_handle):
+        """Check if coordinates are near the marker or its handle"""
         if not marker.get_visible():
             return False
         
         marker_x = marker.get_xdata()[0]  # Vertical lines have the same x for all points
+        
+        # First check if we're clicking directly on the triangle handle
+        if marker_handle and marker_handle.get_visible():
+            # Check if the point (x, y) is inside the triangle
+            # We need to create a simple point test since contains() expects a MouseEvent
+            triangle_coords = marker_handle.get_xy()
+            
+            # Simple triangle contains point logic
+            # Based on barycentric coordinates
+            x0, y0 = triangle_coords[0]
+            x1, y1 = triangle_coords[1]
+            x2, y2 = triangle_coords[2]
+            
+            # Calculate area of the entire triangle
+            area_total = 0.5 * abs((x0 * (y1 - y2) + x1 * (y2 - y0) + x2 * (y0 - y1)))
+            
+            if area_total == 0:  # Degenerate triangle
+                return False
+                
+            # Calculate three areas using the point and two vertices of the triangle
+            area1 = 0.5 * abs((x * (y1 - y2) + x1 * (y2 - y) + x2 * (y - y1)))
+            area2 = 0.5 * abs((x0 * (y - y2) + x * (y2 - y0) + x2 * (y0 - y)))
+            area3 = 0.5 * abs((x0 * (y1 - y) + x1 * (y - y0) + x * (y0 - y1)))
+            
+            # If the sum of the three areas is equal to the area of the triangle,
+            # the point is inside the triangle
+            if abs((area1 + area2 + area3) - area_total) < 1e-9:
+                return True
+        
+        # If not clicking on triangle, check if we're near the marker line
         # Define "near" as within 5% of the view width for easier grabbing
         # This creates a wider hit area without changing the visual width
         view_width = self.ax.get_xlim()[1] - self.ax.get_xlim()[0]
@@ -295,6 +340,15 @@ class RcyView(QMainWindow):
         # Re-add our markers with consistent width
         self.start_marker = self.ax.axvline(x=start_pos, color=config.get_qt_color('startMarker'), linestyle='-', linewidth=1, alpha=0.8, visible=start_visible)
         self.end_marker = self.ax.axvline(x=end_pos, color=config.get_qt_color('endMarker'), linestyle='-', linewidth=1, alpha=0.8, visible=end_visible)
+        
+        # Recreate the triangle handles
+        self._create_marker_handles()
+        
+        # Update the handles if markers are visible
+        if start_visible:
+            self._update_marker_handle('start')
+        if end_visible:
+            self._update_marker_handle('end')
         
         # Plot new slice lines
         for slice_time in slice_times:
@@ -368,6 +422,10 @@ class RcyView(QMainWindow):
         
         self.start_marker.set_xdata([x_pos, x_pos])
         self.start_marker.set_visible(True)
+        
+        # Update the triangle handle
+        self._update_marker_handle('start')
+        
         self.canvas.draw()
         
     def set_end_marker(self, x_pos):
@@ -383,6 +441,10 @@ class RcyView(QMainWindow):
         
         self.end_marker.set_xdata([x_pos, x_pos])
         self.end_marker.set_visible(True)
+        
+        # Update the triangle handle
+        self._update_marker_handle('end')
+        
         self.canvas.draw()
     
     def get_marker_positions(self):
@@ -469,10 +531,90 @@ class RcyView(QMainWindow):
             # Clear the markers after cutting
             self.clear_markers()
     
+    def _create_marker_handles(self):
+        """Create triangle handles for both markers"""
+        # Create empty triangles initially - they'll be positioned properly later
+        empty_triangle = np.array([[0, 0], [0, 0], [0, 0]])
+        
+        # Create the start marker handle (triangle)
+        if self.start_marker_handle is not None:
+            self.start_marker_handle.remove()
+        self.start_marker_handle = Polygon(empty_triangle, 
+                                         closed=True,
+                                         color=config.get_qt_color('startMarker'),
+                                         fill=True,
+                                         alpha=0.8,
+                                         visible=False,
+                                         zorder=10)  # Ensure triangles are above other elements
+        self.ax.add_patch(self.start_marker_handle)
+        
+        # Create the end marker handle (triangle)
+        if self.end_marker_handle is not None:
+            self.end_marker_handle.remove()
+        self.end_marker_handle = Polygon(empty_triangle, 
+                                       closed=True,
+                                       color=config.get_qt_color('endMarker'),
+                                       fill=True,
+                                       alpha=0.8,
+                                       visible=False,
+                                       zorder=10)  # Ensure triangles are above other elements
+        self.ax.add_patch(self.end_marker_handle)
+
+    def _update_marker_handle(self, marker_type):
+        """Update the position of a marker's triangle handle"""
+        # Get the current axis dimensions to calculate pixel-based positions
+        x_min, x_max = self.ax.get_xlim()
+        y_min, y_max = self.ax.get_ylim()
+        
+        # Get the figure dimensions in pixels
+        fig_width_px, fig_height_px = self.figure.get_size_inches() * self.figure.dpi
+        
+        # Height of the triangle in data coordinates
+        ax_height = y_max - y_min
+        triangle_height_data = (self.triangle_height / fig_height_px) * ax_height
+        
+        # Width of the triangle in data coordinates 
+        ax_width = x_max - x_min
+        triangle_base_half_data = (self.triangle_base / 2 / fig_width_px) * ax_width
+        
+        if marker_type == 'start':
+            marker = self.start_marker
+            handle = self.start_marker_handle
+        else:  # end marker
+            marker = self.end_marker
+            handle = self.end_marker_handle
+            
+        # Only proceed if the marker is visible
+        if not marker.get_visible():
+            handle.set_visible(False)
+            return
+            
+        # Get marker position
+        marker_x = marker.get_xdata()[0]
+        
+        # Create triangle coordinates (isosceles triangle pointing up)
+        # Bottom left, bottom right, top (center)
+        triangle_coords = np.array([
+            [marker_x - triangle_base_half_data, y_min],  # Bottom left 
+            [marker_x + triangle_base_half_data, y_min],  # Bottom right
+            [marker_x, y_min + triangle_height_data]      # Top center
+        ])
+        
+        # Update the triangle
+        handle.set_xy(triangle_coords)
+        handle.set_visible(True)
+    
     def clear_markers(self):
-        """Hide both markers"""
+        """Hide both markers and their handles"""
         self.start_marker.set_visible(False)
         self.end_marker.set_visible(False)
+        
+        # Hide the triangle handles
+        if self.start_marker_handle:
+            self.start_marker_handle.set_visible(False)
+        if self.end_marker_handle:
+            self.end_marker_handle.set_visible(False)
+            
         self.canvas.draw()
     
     def update_plot(self, time, data):
@@ -483,18 +625,35 @@ class RcyView(QMainWindow):
         # Update marker visibility based on current view
         x_min, x_max = self.ax.get_xlim()
         
+        start_visible_changed = False
+        end_visible_changed = False
+        
         if self.start_marker.get_visible():
             start_x = self.start_marker.get_xdata()[0]
             # If start marker is outside current view, hide it
             if start_x < x_min or start_x > x_max:
                 self.start_marker.set_visible(False)
+                if self.start_marker_handle:
+                    self.start_marker_handle.set_visible(False)
+                start_visible_changed = True
                 
         if self.end_marker.get_visible():
             end_x = self.end_marker.get_xdata()[0]
             # If end marker is outside current view, hide it
             if end_x < x_min or end_x > x_max:
                 self.end_marker.set_visible(False)
+                if self.end_marker_handle:
+                    self.end_marker_handle.set_visible(False)
+                end_visible_changed = True
         
+        # Update the triangle handles positions if they're visible
+        # and only if we're not changing their visibility
+        if self.start_marker.get_visible() and self.start_marker_handle and not start_visible_changed:
+            self._update_marker_handle('start')
+            
+        if self.end_marker.get_visible() and self.end_marker_handle and not end_visible_changed:
+            self._update_marker_handle('end')
+            
         self.canvas.draw()
 
     def update_scroll_bar(self, visible_time, total_time):
