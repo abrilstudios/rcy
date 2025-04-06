@@ -1,0 +1,67 @@
+{
+  "ui": {
+    "windowTitle": "RCY",
+    "applicationName": "RCY",
+    "organizationName": "Abril Audio Labs",
+    "organizationDomain": "abrilaudio.com"
+  },
+  "menus": {
+    "file": "File",
+    "help": "Help",
+    "open": "Open",
+    "export": "Export",
+    "saveAs": "Save As",
+    "keyboardShortcuts": "Keyboard Shortcuts",
+    "about": "About"
+  },
+  "buttons": {
+    "zoomIn": "Zoom In",
+    "zoomOut": "Zoom Out",
+    "cut": "Cut Selection",
+    "splitBars": "Split by Bars",
+    "splitTransients": "Split by Transients",
+    "close": "Close"
+  },
+  "labels": {
+    "numBars": "Number of bars:",
+    "tempo": "Tempo:",
+    "onsetThreshold": "Onset Threshold:",
+    "barResolutions": ["4th notes", "8th notes", "16th notes"]
+  },
+  "dialogs": {
+    "exportDirectoryTitle": "Select Export Directory",
+    "openFileTitle": "Open audio file",
+    "audioFileFilter": "Audio Files (*.wav *.mp3 *.ogg *.flac *.aif *.aiff)",
+    "errorTitle": "Error",
+    "errorLoadingFile": "Failed to load audio file.",
+    "cannotCutTitle": "Cannot Cut",
+    "cannotCutMessage": "Both start and end markers must be set to cut the audio.\n\nUse Shift+Click to set the start marker and Ctrl+Click to set the end marker.",
+    "confirmCutTitle": "Confirm Cut",
+    "confirmCutMessage": "Are you sure you want to trim the audio to the selected region?\n\nThis will remove all audio outside the markers and reset all slices.",
+    "shortcutsTitle": "Keyboard Shortcuts",
+    "aboutTitle": "About RCY"
+  },
+  "shortcuts": {
+    "markersSection": "Markers",
+    "playbackSection": "Playback",
+    "segmentsSection": "Segments",
+    "fileOperationsSection": "File Operations",
+    "setStartMarker": "Set start marker",
+    "setEndMarker": "Set end marker",
+    "clearMarkers": "Clear both markers",
+    "repositionMarker": "Reposition marker",
+    "playSegment": "Play segment at click position",
+    "addSegment": "Add segment at click position",
+    "removeSegment": "Remove segment nearest to click",
+    "openFile": "Open audio file",
+    "exportSegments": "Export segments and SFZ file"
+  },
+  "about": {
+    "title": "RCY",
+    "description": "An audio slicing and SFZ export tool for sample-based music production.",
+    "details": "RCY lets you load breakbeat loops, slice them automatically or manually, and export them as SFZ files for use in samplers like TAL-Sampler.",
+    "repository": "GitHub Repository",
+    "repositoryUrl": "https://github.com/tnn1t1s/rcy",
+    "design": "Designed with a color palette inspired by New Order's Movement, brutalist design, and hauntological software."
+  }
+}
