@@ -2,22 +2,22 @@ import numpy as np
 import soundfile as sf
 import sounddevice as sd
 import librosa
+import os
+import pathlib
 
 class WavAudioProcessor:
     def __init__(self,
                  duration = 2.0,
                  sample_rate=44100):
-        self.filename = None
-        self.total_time = duration
-        self.sample_rate = sample_rate
-        self.time = np.linspace(0,
-                                self.total_time,
-                                int(self.total_time * self.sample_rate))
-        self.data = np.random.normal(0,
-                                     0.1,
-                                     int(self.total_time * self.sample_rate))
-        #self.segments = [0, len(self.data) - 1]
         self.segments = []
+        
+        # Get the path to the Amen break sample
+        current_file = pathlib.Path(__file__)
+        project_root = current_file.parent.parent.parent
+        default_audio = os.path.join(project_root, "audio", "amen.wav")
+        
+        # Load the Amen break by default
+        self.set_filename(default_audio)
 
     def set_filename(self, filename: str):
         self.filename = filename
