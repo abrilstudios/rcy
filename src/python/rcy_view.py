@@ -249,9 +249,10 @@ class RcyView(QMainWindow):
             return False
         
         marker_x = marker.get_xdata()[0]  # Vertical lines have the same x for all points
-        # Define "near" as within 2% of the view width
+        # Define "near" as within 5% of the view width for easier grabbing
+        # This creates a wider hit area without changing the visual width
         view_width = self.ax.get_xlim()[1] - self.ax.get_xlim()[0]
-        threshold = view_width * 0.02
+        threshold = view_width * 0.05  # Increased from 2% to 5% for better usability
         
         return abs(x - marker_x) < threshold
 
