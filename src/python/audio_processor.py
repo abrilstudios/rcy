@@ -78,17 +78,17 @@ class WavAudioProcessor:
         end_idx = int(end_time * self.sample_rate)
         return self.time[start_idx:end_idx], self.data[start_idx:end_idx]
 
-    def get_tempo(self, num_bars: int,
-                        beats_per_bar: int = 4) -> float:
-        total_beats = num_bars * beats_per_bar
+    def get_tempo(self, num_measures: int,
+                        beats_per_measure: int = 4) -> float:
+        total_beats = num_measures * beats_per_measure
         total_time_minutes = self.total_time / 60
         tempo = total_beats / total_time_minutes
         return tempo
 
-    def split_by_bars(self, num_bars, bar_resolution):
-        samples_per_bar = len(self.data) // num_bars
-        samples_per_slice = samples_per_bar // bar_resolution
-        self.segments = [i * samples_per_slice for i in range(1, num_bars * bar_resolution)]
+    def split_by_measures(self, num_measures, measure_resolution):
+        samples_per_measure = len(self.data) // num_measures
+        samples_per_slice = samples_per_measure // measure_resolution
+        self.segments = [i * samples_per_slice for i in range(1, num_measures * measure_resolution)]
         return self.segments
 
     def split_by_transients(self, threshold=0.2):

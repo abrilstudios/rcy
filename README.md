@@ -54,7 +54,7 @@ Read our [Breakbeat Science](docs/breakbeat-science.md) guide to understand the 
    - Load custom audio with File > Open
    - Set slice points automatically with "Split by Transients" or manually with Alt+Click
    - Adjust the Onset Threshold slider to control automatic transient detection sensitivity
-   - Use the bar-based slicing for rhythmically perfect divisions
+   - Use the measure-based slicing for rhythmically perfect divisions
 
 3. **Selection and Trimming**:
    - Set a start marker with Shift+Click (blue)

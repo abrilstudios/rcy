@@ -25,12 +25,12 @@ class MIDIFileWithMetadata(MIDIFile):
 
 class ExportUtils:
     @staticmethod
-    def export_segments(model, tempo, num_bars, directory):
+    def export_segments(model, tempo, num_measures, directory):
         segments = model.get_segments()
         audio_data = model.data
         sample_rate = model.sample_rate
         total_duration = len(audio_data) / sample_rate
-        tempo = model.get_tempo(num_bars)
+        tempo = model.get_tempo(num_measures)
 
         print(f"Debug: Total duration: {total_duration} seconds")
         print(f"Debug: Tempo: {tempo} BPM")

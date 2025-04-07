@@ -10,15 +10,15 @@ class RcyController:
     def __init__(self, model):
         self.model = model
         self.visible_time = 10  # Initial visible time window
-        self.num_bars = 1
-        self.bar_resolution = 4
+        self.num_measures = 1
+        self.measure_resolution = 4
         self.tempo = 120
         self.threshold = 0.20
         self.view = None
 
     def set_view(self, view):
         self.view = view
-        self.view.bars_changed.connect(self.on_bars_changed)
+        self.view.measures_changed.connect(self.on_measures_changed)
         self.view.threshold_changed.connect(self.on_threshold_changed)
         self.view.remove_segment.connect(self.remove_segment)
         self.view.add_segment.connect(self.add_segment)
@@ -38,12 +38,12 @@ class RcyController:
     def export_segments(self, directory):
         return ExportUtils.export_segments(self.model,
                                            self.tempo,
-                                           self.num_bars,
+                                           self.num_measures,
                                            directory)
 
     def load_audio_file(self, filename):
         self.model.set_filename(filename)
-        self.tempo = self.model.get_tempo(self.num_bars)
+        self.tempo = self.model.get_tempo(self.num_measures)
         self.update_view()
         self.view.update_scroll_bar(self.visible_time, self.model.total_time)
         self.view.update_tempo(self.tempo)
@@ -61,14 +61,14 @@ class RcyController:
         try:
             self.model.load_preset(preset_id)
             
-            # Update number of bars if specified in the preset
+            # Update number of measures if specified in the preset
             if 'measures' in preset_info:
-                self.num_bars = preset_info['measures']
-                if hasattr(self.view, 'bars_input'):
-                    self.view.bars_input.setText(str(self.num_bars))
+                self.num_measures = preset_info['measures']
+                if hasattr(self.view, 'measures_input'):
+                    self.view.measures_input.setText(str(self.num_measures))
             
             # Update tempo
-            self.tempo = self.model.get_tempo(self.num_bars)
+            self.tempo = self.model.get_tempo(self.num_measures)
             
             # Update view
             self.update_view()
@@ -108,18 +108,18 @@ class RcyController:
     def get_tempo(self):
         return self.tempo
 
-    def on_bars_changed(self, num_bars):
-        self.num_bars = num_bars
-        self.tempo = self.model.get_tempo(self.num_bars)
+    def on_measures_changed(self, num_measures):
+        self.num_measures = num_measures
+        self.tempo = self.model.get_tempo(self.num_measures)
         self.view.update_tempo(self.tempo)
 
-    def set_bar_resolution(self, resolution):
-        self.bar_resolution = resolution
-        self.split_audio(method='bars', bar_resolution=resolution)
+    def set_measure_resolution(self, resolution):
+        self.measure_resolution = resolution
+        self.split_audio(method='measures', measure_resolution=resolution)
 
-    def split_audio(self, method='bars', bar_resolution=4):
-        if method == 'bars':
-            slices = self.model.split_by_bars(self.num_bars, bar_resolution)
+    def split_audio(self, method='measures', measure_resolution=4):
+        if method == 'measures':
+            slices = self.model.split_by_measures(self.num_measures, measure_resolution)
         elif method == 'transients':
             slices = self.model.split_by_transients(threshold=self.threshold)
         else:

@@ -29,7 +29,7 @@ def main():
     controller.update_view()
     
     # Ensure tempo is calculated and displayed
-    controller.tempo = controller.model.get_tempo(controller.num_bars)
+    controller.tempo = controller.model.get_tempo(controller.num_measures)
     view.update_tempo(controller.tempo)
     
     view.show()
