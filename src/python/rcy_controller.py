@@ -4,6 +4,7 @@ from audio_processor import WavAudioProcessor
 from midiutil import MIDIFile
 from math import ceil
 from export_utils import ExportUtils
+from config_manager import config
 
 class RcyController:
     def __init__(self, model):
@@ -47,6 +48,41 @@ class RcyController:
         self.view.update_scroll_bar(self.visible_time, self.model.total_time)
         self.view.update_tempo(self.tempo)
         return True
+        
+    def load_preset(self, preset_id):
+        """Load a preset by its ID"""
+        # Get preset info
+        preset_info = config.get_preset_info(preset_id)
+        if not preset_info:
+            print(f"ERROR: Preset '{preset_id}' not found")
+            return False
+            
+        # Load the preset in the model
+        try:
+            self.model.load_preset(preset_id)
+            
+            # Update number of bars if specified in the preset
+            if 'measures' in preset_info:
+                self.num_bars = preset_info['measures']
+                if hasattr(self.view, 'bars_input'):
+                    self.view.bars_input.setText(str(self.num_bars))
+            
+            # Update tempo
+            self.tempo = self.model.get_tempo(self.num_bars)
+            
+            # Update view
+            self.update_view()
+            self.view.update_scroll_bar(self.visible_time, self.model.total_time)
+            self.view.update_tempo(self.tempo)
+            
+            return True
+        except Exception as e:
+            print(f"ERROR loading preset: {e}")
+            return False
+    
+    def get_available_presets(self):
+        """Get a list of available presets"""
+        return config.get_preset_list()
 
     def update_view(self):
         start_time = self.view.get_scroll_position() * (self.model.total_time - self.visible_time) / 100

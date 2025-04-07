@@ -1,0 +1,20 @@
+{
+  "amen_classic": {
+    "filepath": "presets/amen_classic/amen.wav",
+    "name": "Winstons Amen (No Processing)",
+    "artist": "The Winstons",
+    "measures": 4
+  },
+  "think_break": {
+    "filepath": "presets/think_break/think.wav",
+    "name": "Think (About It)",
+    "artist": "Lyn Collins",
+    "measures": 4
+  },
+  "apache_break": {
+    "filepath": "presets/apache_break/apache.wav",
+    "name": "Apache",
+    "artist": "Incredible Bongo Band",
+    "measures": 4
+  }
+}

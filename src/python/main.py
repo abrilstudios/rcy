@@ -1,5 +1,5 @@
 import sys
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QMessageBox
 from PyQt6.QtGui import QIcon
 from audio_processor import WavAudioProcessor
 from rcy_controller import RcyController
@@ -14,11 +14,16 @@ def main():
     QApplication.setOrganizationDomain(config.get_string("ui", "organizationDomain"))
     app = QApplication([''])
 
-    # Create model, view, and controller
-    model = WavAudioProcessor()
-    controller = RcyController(model)
-    view = RcyView(controller)
-    controller.set_view(view) 
+    try:
+        # Create model with default preset 'amen_classic'
+        model = WavAudioProcessor(preset_id='amen_classic')
+        controller = RcyController(model)
+        view = RcyView(controller)
+        controller.set_view(view)
+    except Exception as e:
+        app = QApplication(sys.argv)
+        QMessageBox.critical(None, "Error", f"Failed to initialize application: {e}")
+        sys.exit(1)
     
     # Initial update
     controller.update_view()
