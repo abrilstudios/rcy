@@ -353,29 +353,34 @@ class RcyView(QMainWindow):
             self.dragging_marker = 'end'
             return
             
-        # Handle other clicks with modifiers
-        # On macOS, Command (Meta) key is sometimes triggered when Control is pressed
-        # Check for end marker setting first with more options
-        if (modifiers & Qt.KeyboardModifier.ControlModifier) or (modifiers & Qt.KeyboardModifier.MetaModifier):
-            # Check if it's actually the "Control" key using the event.modifiers string representation
-            print(f"Raw modifiers string: {str(modifiers)}")
-            # For macOS, we'll treat both Control and Command as candidates for end marker
-            # Add a special key specifically for end marker: 'e'
+        # Handle other clicks with modifiers - updated to fix conflicts
+        
+        # Check for Alt+Cmd (Meta) combination for removing segments
+        if (modifiers & Qt.KeyboardModifier.AltModifier) and (modifiers & Qt.KeyboardModifier.MetaModifier):
+            print(f"Alt+Cmd combination detected - removing segment at {event.xdata}")
+            self.remove_segment.emit(event.xdata)
+            return
+        
+        # Set end marker with Ctrl+Click (not Meta/Command)
+        if modifiers & Qt.KeyboardModifier.ControlModifier:
+            print(f"Control detected - setting end marker at {event.xdata}")
             self.set_end_marker(event.xdata)
-            print(f"Set end marker at {event.xdata}")
             return
             
-        # Other modifiers
+        # Set start marker with Shift+Click
         if modifiers & Qt.KeyboardModifier.ShiftModifier:
-            # Set start marker with Shift+Click
+            print(f"Shift detected - setting start marker at {event.xdata}")
             self.set_start_marker(event.xdata)
-            print(f"Set start marker at {event.xdata}")
-        elif modifiers & Qt.KeyboardModifier.AltModifier:
-            # Original Alt functionality
+            return
+            
+        # Add segment with Alt+Click
+        if modifiers & Qt.KeyboardModifier.AltModifier:
+            print(f"Alt detected - adding segment at {event.xdata}")
             self.add_segment.emit(event.xdata)
-        else:
-            # No modifiers
-            self.play_segment.emit(event.xdata)
+            return
+            
+        # No modifiers - play segment at click position
+        self.play_segment.emit(event.xdata)
             
     def is_near_marker(self, x, y, marker, marker_handle):
         """Check if coordinates are near the marker or its handle"""
@@ -989,7 +994,7 @@ class RcyView(QMainWindow):
         <h3>{config.get_string("shortcuts", "segmentsSection")}</h3>
         <ul>
             <li><b>Alt+Click</b>: {config.get_string("shortcuts", "addSegment")}</li>
-            <li><b>Meta+Click</b> (Command on macOS): {config.get_string("shortcuts", "removeSegment")}</li>
+            <li><b>Alt+Cmd+Click</b> (Alt+Meta on macOS): {config.get_string("shortcuts", "removeSegment")}</li>
         </ul>
         
         <h3>{config.get_string("shortcuts", "fileOperationsSection")}</h3>
