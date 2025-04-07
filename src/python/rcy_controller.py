@@ -135,9 +135,20 @@ class RcyController:
         self.update_view()
 
     def play_segment(self, click_time):
+        """Play or stop a segment based on click location"""
+        # If already playing, just stop regardless of click position
+        if self.model.is_playing:
+            self.stop_playback()
+            return
+            
+        # If not playing, determine segment boundaries and play
         start, end = self.model.get_segment_boundaries(click_time)
         if start is not None and end is not None:
             self.model.play_segment(start, end)
+            
+    def stop_playback(self):
+        """Stop any currently playing audio"""
+        self.model.stop_playback()
 
     def get_segment_boundaries(self, click_time):
         if not hasattr(self, 'current_slices'):
@@ -161,7 +172,13 @@ class RcyController:
         print(f"End marker position updated: {position}")
     
     def play_selected_region(self):
-        """Play the audio between start and end markers"""
+        """Play or stop the audio between start and end markers"""
+        # If already playing, stop playback
+        if self.model.is_playing:
+            self.stop_playback()
+            return
+            
+        # If not playing, play the selected region
         if self.start_marker_pos is not None and self.end_marker_pos is not None:
             self.model.play_segment(self.start_marker_pos, self.end_marker_pos)
     

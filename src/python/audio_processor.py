@@ -5,6 +5,7 @@ import librosa
 import os
 import pathlib
 import sys
+import threading
 from config_manager import config
 
 class WavAudioProcessor:
@@ -15,6 +16,8 @@ class WavAudioProcessor:
         self.segments = []
         self.preset_id = preset_id
         self.preset_info = None
+        self.is_playing = False
+        self.playback_thread = None
         
         # Try to load the specified preset
         try:
@@ -139,11 +142,38 @@ class WavAudioProcessor:
             return 0, len(self.data) / self.sample_rate
 
     def play_segment(self, start_time, end_time):
+        """Play a segment of audio in a non-blocking way, with toggle support"""
+        # If already playing, stop the current playback
+        if self.is_playing:
+            self.stop_playback()
+            return False  # Indicate that we stopped playback instead of starting it
+        
+        # Extract the segment data
         start_sample = int(start_time * self.sample_rate)
         end_sample = int(end_time * self.sample_rate)
         segment = self.data[start_sample:end_sample]
-        sd.play(segment, self.sample_rate)
-        sd.wait()
+        
+        # Define the playback function for threading
+        def play_audio():
+            try:
+                self.is_playing = True
+                sd.play(segment, self.sample_rate)
+                sd.wait()  # This blocks until playback is complete
+            finally:
+                self.is_playing = False
+        
+        # Start playback in a separate thread
+        self.playback_thread = threading.Thread(target=play_audio)
+        self.playback_thread.daemon = True  # Thread will exit when main program exits
+        self.playback_thread.start()
+        return True  # Indicate that we started playback
+        
+    def stop_playback(self):
+        """Stop any currently playing audio"""
+        if self.is_playing:
+            sd.stop()
+            self.is_playing = False
+            # The thread will end naturally when sd.wait() is interrupted
 
     def get_sample_at_time(self, time):
         return int(time * self.sample_rate)
