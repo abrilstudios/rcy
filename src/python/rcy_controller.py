@@ -114,12 +114,14 @@ class RcyController:
         self.view.update_tempo(self.tempo)
 
     def set_measure_resolution(self, resolution):
+        """Set the measure resolution without automatically triggering a split"""
         self.measure_resolution = resolution
-        self.split_audio(method='measures', measure_resolution=resolution)
 
-    def split_audio(self, method='measures', measure_resolution=4):
+    def split_audio(self, method='measures', measure_resolution=None):
         if method == 'measures':
-            slices = self.model.split_by_measures(self.num_measures, measure_resolution)
+            # Use the provided resolution or fall back to the stored value
+            resolution = measure_resolution if measure_resolution is not None else self.measure_resolution
+            slices = self.model.split_by_measures(self.num_measures, resolution)
         elif method == 'transients':
             slices = self.model.split_by_transients(threshold=self.threshold)
         else:
