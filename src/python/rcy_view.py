@@ -36,6 +36,20 @@ class RcyView(QMainWindow):
         self.triangle_base = config.get_ui_setting("markerHandles", "width", 16)
         self.triangle_height = config.get_ui_setting("markerHandles", "height", 10)
         self.triangle_offset_y = config.get_ui_setting("markerHandles", "offsetY", 0)
+        
+        # Install event filter to catch key events at application level
+        app = QApplication.instance()
+        if app:
+            app.installEventFilter(self)
+            
+    def eventFilter(self, obj, event):
+        """Application-wide event filter to catch key events"""
+        if event.type() == event.Type.KeyPress:
+            if event.key() == Qt.Key.Key_Space:
+                print("Spacebar detected via event filter! Toggling playback...")
+                self.toggle_playback()
+                return True
+        return super().eventFilter(obj, event)
 
     def create_menu_bar(self):
         menubar = self.menuBar()
@@ -92,6 +106,13 @@ class RcyView(QMainWindow):
     def init_ui(self):
         self.setWindowTitle(config.get_string("ui", "windowTitle"))
         self.setGeometry(100, 100, 800, 600)
+        
+        # Enable strong focus for keyboard events
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        
+        # Ensure window is actively focused
+        self.activateWindow()
+        self.raise_()
 
         # Set application-wide font
         app = QApplication.instance()
@@ -179,6 +200,11 @@ class RcyView(QMainWindow):
         self.figure = Figure(figsize=(5, 4), dpi=100)
         self.figure.patch.set_facecolor(config.get_qt_color('background'))
         self.canvas = FigureCanvas(self.figure)
+        # Enable focus on the canvas for keyboard events
+        self.canvas.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        # Make the canvas focus when clicked
+        self.canvas.setFocus()
+        
         self.ax = self.figure.add_subplot(111)
         self.ax.set_facecolor(config.get_qt_color('background'))
         self.line, = self.ax.plot([], [], color=config.get_qt_color('waveform'), linewidth=1)
@@ -462,8 +488,14 @@ class RcyView(QMainWindow):
         """Handle Qt key press events for the entire window"""
         print(f"Qt window key press - Key: {event.key()}, Modifiers: {event.modifiers()}")
         
+        # Check for spacebar (Qt.Key_Space is 32)
+        if event.key() == Qt.Key.Key_Space:
+            print("Spacebar press detected! Toggling playback...")
+            self.toggle_playback()
+            return
+        
         # Check for 'r' key (Qt.Key_R is 82)
-        if event.key() == Qt.Key.Key_R:
+        elif event.key() == Qt.Key.Key_R:
             print("'r' key detected in window handler")
             
             # Check for Ctrl modifier (ControlModifier is 67108864 in Qt)
@@ -474,6 +506,32 @@ class RcyView(QMainWindow):
                 
         # Default processing
         super().keyPressEvent(event)
+        
+    def toggle_playback(self):
+        """Toggle playback between start and stop"""
+        if self.controller.model.is_playing:
+            # If playing, stop playback
+            print("Toggle: Stopping playback")
+            self.controller.stop_playback()
+        else:
+            # If not playing, find the most appropriate segment to play
+            
+            # First, check for markers
+            start_pos, end_pos = self.get_marker_positions()
+            if start_pos is not None and end_pos is not None:
+                # Use markers if both are set
+                print(f"Toggle: Playing from markers {start_pos} to {end_pos}")
+                self.controller.model.play_segment(start_pos, end_pos)
+                return
+                
+            # If no markers, find the segment that would be clicked
+            # We'll use the center of the current view as the "virtual click" position
+            x_min, x_max = self.ax.get_xlim()
+            center_pos = (x_min + x_max) / 2
+            
+            # Emulate a click at the center of the current view
+            print(f"Toggle: Emulating click at center of view: {center_pos}")
+            self.controller.play_segment(center_pos)
     
     def on_key_press(self, event):
         """Handle matplotlib key press events"""
@@ -481,6 +539,12 @@ class RcyView(QMainWindow):
         print(f"Matplotlib key pressed: {event.key}")
         print(f"Matplotlib key modifiers: {QApplication.keyboardModifiers()}")
         
+        # Handle spacebar for play/stop toggle
+        if event.key == ' ' or event.key == 'space':
+            print("Spacebar detected in matplotlib handler! Toggling playback...")
+            self.toggle_playback()
+            return
+            
         # Add a simple 'r' key handler as an immediate solution
         if event.key == 'r':
             self.clear_markers()
@@ -748,6 +812,8 @@ class RcyView(QMainWindow):
         <h3>{config.get_string("shortcuts", "playbackSection")}</h3>
         <ul>
             <li><b>Click</b> on waveform: {config.get_string("shortcuts", "playSegment")}</li>
+            <li><b>Spacebar</b>: Toggle playback (play/stop)</li>
+            <li><b>Click</b> again during playback: Stop playback</li>
         </ul>
         
         <h3>{config.get_string("shortcuts", "segmentsSection")}</h3>
