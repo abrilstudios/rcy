@@ -1,7 +1,11 @@
 {
   "markerHandles": {
+    "type": "rightTriangle",
     "width": 30,
-    "height": 20,
-    "offsetY": 5
+    "height": 18,
+    "offsetY": 4
+  },
+  "markerSnapping": {
+    "snapThreshold": 0.05
   }
 }
