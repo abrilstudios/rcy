@@ -1,6 +1,7 @@
 {
   "palette": {
     "background": "#cbe9f3",
+    "textColor": "#0a2239",
     "waveform": "#0a2239",
     "startMarker": "#007fa3",
     "endMarker": "#007fa3",
