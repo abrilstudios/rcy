@@ -62,13 +62,25 @@ class RcyController:
             self.model.load_preset(preset_id)
             
             # Update number of measures if specified in the preset
-            if 'measures' in preset_info:
-                self.num_measures = preset_info['measures']
+            measures = preset_info.get('measures', 1)
+            if measures != self.num_measures:
+                # Only update if different to avoid unnecessary recalculations
+                self.num_measures = measures
+                print(f"Preset '{preset_id}' specifies {self.num_measures} measures")
+                
+                # Update the UI
                 if hasattr(self.view, 'measures_input'):
+                    # Temporarily block signals to avoid recursive updates
+                    old_state = self.view.measures_input.blockSignals(True)
                     self.view.measures_input.setText(str(self.num_measures))
+                    self.view.measures_input.blockSignals(old_state)
+                    print(f"Updated measures input to {self.num_measures}")
+            else:
+                print(f"Preset '{preset_id}' has same measure count ({measures}), no update needed")
             
-            # Update tempo
+            # Update tempo - This will now be calculated with the correct measure count
             self.tempo = self.model.get_tempo(self.num_measures)
+            print(f"Tempo: {self.tempo:.2f} BPM based on {self.num_measures} measures")
             
             # Update view
             self.update_view()
