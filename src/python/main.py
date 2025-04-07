@@ -27,6 +27,11 @@ def main():
     
     # Initial update
     controller.update_view()
+    
+    # Ensure tempo is calculated and displayed
+    controller.tempo = controller.model.get_tempo(controller.num_bars)
+    view.update_tempo(controller.tempo)
+    
     view.show()
     sys.exit(app.exec())
 
