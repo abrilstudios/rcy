@@ -18,15 +18,15 @@
     "zoomIn": "Zoom In",
     "zoomOut": "Zoom Out",
     "cut": "Cut Selection",
-    "splitBars": "Split by Bars",
+    "splitMeasures": "Split by Measures",
     "splitTransients": "Split by Transients",
     "close": "Close"
   },
   "labels": {
-    "numBars": "Number of bars:",
+    "numMeasures": "Number of measures:",
     "tempo": "Tempo:",
     "onsetThreshold": "Onset Threshold:",
-    "barResolutions": ["4th notes", "8th notes", "16th notes"]
+    "measureResolutions": ["4th notes", "8th notes", "16th notes"]
   },
   "dialogs": {
     "exportDirectoryTitle": "Select Export Directory",

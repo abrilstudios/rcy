@@ -8,10 +8,10 @@ RCY encodes these workflows natively — not as nostalgic artifacts, but as **li
 
 ---
 
-## 1. ⏱️ Split by Grid (Quantized Bars/Beats/16ths)
+## 1. ⏱️ Split by Grid (Quantized Measures/Beats/16ths)
 
 ### 💡 Idea
-Chop the loop by **time**, not transients. Use equal divisions (e.g. 16th notes across 1–4 bars).
+Chop the loop by **time**, not transients. Use equal divisions (e.g. 16th notes across 1–4 measures).
 
 ### 🧠 Why It Mattered
 - It made rhythmic displacement *easy* in samplers (S950, S1000, etc.)
@@ -23,8 +23,8 @@ Chop the loop by **time**, not transients. Use equal divisions (e.g. 16th notes 
 - **The Chemical Brothers**, **Fatboy Slim** — big beat architects who weaponized repetition and groove
 
 ### 🛠️ In RCY
-- Use "Split by Bars" and set subdivision to 16th, 8th, or 4th notes
-- No transient detection required — just a bar count and tempo
+- Use "Split by Measures" and set subdivision to 16th, 8th, or 4th notes
+- No transient detection required — just a measure count and tempo
 
 ---
 
@@ -87,7 +87,7 @@ RCY revives these three patterns not as nostalgia, but as:
 
 ## 🛠 Suggested RCY Workflow
 
-- Use **Split by Bars** when hunting for energy and surprise
+- Use **Split by Measures** when hunting for energy and surprise
 - Use **Manual Slicing** when chasing vibe
 - Use **Presets** when honoring lineage or borrowing taste
 

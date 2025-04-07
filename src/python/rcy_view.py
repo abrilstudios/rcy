@@ -9,7 +9,7 @@ from matplotlib.patches import Polygon
 import numpy as np
 
 class RcyView(QMainWindow):
-    bars_changed = pyqtSignal(int)
+    measures_changed = pyqtSignal(int)
     threshold_changed = pyqtSignal(float)
     add_segment = pyqtSignal(float)
     remove_segment = pyqtSignal(float)
@@ -132,13 +132,13 @@ class RcyView(QMainWindow):
         info_layout = QHBoxLayout()
         slice_layout = QHBoxLayout()
 
-        ## Number of Bars Input
-        self.bars_label = QLabel(config.get_string("labels", "numBars"))
-        self.bars_input = QLineEdit("1")
-        self.bars_input.setValidator(QIntValidator(1, 1000))
-        self.bars_input.editingFinished.connect(self.on_bars_changed)
-        info_layout.addWidget(self.bars_label)
-        info_layout.addWidget(self.bars_input)
+        ## Number of Measures Input
+        self.measures_label = QLabel(config.get_string("labels", "numMeasures"))
+        self.measures_input = QLineEdit("1")
+        self.measures_input.setValidator(QIntValidator(1, 1000))
+        self.measures_input.editingFinished.connect(self.on_measures_changed)
+        info_layout.addWidget(self.measures_label)
+        info_layout.addWidget(self.measures_input)
 
         ## Tempo Display
         self.tempo_label = QLabel(config.get_string("labels", "tempo"))
@@ -153,21 +153,21 @@ class RcyView(QMainWindow):
         #info_layout.addWidget(self.load_button)
 
         ## add split buttons
-        self.split_bars_button = QPushButton(config.get_string("buttons", "splitBars"))
-        self.split_bars_button.clicked.connect(lambda: self.controller.split_audio('bars'))
+        self.split_measures_button = QPushButton(config.get_string("buttons", "splitMeasures"))
+        self.split_measures_button.clicked.connect(lambda: self.controller.split_audio('measures'))
 
         self.split_transients_button = QPushButton(config.get_string("buttons", "splitTransients"))
         self.split_transients_button.clicked.connect(lambda: self.controller.split_audio('transients'))
 
-        # Add bar resolution dropdown
-        self.bar_resolution_combo = QComboBox()
-        bar_resolutions = config.get_string("labels", "barResolutions")
-        self.bar_resolution_combo.addItems(bar_resolutions)
-        self.bar_resolution_combo.currentIndexChanged.connect(self.on_bar_resolution_changed)
+        # Add measure resolution dropdown
+        self.measure_resolution_combo = QComboBox()
+        measure_resolutions = config.get_string("labels", "measureResolutions")
+        self.measure_resolution_combo.addItems(measure_resolutions)
+        self.measure_resolution_combo.currentIndexChanged.connect(self.on_measure_resolution_changed)
         # add to layout
-        slice_layout.addWidget(self.split_bars_button)
+        slice_layout.addWidget(self.split_measures_button)
         slice_layout.addWidget(self.split_transients_button)
-        slice_layout.addWidget(self.bar_resolution_combo)
+        slice_layout.addWidget(self.measure_resolution_combo)
 
         # add to layout
         main_layout.addLayout(info_layout)
@@ -391,17 +391,17 @@ class RcyView(QMainWindow):
         self.controller.current_slices = slice_times
         print(f"Debugging: Updated current_slices in controller: {self.controller.current_slices}")
 
-    def on_bars_changed(self):
-        text = self.bars_input.text()
-        validator = self.bars_input.validator()
+    def on_measures_changed(self):
+        text = self.measures_input.text()
+        validator = self.measures_input.validator()
         state, _, _ = validator.validate(text, 0)
 
         if state == QValidator.State.Acceptable:
-            num_bars = int(text)
-            self.bars_changed.emit(num_bars)
+            num_measures = int(text)
+            self.measures_changed.emit(num_measures)
         else:
-            self.bars_input.setText(str(getattr(self.controller,
-                                                'num_bars', 1)))
+            self.measures_input.setText(str(getattr(self.controller,
+                                                'num_measures', 1)))
 
     def update_tempo(self, tempo):
         self.tempo_display.setText(f"{tempo:.2f} BPM")
@@ -769,9 +769,9 @@ class RcyView(QMainWindow):
                                  config.get_string("dialogs", "errorTitle"),
                                  config.get_string("dialogs", "errorLoadingFile"))
 
-    def on_bar_resolution_changed(self, index):
+    def on_measure_resolution_changed(self, index):
         resolutions = [4, 8, 16]
-        self.controller.set_bar_resolution(resolutions[index])
+        self.controller.set_measure_resolution(resolutions[index])
         
     def show_keyboard_shortcuts(self):
         """Show a dialog with keyboard shortcuts information"""
