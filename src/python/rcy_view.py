@@ -37,6 +37,10 @@ class RcyView(QMainWindow):
         self.triangle_height = config.get_ui_setting("markerHandles", "height", 10)
         self.triangle_offset_y = config.get_ui_setting("markerHandles", "offsetY", 0)
         
+        # Get marker snapping threshold from UI config
+        self.snap_threshold = config.get_ui_setting("markerSnapping", "snapThreshold", 0.025)
+        print(f"Marker snap threshold: {self.snap_threshold}s")
+        
         # Install event filter to catch key events at application level
         app = QApplication.instance()
         if app:
@@ -556,6 +560,11 @@ class RcyView(QMainWindow):
         # Ensure start marker is within the audio bounds
         # For direct setting, we don't clamp to current view limits
         
+        # Snap to start of waveform if within threshold
+        if x_pos < self.snap_threshold:
+            print(f"Snapped start marker to 0.0s (was at {x_pos:.3f}s)")
+            x_pos = 0.0
+        
         # If end marker exists, ensure start marker is before it
         if self.end_marker.get_visible():
             end_x = self.end_marker.get_xdata()[0]
@@ -579,6 +588,14 @@ class RcyView(QMainWindow):
         """Set the position of the end marker"""
         # Ensure end marker is within the audio bounds
         # For direct setting, we don't clamp to current view limits
+        
+        # Get total audio duration for end boundary snapping
+        total_time = self.controller.model.total_time
+        
+        # Snap to end of waveform if within threshold
+        if total_time - x_pos < self.snap_threshold:
+            print(f"Snapped end marker to {total_time:.3f}s (was at {x_pos:.3f}s)")
+            x_pos = total_time
         
         # If start marker exists, ensure end marker is after it
         if self.start_marker.get_visible():
