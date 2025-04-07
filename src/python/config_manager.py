@@ -1,6 +1,7 @@
 import json
 import os
 import pathlib
+import sys
 from PyQt6.QtGui import QColor, QFont
 
 class ConfigManager:
@@ -11,6 +12,7 @@ class ConfigManager:
         self.fonts = {}
         self.strings = {}
         self.ui = {}
+        self.presets = {}
         self.load_config()
     
     def load_config(self):
@@ -20,9 +22,12 @@ class ConfigManager:
             current_file = pathlib.Path(__file__)
             project_root = current_file.parent.parent.parent
             config_dir = os.path.join(project_root, "config")
+            presets_dir = os.path.join(project_root, "presets")
+            
             colors_path = os.path.join(config_dir, "colors.json")
             strings_path = os.path.join(config_dir, "strings.json")
             ui_path = os.path.join(config_dir, "ui.json")
+            presets_path = os.path.join(presets_dir, "presets.json")
             
             # Load colors from JSON file
             if os.path.exists(colors_path):
@@ -52,6 +57,15 @@ class ConfigManager:
             else:
                 print(f"UI config file not found: {ui_path}, using defaults")
                 self._set_ui_defaults()
+                
+            # Load presets from JSON file
+            if os.path.exists(presets_path):
+                with open(presets_path, 'r') as f:
+                    self.presets = json.load(f)
+                print(f"Loaded preset catalog from {presets_path}")
+            else:
+                print(f"ERROR: Presets file not found: {presets_path}")
+                sys.exit(1)  # Exit with error code
         except Exception as e:
             print(f"Error loading config: {e}")
             self._set_color_defaults()
@@ -169,6 +183,18 @@ class ConfigManager:
         if category in self.ui and key in self.ui[category]:
             return self.ui[category][key]
         return default
+        
+    def get_preset_info(self, preset_id):
+        """Get information about a specific preset by its ID"""
+        return self.presets.get(preset_id)
+        
+    def get_preset_list(self):
+        """Get a list of available presets with their names"""
+        preset_list = []
+        for preset_id, preset_data in self.presets.items():
+            name = preset_data.get('name', preset_id)
+            preset_list.append((preset_id, name))
+        return preset_list
 
 # Create a singleton instance
 config = ConfigManager()

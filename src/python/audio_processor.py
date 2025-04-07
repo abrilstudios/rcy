@@ -4,21 +4,55 @@ import sounddevice as sd
 import librosa
 import os
 import pathlib
+import sys
+from config_manager import config
 
 class WavAudioProcessor:
     def __init__(self,
                  duration = 2.0,
-                 sample_rate=44100):
+                 sample_rate=44100,
+                 preset_id='amen_classic'):
         self.segments = []
+        self.preset_id = preset_id
+        self.preset_info = None
         
-        # Get the path to the Amen break sample
+        # Try to load the specified preset
+        try:
+            self.load_preset(preset_id)
+        except Exception as e:
+            print(f"ERROR: Failed to load preset '{preset_id}': {e}")
+            sys.exit(1)
+
+    def load_preset(self, preset_id):
+        """Load an audio preset by its ID"""
+        # Get preset info from config
+        self.preset_info = config.get_preset_info(preset_id)
+        if not self.preset_info:
+            raise ValueError(f"Preset '{preset_id}' not found")
+            
+        # Get the project root to resolve relative paths
         current_file = pathlib.Path(__file__)
         project_root = current_file.parent.parent.parent
-        default_audio = os.path.join(project_root, "audio", "amen.wav")
         
-        # Load the Amen break by default
-        self.set_filename(default_audio)
-
+        # Resolve the filepath
+        filepath = self.preset_info.get('filepath')
+        if not filepath:
+            raise ValueError(f"No filepath defined for preset '{preset_id}'")
+            
+        # Handle relative paths
+        if not os.path.isabs(filepath):
+            filepath = os.path.join(project_root, filepath)
+            
+        # Check if file exists
+        if not os.path.exists(filepath):
+            raise FileNotFoundError(f"Audio file not found: {filepath}")
+            
+        # Load the audio file
+        self.set_filename(filepath)
+        
+        # Return the preset info for convenience
+        return self.preset_info
+        
     def set_filename(self, filename: str):
         self.filename = filename
         with sf.SoundFile(filename) as sound_file:
@@ -26,7 +60,6 @@ class WavAudioProcessor:
             self.total_time = len(sound_file) / self.sample_rate
         self.time = np.linspace(0, self.total_time, int(self.total_time * self.sample_rate))
         self.data = self._generate_data()
-        #self.segments = [0, len(self.data) - 1]
         self.segments = []
 
     def _generate_data(self) -> np.ndarray:

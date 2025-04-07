@@ -49,6 +49,10 @@ class RcyView(QMainWindow):
         open_action.setStatusTip('Open an audio file')
         open_action.triggered.connect(self.load_audio_file)
         file_menu.addAction(open_action)
+        
+        # Open Preset submenu
+        presets_menu = file_menu.addMenu("Open Preset")
+        self.populate_presets_menu(presets_menu)
 
         # Export action
         export_action = QAction(config.get_string("menus", "export"), self)
@@ -669,6 +673,26 @@ class RcyView(QMainWindow):
     def get_scroll_position(self):
         return self.scroll_bar.value()
 
+    def populate_presets_menu(self, menu):
+        """Populate the presets menu with available presets"""
+        # Get available presets from controller
+        presets = self.controller.get_available_presets()
+        
+        # Add each preset to the menu
+        for preset_id, preset_name in presets:
+            action = QAction(preset_name, self)
+            # Create a lambda with default arguments to avoid late binding issues
+            action.triggered.connect(lambda checked=False, preset=preset_id: self.load_preset(preset))
+            menu.addAction(action)
+            
+    def load_preset(self, preset_id):
+        """Load the selected preset"""
+        success = self.controller.load_preset(preset_id)
+        if not success:
+            QMessageBox.critical(self,
+                                config.get_string("dialogs", "errorTitle"),
+                                f"Failed to load preset: {preset_id}")
+    
     def load_audio_file(self):
         filename, _ = QFileDialog.getOpenFileName(self,
             config.get_string("dialogs", "openFileTitle"),
