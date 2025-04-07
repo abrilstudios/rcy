@@ -102,8 +102,8 @@ class RcyView(QMainWindow):
         main_layout = QVBoxLayout()
         main_widget.setLayout(main_layout)
         
-        # Set background color
-        main_widget.setStyleSheet(f"background-color: {config.get_qt_color('background')};")
+        # Set background and text color
+        main_widget.setStyleSheet(f"background-color: {config.get_qt_color('background')}; color: {config.get_qt_color('textColor')};")
         
         self.setCentralWidget(main_widget)
 
@@ -716,7 +716,7 @@ class RcyView(QMainWindow):
         shortcuts_dialog.setMinimumSize(QSize(500, 400))
         
         # Apply styling to dialog
-        shortcuts_dialog.setStyleSheet(f"background-color: {config.get_qt_color('background')};")
+        shortcuts_dialog.setStyleSheet(f"background-color: {config.get_qt_color('background')}; color: {config.get_qt_color('textColor')};")
         
         layout = QVBoxLayout()
         shortcuts_dialog.setLayout(layout)
@@ -724,7 +724,7 @@ class RcyView(QMainWindow):
         # Create text browser for shortcuts
         text_browser = QTextBrowser()
         text_browser.setOpenExternalLinks(True)
-        text_browser.setStyleSheet(f"background-color: {config.get_qt_color('background')};")
+        text_browser.setStyleSheet(f"background-color: {config.get_qt_color('background')}; color: {config.get_qt_color('textColor')};")
         
         # Set font
         text_browser.setFont(config.get_font('primary'))
@@ -782,7 +782,7 @@ class RcyView(QMainWindow):
         about_dialog = QDialog(self)
         about_dialog.setWindowTitle(config.get_string("dialogs", "aboutTitle"))
         about_dialog.setMinimumSize(QSize(400, 300))
-        about_dialog.setStyleSheet(f"background-color: {config.get_qt_color('background')};")
+        about_dialog.setStyleSheet(f"background-color: {config.get_qt_color('background')}; color: {config.get_qt_color('textColor')};")
         
         layout = QVBoxLayout()
         about_dialog.setLayout(layout)
@@ -790,7 +790,7 @@ class RcyView(QMainWindow):
         # Create text browser for about content
         text_browser = QTextBrowser()
         text_browser.setOpenExternalLinks(True)
-        text_browser.setStyleSheet(f"background-color: {config.get_qt_color('background')};")
+        text_browser.setStyleSheet(f"background-color: {config.get_qt_color('background')}; color: {config.get_qt_color('textColor')};")
         text_browser.setFont(config.get_font('primary'))
         
         about_html = f"""
