@@ -87,8 +87,13 @@ class RcyController:
     def update_view(self):
         start_time = self.view.get_scroll_position() * (self.model.total_time - self.visible_time) / 100
         end_time = start_time + self.visible_time
-        time, data = self.model.get_data(start_time, end_time)
-        self.view.update_plot(time, data)
+        
+        # Get data with left and right channels if stereo
+        time, data_left, data_right = self.model.get_data(start_time, end_time)
+        
+        # Update the plot with stereo data if available
+        self.view.update_plot(time, data_left, data_right)
+        
         slices = self.model.get_segments()
         self.view.update_slices(slices)
 
@@ -197,7 +202,7 @@ class RcyController:
         
         if success:
             # Reset tempo to initial values
-            self.tempo = self.model.get_tempo(self.num_bars)
+            self.tempo = self.model.get_tempo(self.num_measures)  # Fixed variable name (was num_bars)
             self.view.update_tempo(self.tempo)
             
             # Clear segments
