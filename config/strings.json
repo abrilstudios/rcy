@@ -26,7 +26,13 @@
     "numMeasures": "Number of measures:",
     "tempo": "Tempo:",
     "onsetThreshold": "Onset Threshold:",
-    "measureResolutions": ["4th notes", "8th notes", "16th notes"]
+    "measureResolutions": [
+      {"label": "Whole Note (1)", "value": 1},
+      {"label": "Half Note (2)", "value": 2},
+      {"label": "Quarter Note (4)", "value": 4},
+      {"label": "Eighth Note (8)", "value": 8},
+      {"label": "Sixteenth Note (16)", "value": 16}
+    ]
   },
   "dialogs": {
     "exportDirectoryTitle": "Select Export Directory",

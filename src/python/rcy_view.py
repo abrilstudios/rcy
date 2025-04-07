@@ -154,15 +154,23 @@ class RcyView(QMainWindow):
 
         ## add split buttons
         self.split_measures_button = QPushButton(config.get_string("buttons", "splitMeasures"))
-        self.split_measures_button.clicked.connect(lambda: self.controller.split_audio('measures'))
+        self.split_measures_button.clicked.connect(self.on_split_measures_clicked)
 
         self.split_transients_button = QPushButton(config.get_string("buttons", "splitTransients"))
         self.split_transients_button.clicked.connect(lambda: self.controller.split_audio('transients'))
 
         # Add measure resolution dropdown
         self.measure_resolution_combo = QComboBox()
-        measure_resolutions = config.get_string("labels", "measureResolutions")
-        self.measure_resolution_combo.addItems(measure_resolutions)
+        self.measure_resolutions = config.get_string("labels", "measureResolutions")
+        
+        # Add each resolution option to the dropdown
+        for resolution in self.measure_resolutions:
+            self.measure_resolution_combo.addItem(resolution["label"])
+        
+        # Set default selection to the Quarter Note (4) option
+        default_index = next((i for i, res in enumerate(self.measure_resolutions) if res["value"] == 4), 2)
+        self.measure_resolution_combo.setCurrentIndex(default_index)
+            
         self.measure_resolution_combo.currentIndexChanged.connect(self.on_measure_resolution_changed)
         # add to layout
         slice_layout.addWidget(self.split_measures_button)
@@ -770,8 +778,18 @@ class RcyView(QMainWindow):
                                  config.get_string("dialogs", "errorLoadingFile"))
 
     def on_measure_resolution_changed(self, index):
-        resolutions = [4, 8, 16]
-        self.controller.set_measure_resolution(resolutions[index])
+        # Get the resolution value from the configuration data
+        resolution_value = self.measure_resolutions[index]["value"]
+        self.controller.set_measure_resolution(resolution_value)
+        
+    def on_split_measures_clicked(self):
+        """Handle the Split by Measures button click by using the current dropdown selection"""
+        # Get the current resolution from the dropdown
+        current_index = self.measure_resolution_combo.currentIndex()
+        resolution_value = self.measure_resolutions[current_index]["value"]
+        
+        # Trigger the split with the current resolution
+        self.controller.split_audio(method='measures', measure_resolution=resolution_value)
         
     def show_keyboard_shortcuts(self):
         """Show a dialog with keyboard shortcuts information"""
