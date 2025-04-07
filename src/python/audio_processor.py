@@ -18,6 +18,8 @@ class WavAudioProcessor:
         self.preset_info = None
         self.is_playing = False
         self.playback_thread = None
+        self.is_stereo = False
+        self.channels = 1
         
         # Try to load the specified preset
         try:
@@ -57,26 +59,63 @@ class WavAudioProcessor:
         return self.preset_info
         
     def set_filename(self, filename: str):
-        self.filename = filename
-        with sf.SoundFile(filename) as sound_file:
-            self.sample_rate = sound_file.samplerate
-            self.total_time = len(sound_file) / self.sample_rate
-        self.time = np.linspace(0, self.total_time, int(self.total_time * self.sample_rate))
-        self.data = self._generate_data()
-        self.segments = []
+        try:
+            self.filename = filename
+            with sf.SoundFile(filename) as sound_file:
+                self.sample_rate = sound_file.samplerate
+                self.channels = sound_file.channels
+                self.is_stereo = self.channels > 1
+                self.total_time = len(sound_file) / self.sample_rate
+                
+            self.data_left, self.data_right = self._generate_data()
+            
+            # Ensure both left and right channels have the same length
+            if len(self.data_left) != len(self.data_right):
+                min_length = min(len(self.data_left), len(self.data_right))
+                self.data_left = self.data_left[:min_length]
+                self.data_right = self.data_right[:min_length]
+                # Update total time based on the corrected data length
+                self.total_time = min_length / self.sample_rate
+                print(f"Warning: Channels had different lengths. Truncated to {min_length} samples.")
+                
+            # Create time array based on the actual data length
+            self.time = np.linspace(0, self.total_time, len(self.data_left))
+            self.segments = []
+        except Exception as e:
+            print(f"Error loading audio file {filename}: {e}")
+            raise
 
-    def _generate_data(self) -> np.ndarray:
+    def _generate_data(self) -> tuple[np.ndarray, np.ndarray]:
+        """Load audio data and return left and right channels (or mono duplicated if single channel)"""
         audio_data, _ = sf.read(self.filename, always_2d=True)
+        
         if audio_data.shape[1] > 1:
-            audio_data = np.mean(audio_data, axis=1)
+            # Stereo file - separate channels
+            data_left = audio_data[:, 0]
+            data_right = audio_data[:, 1]
+            
+            # Ensure both channels have the same length (fix for shape mismatch errors)
+            if len(data_left) != len(data_right):
+                min_length = min(len(data_left), len(data_right))
+                data_left = data_left[:min_length]
+                data_right = data_right[:min_length]
+                print(f"Warning: Channels had different lengths. Truncated to {min_length} samples.")
         else:
-            audio_data = audio_data.flatten()
-        return audio_data
+            # Mono file - duplicate the channel for consistency in code
+            data_left = audio_data.flatten()
+            data_right = data_left.copy()
+            
+        return data_left, data_right
 
-    def get_data(self, start_time: float, end_time: float) -> tuple[np.ndarray, np.ndarray]:
+    def get_data(self, start_time: float, end_time: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Get time and audio data for the specified time range.
+        Returns tuple: (time, left_channel, right_channel)
+        """
         start_idx = int(start_time * self.sample_rate)
         end_idx = int(end_time * self.sample_rate)
-        return self.time[start_idx:end_idx], self.data[start_idx:end_idx]
+        return (self.time[start_idx:end_idx], 
+                self.data_left[start_idx:end_idx], 
+                self.data_right[start_idx:end_idx])
 
     def get_tempo(self, num_measures: int,
                         beats_per_measure: int = 4) -> float:
@@ -86,7 +125,7 @@ class WavAudioProcessor:
         return tempo
 
     def split_by_measures(self, num_measures, measure_resolution):
-        samples_per_measure = len(self.data) // num_measures
+        samples_per_measure = len(self.data_left) // num_measures
         samples_per_slice = samples_per_measure // measure_resolution
         self.segments = [i * samples_per_slice for i in range(1, num_measures * measure_resolution)]
         return self.segments
@@ -94,7 +133,8 @@ class WavAudioProcessor:
     def split_by_transients(self, threshold=0.2):
         print(f"split_by_transients: {threshold}")
         delta = threshold * 0.1
-        onset_env = librosa.onset.onset_strength(y=self.data, sr=self.sample_rate)
+        # Use left channel for transient detection
+        onset_env = librosa.onset.onset_strength(y=self.data_left, sr=self.sample_rate)
         onsets = librosa.onset.onset_detect(
             onset_envelope=onset_env, 
             sr=self.sample_rate,
@@ -130,6 +170,8 @@ class WavAudioProcessor:
     def get_segment_boundaries(self, click_time):
         click_sample = int(click_time * self.sample_rate)
         segments = self.get_segments()
+        data_length = len(self.data_left)  # Use left channel for length reference
+        
         for i, segment in enumerate(segments):
             if click_sample < segment:
                 if i == 0:
@@ -137,9 +179,9 @@ class WavAudioProcessor:
                 else:
                     return segments[i-1] / self.sample_rate, segment / self.sample_rate
         if segments:
-            return segments[-1] / self.sample_rate, len(self.data) / self.sample_rate
+            return segments[-1] / self.sample_rate, data_length / self.sample_rate
         else:
-            return 0, len(self.data) / self.sample_rate
+            return 0, data_length / self.sample_rate
 
     def play_segment(self, start_time, end_time):
         """Play a segment of audio in a non-blocking way, with toggle support"""
@@ -151,7 +193,14 @@ class WavAudioProcessor:
         # Extract the segment data
         start_sample = int(start_time * self.sample_rate)
         end_sample = int(end_time * self.sample_rate)
-        segment = self.data[start_sample:end_sample]
+        
+        # Create stereo segment if needed
+        if self.is_stereo:
+            left_segment = self.data_left[start_sample:end_sample]
+            right_segment = self.data_right[start_sample:end_sample]
+            segment = np.column_stack((left_segment, right_segment))
+        else:
+            segment = self.data_left[start_sample:end_sample]
         
         # Define the playback function for threading
         def play_audio():
@@ -182,24 +231,27 @@ class WavAudioProcessor:
         """Trim audio to the region between start_sample and end_sample"""
         try:
             # Ensure valid range
+            data_length = len(self.data_left)
             if start_sample < 0:
                 start_sample = 0
-            if end_sample > len(self.data):
-                end_sample = len(self.data)
+            if end_sample > data_length:
+                end_sample = data_length
             if start_sample >= end_sample:
                 return False
                 
-            # Extract the selected portion
-            trimmed_data = self.data[start_sample:end_sample]
+            # Extract the selected portion of both channels
+            trimmed_left = self.data_left[start_sample:end_sample]
+            trimmed_right = self.data_right[start_sample:end_sample]
             
             # Update the audio data
-            self.data = trimmed_data
+            self.data_left = trimmed_left
+            self.data_right = trimmed_right
             
             # Update total time based on new length
-            self.total_time = len(self.data) / self.sample_rate
+            self.total_time = len(self.data_left) / self.sample_rate
             
             # Update time array
-            self.time = np.linspace(0, self.total_time, len(self.data))
+            self.time = np.linspace(0, self.total_time, len(self.data_left))
             
             # Clear segments since they're now invalid
             self.segments = []

@@ -213,21 +213,76 @@ class RcyView(QMainWindow):
         # Make the canvas focus when clicked
         self.canvas.setFocus()
         
-        self.ax = self.figure.add_subplot(111)
-        self.ax.set_facecolor(config.get_qt_color('background'))
-        self.line, = self.ax.plot([], [], color=config.get_qt_color('waveform'), linewidth=1)
-        self.ax.set_xlabel('')
-        self.ax.tick_params(axis='x',
-                            which='both',
-                            labelbottom=False)
+        # Flag for stereo display settings
+        self.stereo_display = self._get_audio_config("stereoDisplay", True)
         
-        # Set grid color if grid is shown
-        self.ax.grid(False)  # Turn off grid by default
-        self.ax.tick_params(colors=config.get_qt_color('gridLines'))
-        
-        # Initialize markers as hidden - using same width (1) as segment markers for consistency
-        self.start_marker = self.ax.axvline(x=0, color=config.get_qt_color('startMarker'), linestyle='-', linewidth=1, alpha=0.8, visible=False)
-        self.end_marker = self.ax.axvline(x=0, color=config.get_qt_color('endMarker'), linestyle='-', linewidth=1, alpha=0.8, visible=False)
+        # Setup for either mono or stereo display
+        if self.stereo_display:
+            # Create two subplots for stereo
+            self.ax_left = self.figure.add_subplot(211)  # Top subplot for left channel
+            self.ax_right = self.figure.add_subplot(212)  # Bottom subplot for right channel
+            
+            # Configure left channel plot
+            self.ax_left.set_facecolor(config.get_qt_color('background'))
+            self.line_left, = self.ax_left.plot([], [], color=config.get_qt_color('waveform'), linewidth=1)
+            self.ax_left.set_xlabel('')
+            # Remove L/R labels as requested
+            self.ax_left.tick_params(axis='x', which='both', labelbottom=False)
+            self.ax_left.grid(False)
+            self.ax_left.tick_params(colors=config.get_qt_color('gridLines'))
+            
+            # Configure right channel plot
+            self.ax_right.set_facecolor(config.get_qt_color('background'))
+            self.line_right, = self.ax_right.plot([], [], color=config.get_qt_color('waveform'), linewidth=1)
+            self.ax_right.set_xlabel('')
+            # Remove L/R labels as requested
+            self.ax_right.tick_params(axis='x', which='both', labelbottom=False)
+            self.ax_right.grid(False)
+            self.ax_right.tick_params(colors=config.get_qt_color('gridLines'))
+            
+            # Initialize markers as hidden - on both subplots
+            self.start_marker_left = self.ax_left.axvline(x=0, color=config.get_qt_color('startMarker'), 
+                                                        linestyle='-', linewidth=1, alpha=0.8, visible=False)
+            self.end_marker_left = self.ax_left.axvline(x=0, color=config.get_qt_color('endMarker'), 
+                                                      linestyle='-', linewidth=1, alpha=0.8, visible=False)
+            
+            self.start_marker_right = self.ax_right.axvline(x=0, color=config.get_qt_color('startMarker'), 
+                                                          linestyle='-', linewidth=1, alpha=0.8, visible=False)
+            self.end_marker_right = self.ax_right.axvline(x=0, color=config.get_qt_color('endMarker'), 
+                                                        linestyle='-', linewidth=1, alpha=0.8, visible=False)
+            
+            # Use ax_left as the primary subplot for event handling
+            self.ax = self.ax_left
+            self.start_marker = self.start_marker_left
+            self.end_marker = self.end_marker_left
+            
+            # Adjust spacing between subplots
+            self.figure.subplots_adjust(hspace=0.1)
+        else:
+            # Single subplot for mono display (original behavior)
+            self.ax = self.figure.add_subplot(111)
+            self.ax.set_facecolor(config.get_qt_color('background'))
+            self.line, = self.ax.plot([], [], color=config.get_qt_color('waveform'), linewidth=1)
+            self.ax.set_xlabel('')
+            self.ax.tick_params(axis='x', which='both', labelbottom=False)
+            self.ax.grid(False)
+            self.ax.tick_params(colors=config.get_qt_color('gridLines'))
+            
+            # Initialize markers as hidden - using same width (1) as segment markers for consistency
+            self.start_marker = self.ax.axvline(x=0, color=config.get_qt_color('startMarker'), 
+                                              linestyle='-', linewidth=1, alpha=0.8, visible=False)
+            self.end_marker = self.ax.axvline(x=0, color=config.get_qt_color('endMarker'), 
+                                            linestyle='-', linewidth=1, alpha=0.8, visible=False)
+            
+            # For mono compatibility
+            self.ax_left = self.ax
+            self.ax_right = None
+            self.line_left = self.line
+            self.line_right = None
+            self.start_marker_left = self.start_marker
+            self.end_marker_left = self.end_marker
+            self.start_marker_right = None
+            self.end_marker_right = None
         
         # Initialize triangle handles (they'll be created properly when markers are shown)
         self.start_marker_handle = None
@@ -269,10 +324,18 @@ class RcyView(QMainWindow):
         button_layout.addWidget(self.zoom_out_button)
         button_layout.addWidget(self.cut_button)
         main_layout.addLayout(button_layout)
+        
+    def _get_audio_config(self, key, default_value):
+        """Helper method to get audio configuration from config manager"""
+        try:
+            return config.get_value_from_json_file("audio.json", key, default_value)
+        except:
+            return default_value
 
     def on_plot_click(self, event):
         print("on_plot_click")
-        if event.inaxes != self.ax:
+        # Allow clicks in either waveform (top or bottom) for stereo display
+        if event.inaxes not in [self.ax_left, self.ax_right]:
             return
 
         modifiers = QApplication.keyboardModifiers()
@@ -319,6 +382,9 @@ class RcyView(QMainWindow):
         if not marker.get_visible():
             return False
         
+        # Get the axis for whichever subplot the click happened in
+        ax = self.ax_left if marker == self.start_marker_left or marker == self.end_marker_left else self.ax_right
+        
         marker_x = marker.get_xdata()[0]  # Vertical lines have the same x for all points
         
         # First check if we're clicking directly on the triangle handle
@@ -352,7 +418,7 @@ class RcyView(QMainWindow):
         # If not clicking on triangle, check if we're near the marker line
         # Define "near" as within 5% of the view width for easier grabbing
         # This creates a wider hit area without changing the visual width
-        view_width = self.ax.get_xlim()[1] - self.ax.get_xlim()[0]
+        view_width = ax.get_xlim()[1] - ax.get_xlim()[0]
         threshold = view_width * 0.05  # Increased from 2% to 5% for better usability
         
         return abs(x - marker_x) < threshold
@@ -372,13 +438,50 @@ class RcyView(QMainWindow):
         start_pos = self.start_marker.get_xdata()[0] if start_visible else 0
         end_pos = self.end_marker.get_xdata()[0] if end_visible else 0
         
-        # Clear previous lines except the main waveform plot line
-        for line in self.ax.lines[1:]:
-            line.remove()
+        if self.stereo_display:
+            # Clear previous lines except the main waveform plot lines in both subplots
+            for line in self.ax_left.lines[1:]:
+                line.remove()
+            for line in self.ax_right.lines[1:]:
+                line.remove()
+                
+            # Re-add our markers with consistent width to both subplots
+            self.start_marker_left = self.ax_left.axvline(x=start_pos, color=config.get_qt_color('startMarker'), 
+                                                        linestyle='-', linewidth=1, alpha=0.8, visible=start_visible)
+            self.end_marker_left = self.ax_left.axvline(x=end_pos, color=config.get_qt_color('endMarker'), 
+                                                      linestyle='-', linewidth=1, alpha=0.8, visible=end_visible)
             
-        # Re-add our markers with consistent width
-        self.start_marker = self.ax.axvline(x=start_pos, color=config.get_qt_color('startMarker'), linestyle='-', linewidth=1, alpha=0.8, visible=start_visible)
-        self.end_marker = self.ax.axvline(x=end_pos, color=config.get_qt_color('endMarker'), linestyle='-', linewidth=1, alpha=0.8, visible=end_visible)
+            self.start_marker_right = self.ax_right.axvline(x=start_pos, color=config.get_qt_color('startMarker'), 
+                                                          linestyle='-', linewidth=1, alpha=0.8, visible=start_visible)
+            self.end_marker_right = self.ax_right.axvline(x=end_pos, color=config.get_qt_color('endMarker'), 
+                                                        linestyle='-', linewidth=1, alpha=0.8, visible=end_visible)
+            
+            # Plot new slice lines on both subplots
+            for slice_time in slice_times:
+                self.ax_left.axvline(x=slice_time, color=config.get_qt_color('sliceActive'), linestyle='--', alpha=0.5)
+                self.ax_right.axvline(x=slice_time, color=config.get_qt_color('sliceActive'), linestyle='--', alpha=0.5)
+            
+            # Update references for event handling
+            self.start_marker = self.start_marker_left
+            self.end_marker = self.end_marker_left
+        else:
+            # Clear previous lines except the main waveform plot line
+            for line in self.ax.lines[1:]:
+                line.remove()
+                
+            # Re-add our markers with consistent width
+            self.start_marker = self.ax.axvline(x=start_pos, color=config.get_qt_color('startMarker'), 
+                                              linestyle='-', linewidth=1, alpha=0.8, visible=start_visible)
+            self.end_marker = self.ax.axvline(x=end_pos, color=config.get_qt_color('endMarker'), 
+                                            linestyle='-', linewidth=1, alpha=0.8, visible=end_visible)
+            
+            # Update references for mono compatibility
+            self.start_marker_left = self.start_marker
+            self.end_marker_left = self.end_marker
+            
+            # Plot new slice lines
+            for slice_time in slice_times:
+                self.ax.axvline(x=slice_time, color=config.get_qt_color('sliceActive'), linestyle='--', alpha=0.5)
         
         # Recreate the triangle handles
         self._create_marker_handles()
@@ -388,10 +491,6 @@ class RcyView(QMainWindow):
             self._update_marker_handle('start')
         if end_visible:
             self._update_marker_handle('end')
-        
-        # Plot new slice lines
-        for slice_time in slice_times:
-            self.ax.axvline(x=slice_time, color=config.get_qt_color('sliceActive'), linestyle='--', alpha=0.5)
         
         self.canvas.draw()
         
@@ -427,7 +526,7 @@ class RcyView(QMainWindow):
     
     def on_motion_notify(self, event):
         """Handle mouse movement for dragging markers"""
-        if not self.dragging_marker or event.inaxes != self.ax:
+        if not self.dragging_marker or event.inaxes not in [self.ax_left, self.ax_right]:
             return
         
         # Update marker position
@@ -459,8 +558,14 @@ class RcyView(QMainWindow):
             end_x = self.end_marker.get_xdata()[0]
             x_pos = min(x_pos, end_x - 0.01)  # Keep a small gap
         
+        # Update the marker in primary subplot
         self.start_marker.set_xdata([x_pos, x_pos])
         self.start_marker.set_visible(True)
+        
+        # If in stereo mode, also update the second marker
+        if self.stereo_display and self.start_marker_right is not None:
+            self.start_marker_right.set_xdata([x_pos, x_pos])
+            self.start_marker_right.set_visible(True)
         
         # Update the triangle handle
         self._update_marker_handle('start')
@@ -478,8 +583,14 @@ class RcyView(QMainWindow):
             start_x = self.start_marker.get_xdata()[0]
             x_pos = max(x_pos, start_x + 0.01)  # Keep a small gap
         
+        # Update the marker in primary subplot
         self.end_marker.set_xdata([x_pos, x_pos])
         self.end_marker.set_visible(True)
+        
+        # If in stereo mode, also update the second marker
+        if self.stereo_display and self.end_marker_right is not None:
+            self.end_marker_right.set_xdata([x_pos, x_pos])
+            self.end_marker_right.set_visible(True)
         
         # Update the triangle handle
         self._update_marker_handle('end')
@@ -565,8 +676,8 @@ class RcyView(QMainWindow):
             print("Cleared markers via Ctrl+R")
             return
             
-        # If no active plot, ignore other keys
-        if event.inaxes != self.ax:
+        # Allow key presses in either waveform for stereo display
+        if event.inaxes not in [self.ax_left, self.ax_right]:
             return
             
         # Use 'c' key to clear markers (legacy)
@@ -587,8 +698,17 @@ class RcyView(QMainWindow):
                                 config.get_string("dialogs", "cannotCutMessage"))
             return
         
-        # Briefly highlight the selection
-        selection_area = self.ax.axvspan(start_pos, end_pos, color=config.get_qt_color('selectionHighlight'), alpha=0.3, zorder=10)
+        # Briefly highlight the selection in both waveforms if in stereo mode
+        if self.stereo_display:
+            # Highlight in both waveforms
+            selection_left = self.ax_left.axvspan(start_pos, end_pos, color=config.get_qt_color('selectionHighlight'), alpha=0.3, zorder=10)
+            selection_right = self.ax_right.axvspan(start_pos, end_pos, color=config.get_qt_color('selectionHighlight'), alpha=0.3, zorder=10)
+            selection_areas = [selection_left, selection_right]
+        else:
+            # Just highlight in the single waveform for mono
+            selection_area = self.ax.axvspan(start_pos, end_pos, color=config.get_qt_color('selectionHighlight'), alpha=0.3, zorder=10)
+            selection_areas = [selection_area]
+            
         self.canvas.draw()
             
         # Confirm the action
@@ -597,8 +717,9 @@ class RcyView(QMainWindow):
                                     config.get_string("dialogs", "confirmCutMessage"),
                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         
-        # Remove highlight
-        selection_area.remove()
+        # Remove highlight from all areas
+        for area in selection_areas:
+            area.remove()
         self.canvas.draw()
                                     
         if reply == QMessageBox.StandardButton.Yes:
@@ -688,8 +809,16 @@ class RcyView(QMainWindow):
     
     def clear_markers(self):
         """Hide both markers and their handles"""
+        # Hide markers in primary subplot
         self.start_marker.set_visible(False)
         self.end_marker.set_visible(False)
+        
+        # If in stereo mode, also hide markers in second subplot
+        if self.stereo_display:
+            if self.start_marker_right:
+                self.start_marker_right.set_visible(False)
+            if self.end_marker_right:
+                self.end_marker_right.set_visible(False)
         
         # Hide the triangle handles
         if self.start_marker_handle:
@@ -699,44 +828,67 @@ class RcyView(QMainWindow):
             
         self.canvas.draw()
     
-    def update_plot(self, time, data):
-        self.line.set_data(time, data)
-        self.ax.set_xlim(time[0], time[-1])
-        self.ax.set_ylim(min(data), max(data))
+    def update_plot(self, time, data_left, data_right=None):
+        """Update the plot with time and audio data.
+        For mono files, data_right can be None or same as data_left.
+        For stereo files, data_left and data_right will be different channels.
+        """
+        if self.stereo_display and data_right is not None:
+            # Stereo display - update both channels
+            self.line_left.set_data(time, data_left)
+            self.line_right.set_data(time, data_right)
+            
+            # Set identical x limits for both subplots
+            self.ax_left.set_xlim(time[0], time[-1])
+            self.ax_right.set_xlim(time[0], time[-1])
+            
+            # Set y limits based on each channel's min/max
+            self.ax_left.set_ylim(min(data_left), max(data_left))
+            self.ax_right.set_ylim(min(data_right), max(data_right))
+            
+            # Update markers on both plots
+            self._update_marker_visibility(self.ax_left, self.start_marker_left, self.end_marker_left)
+            self._update_marker_visibility(self.ax_right, self.start_marker_right, self.end_marker_right)
+        else:
+            # Mono display - update single plot
+            self.line_left.set_data(time, data_left)
+            self.ax_left.set_xlim(time[0], time[-1])
+            self.ax_left.set_ylim(min(data_left), max(data_left))
+            
+            # Update markers
+            self._update_marker_visibility(self.ax_left, self.start_marker_left, self.end_marker_left)
         
-        # Update marker visibility based on current view
-        x_min, x_max = self.ax.get_xlim()
-        
-        start_visible_changed = False
-        end_visible_changed = False
-        
-        if self.start_marker.get_visible():
-            start_x = self.start_marker.get_xdata()[0]
-            # If start marker is outside current view, hide it
-            if start_x < x_min or start_x > x_max:
-                self.start_marker.set_visible(False)
-                if self.start_marker_handle:
-                    self.start_marker_handle.set_visible(False)
-                start_visible_changed = True
-                
-        if self.end_marker.get_visible():
-            end_x = self.end_marker.get_xdata()[0]
-            # If end marker is outside current view, hide it
-            if end_x < x_min or end_x > x_max:
-                self.end_marker.set_visible(False)
-                if self.end_marker_handle:
-                    self.end_marker_handle.set_visible(False)
-                end_visible_changed = True
-        
-        # Update the triangle handles positions if they're visible
-        # and only if we're not changing their visibility
-        if self.start_marker.get_visible() and self.start_marker_handle and not start_visible_changed:
+        # Update the triangle handles if needed
+        if self.start_marker.get_visible() and self.start_marker_handle:
             self._update_marker_handle('start')
             
-        if self.end_marker.get_visible() and self.end_marker_handle and not end_visible_changed:
+        if self.end_marker.get_visible() and self.end_marker_handle:
             self._update_marker_handle('end')
             
         self.canvas.draw()
+    
+    def _update_marker_visibility(self, ax, start_marker, end_marker):
+        """Update marker visibility based on current view"""
+        if start_marker is None or end_marker is None:
+            return
+            
+        x_min, x_max = ax.get_xlim()
+        
+        if start_marker.get_visible():
+            start_x = start_marker.get_xdata()[0]
+            # If start marker is outside current view, hide it
+            if start_x < x_min or start_x > x_max:
+                start_marker.set_visible(False)
+                if self.start_marker_handle and start_marker == self.start_marker:
+                    self.start_marker_handle.set_visible(False)
+                
+        if end_marker.get_visible():
+            end_x = end_marker.get_xdata()[0]
+            # If end marker is outside current view, hide it
+            if end_x < x_min or end_x > x_max:
+                end_marker.set_visible(False)
+                if self.end_marker_handle and end_marker == self.end_marker:
+                    self.end_marker_handle.set_visible(False)
 
     def update_scroll_bar(self, visible_time, total_time):
         proportion = visible_time / total_time

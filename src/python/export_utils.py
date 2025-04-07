@@ -1,6 +1,7 @@
 # export_utils.py
 
 import os
+import numpy as np
 import soundfile as sf
 from midiutil import MIDIFile
 
@@ -27,14 +28,20 @@ class ExportUtils:
     @staticmethod
     def export_segments(model, tempo, num_measures, directory):
         segments = model.get_segments()
-        audio_data = model.data
+        # Get left and right channel data
+        data_left = model.data_left
+        data_right = model.data_right
+        is_stereo = model.is_stereo
         sample_rate = model.sample_rate
-        total_duration = len(audio_data) / sample_rate
+        
+        # Use left channel for calculations (both channels have same length)
+        total_duration = len(data_left) / sample_rate
         tempo = model.get_tempo(num_measures)
 
         print(f"Debug: Total duration: {total_duration} seconds")
         print(f"Debug: Tempo: {tempo} BPM")
         print(f"Debug: Number of segments: {len(segments)}")
+        print(f"Debug: Is stereo: {is_stereo}")
 
         sfz_content = []
         midi = MIDIFileWithMetadata(1)  # One track
@@ -42,17 +49,25 @@ class ExportUtils:
         midi.addTimeSignature(0, 0, 4, 4, 24, 8)  # Assuming 4/4 time signature
 
         # Ensure the first segment starts at 0 and the last ends at the audio length
-        if segments[0] != 0:
+        if segments and segments[0] != 0:
             segments.insert(0, 0)
-        if segments[-1] != len(audio_data):
-            segments.append(len(audio_data))
+        if segments and segments[-1] != len(data_left):
+            segments.append(len(data_left))
 
         # Calculate beats per second
         beats_per_second = tempo / 60
 
         for i, (start, end) in enumerate(zip(segments[:-1], segments[1:])):
-            # Export audio segment
-            segment_data = audio_data[start:end]
+            # Export audio segment based on stereo/mono
+            if is_stereo:
+                # Create stereo segment by combining left and right channels
+                left_segment = data_left[start:end]
+                right_segment = data_right[start:end]
+                segment_data = np.column_stack((left_segment, right_segment))
+            else:
+                # Just use left channel for mono
+                segment_data = data_left[start:end]
+                
             segment_filename = f"segment_{i+1}.wav"
             segment_path = os.path.join(directory, segment_filename)
             sf.write(segment_path, segment_data, sample_rate)
