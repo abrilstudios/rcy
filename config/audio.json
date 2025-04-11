@@ -1,3 +1,11 @@
 {
-  "stereoDisplay": true
+  "stereoDisplay": true,
+  "downsampling": {
+    "enabled": true,
+    "method": "envelope",
+    "alwaysApply": true,
+    "targetLength": 2000,
+    "minLength": 1000,
+    "maxLength": 5000
+  }
 }

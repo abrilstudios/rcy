@@ -1,10 +1,10 @@
 import os
 import soundfile as sf
-from audio_processor import WavAudioProcessor
+from src.python.audio_processor import WavAudioProcessor
 from midiutil import MIDIFile
 from math import ceil
-from export_utils import ExportUtils
-from config_manager import config
+from src.python.export_utils import ExportUtils
+from src.python.config_manager import config
 
 class RcyController:
     def __init__(self, model):
@@ -106,10 +106,36 @@ class RcyController:
         start_time = self.view.get_scroll_position() * (self.model.total_time - self.visible_time) / 100
         end_time = start_time + self.visible_time
         
-        # Get data with left and right channels if stereo
+        # Get raw data with left and right channels if stereo
         time, data_left, data_right = self.model.get_data(start_time, end_time)
         
-        # Update the plot with stereo data if available
+        # Get downsampling configuration from config file
+        ds_config = config.get_value_from_json_file("audio.json", "downsampling", {})
+        
+        # Check if downsampling is enabled
+        if ds_config.get("enabled", False):
+            # Get configuration values with defaults
+            always_apply = ds_config.get("alwaysApply", True)
+            default_target = ds_config.get("targetLength", 2000)
+            min_length = ds_config.get("minLength", 1000)
+            max_length = ds_config.get("maxLength", 5000)
+            method = ds_config.get("method", "envelope")
+            
+            # Convert method name to method parameter for downsampling function
+            ds_method = "max_min" if method == "envelope" else "simple"
+            
+            # Calculate appropriate target length based on view size
+            width = self.view.width() if hasattr(self.view, 'width') else 800
+            target_length = min(max(width * 2, min_length), max_length)
+            
+            # Apply downsampling if configured to always apply or if we have enough data to benefit
+            if always_apply or len(time) > target_length:
+                from src.python.utils.audio_preview import get_downsampled_data
+                time, data_left, data_right = get_downsampled_data(
+                    time, data_left, data_right, target_length, method=ds_method
+                )
+        
+        # Update the plot with data (downsampled or raw)
         self.view.update_plot(time, data_left, data_right)
         
         slices = self.model.get_segments()

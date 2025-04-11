@@ -195,6 +195,38 @@ class ConfigManager:
             name = preset_data.get('name', preset_id)
             preset_list.append((preset_id, name))
         return preset_list
+        
+    def get_value_from_json_file(self, filename, key, default=None):
+        """Get a value from a JSON configuration file by key
+        
+        Args:
+            filename: The JSON file name in the config directory
+            key: The top-level key to look for
+            default: The default value to return if key is not found
+            
+        Returns:
+            The value associated with the key, or the default if not found
+        """
+        try:
+            # Get the path to the config directory
+            current_file = pathlib.Path(__file__)
+            project_root = current_file.parent.parent.parent
+            config_path = os.path.join(project_root, "config", filename)
+            
+            # Check if file exists
+            if not os.path.exists(config_path):
+                print(f"Config file not found: {config_path}")
+                return default
+                
+            # Load and parse the JSON file
+            with open(config_path, 'r') as f:
+                config_data = json.load(f)
+                
+            # Return the requested value or default
+            return config_data.get(key, default)
+        except Exception as e:
+            print(f"Error reading config file {filename}: {e}")
+            return default
 
 # Create a singleton instance
 config = ConfigManager()

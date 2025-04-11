@@ -6,7 +6,7 @@ import os
 import pathlib
 import sys
 import threading
-from config_manager import config
+from src.python.config_manager import config
 
 class WavAudioProcessor:
     def __init__(self,
@@ -109,14 +109,24 @@ class WavAudioProcessor:
         return data_left, data_right
 
     def get_data(self, start_time: float, end_time: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Get time and audio data for the specified time range.
+        """Get raw time and audio data for the specified time range.
+        
+        Args:
+            start_time: Start time in seconds
+            end_time: End time in seconds
+        
         Returns tuple: (time, left_channel, right_channel)
         """
         start_idx = int(start_time * self.sample_rate)
         end_idx = int(end_time * self.sample_rate)
-        return (self.time[start_idx:end_idx], 
-                self.data_left[start_idx:end_idx], 
-                self.data_right[start_idx:end_idx])
+        
+        # Get the raw data for the specified range
+        time_slice = self.time[start_idx:end_idx]
+        left_slice = self.data_left[start_idx:end_idx]
+        right_slice = self.data_right[start_idx:end_idx]
+        
+        # Return raw data without any downsampling (model should be pure)
+        return time_slice, left_slice, right_slice
 
     def get_tempo(self, num_measures: int,
                         beats_per_measure: int = 4) -> float:
