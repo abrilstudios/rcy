@@ -155,30 +155,68 @@ class RcyController:
 
     def play_segment(self, click_time):
         """Play or stop a segment based on click location"""
+        print(f"### Controller received play_segment with click_time: {click_time}")
+        
         # If already playing, just stop regardless of click position
         if self.model.is_playing:
+            print("### Already playing, stopping playback")
             self.stop_playback()
             return
             
         # If not playing, determine segment boundaries and play
-        start, end = self.model.get_segment_boundaries(click_time)
+        print(f"### Getting segment boundaries for click_time: {click_time}")
+        # Use the controller's get_segment_boundaries method, not the model's
+        start, end = self.get_segment_boundaries(click_time)
+        print(f"### Segment boundaries returned: {start} to {end}")
+        
         if start is not None and end is not None:
-            self.model.play_segment(start, end)
+            print(f"### Playing segment: {start:.2f}s to {end:.2f}s")
+            result = self.model.play_segment(start, end)
+            print(f"### Play segment result: {result}")
             
     def stop_playback(self):
         """Stop any currently playing audio"""
         self.model.stop_playback()
 
     def get_segment_boundaries(self, click_time):
-        if not hasattr(self, 'current_slices'):
-            return None, None
+        """Get the start and end times for the segment containing the click"""
+        # If no slices or empty list, return full audio range
+        if not hasattr(self, 'current_slices') or not self.current_slices:
+            print("No segments defined, using full audio range")
+            return 0, self.model.total_time
+        
+        # Special case for before the first segment marker
+        # We use a special threshold for clicks near the start
+        # This allows the start marker to be draggable while still allowing first segment playback
+        first_slice = self.current_slices[0]
+        if click_time <= first_slice:
+            # For clicks very close to start, use first segment
+            print(f"### FIRST SEGMENT DETECTED")
+            print(f"### Click time ({click_time}) <= first slice ({first_slice})")
+            print(f"### Returning first segment: 0 to {first_slice}")
+            return 0, first_slice
+            
+        # Special case for after the last segment marker
+        last_slice = self.current_slices[-1]
+        if click_time >= last_slice:
+            print(f"### LAST SEGMENT DETECTED")
+            print(f"### Click time ({click_time}) >= last slice ({last_slice})")
+            print(f"### Returning last segment: {last_slice} to {self.model.total_time}")
+            return last_slice, self.model.total_time
+            
+        # Middle segments
         for i, slice_time in enumerate(self.current_slices):
             if click_time < slice_time:
-                if i == 0:
+                if i == 0:  # Should not happen given the above check, but just in case
+                    print(f"First segment (fallback): 0 to {slice_time}")
                     return 0, slice_time
                 else:
+                    print(f"Middle segment {i}: {self.current_slices[i-1]} to {slice_time}")
                     return self.current_slices[i-1], slice_time
-        return self.current_slices[-1], self.model.total_time
+                    
+        # Fallback for safety - should not reach here
+        print(f"Fallback: last segment - {last_slice} to {self.model.total_time}")
+        return last_slice, self.model.total_time
 
     def on_start_marker_changed(self, position):
         """Called when the start marker position changes"""
@@ -228,7 +266,39 @@ class RcyController:
             print("Failed to trim audio")
     
     def handle_plot_click(self, click_time):
+        print(f"### Handle plot click with time: {click_time}")
+        # We'll use the real click time here, not the forced one
+        # The force test is now in test_first_segment() below
+        
         start_time, end_time = self.get_segment_boundaries(click_time)
-        print(f"handle plot click {start_time} {end_time}")
+        print(f"### Handle plot click determined segment: {start_time} to {end_time}")
         if start_time is not None and end_time is not None:
-            self.play_segment(start_time, end_time)
+            # Use the click_time for determining the segment via play_segment
+            self.play_segment(click_time)
+            
+    def test_first_segment(self):
+        """Special test method to debug first segment playback
+        
+        This can be manually called for debugging purposes.
+        It's not used in normal application flow.
+        """
+        print("\n\n### TESTING FIRST SEGMENT PLAYBACK ###")
+        
+        # Force a click in the first segment
+        test_click_time = 0.1  # This should be within the first segment
+        
+        print(f"### Test click time: {test_click_time}")
+        
+        # Get segment boundaries for the test click
+        start, end = self.get_segment_boundaries(test_click_time)
+        print(f"### First segment boundaries: {start} to {end}")
+        
+        # Try to play the segment
+        print(f"### Attempting to play first segment")
+        result = self.model.play_segment(start, end)
+        print(f"### First segment play result: {result}")
+        
+        # Wait for playback to complete
+        import time
+        time.sleep(0.5)
+        print("### First segment test complete")
