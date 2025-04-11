@@ -832,10 +832,10 @@ class RcyView(QMainWindow):
         # Using a fixed ratio of the total time for consistent scale
         total_time = self.controller.model.total_time
         
-        # Make the triangles larger to improve visibility
-        # Increased sizes relative to the total audio duration
-        triangle_height_data = total_time * 0.05  # 5% of total duration
-        triangle_base_half_data = total_time * 0.05  # 5% of total duration
+        # Make the triangles an appropriate size for visibility and interaction
+        # Balanced sizes relative to the total audio duration
+        triangle_height_data = total_time * 0.02  # 2% of total duration
+        triangle_base_half_data = total_time * 0.015  # 1.5% of total duration
         print(f"Triangle size: height={triangle_height_data}, half-base={triangle_base_half_data}, total_time={total_time}")
         
         if marker_type == 'start':
