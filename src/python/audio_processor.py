@@ -185,36 +185,56 @@ class WavAudioProcessor:
 
     def play_segment(self, start_time, end_time):
         """Play a segment of audio in a non-blocking way, with toggle support"""
+        print(f"### Model play_segment called with start_time={start_time}, end_time={end_time}")
+        
         # If already playing, stop the current playback
         if self.is_playing:
+            print("### Model already playing, stopping playback")
             self.stop_playback()
             return False  # Indicate that we stopped playback instead of starting it
         
         # Extract the segment data
         start_sample = int(start_time * self.sample_rate)
         end_sample = int(end_time * self.sample_rate)
+        print(f"### Converting to samples: start_sample={start_sample}, end_sample={end_sample}")
         
+        # Validate sample range
+        if start_sample < 0 or end_sample > len(self.data_left) or start_sample >= end_sample:
+            print(f"### INVALID SAMPLE RANGE: start_sample={start_sample}, end_sample={end_sample}, data_length={len(self.data_left)}")
+            return False
+            
         # Create stereo segment if needed
         if self.is_stereo:
+            print("### Creating stereo segment")
             left_segment = self.data_left[start_sample:end_sample]
             right_segment = self.data_right[start_sample:end_sample]
             segment = np.column_stack((left_segment, right_segment))
         else:
+            print("### Creating mono segment")
             segment = self.data_left[start_sample:end_sample]
+        
+        print(f"### Segment created with shape: {segment.shape}")
         
         # Define the playback function for threading
         def play_audio():
             try:
+                print(f"### Starting playback thread for segment {start_time:.2f}s to {end_time:.2f}s")
                 self.is_playing = True
                 sd.play(segment, self.sample_rate)
                 sd.wait()  # This blocks until playback is complete
+                print("### Playback complete")
+            except Exception as e:
+                print(f"### ERROR during playback: {e}")
             finally:
                 self.is_playing = False
+                print("### Playback thread exiting")
         
         # Start playback in a separate thread
+        print("### Creating playback thread")
         self.playback_thread = threading.Thread(target=play_audio)
         self.playback_thread.daemon = True  # Thread will exit when main program exits
         self.playback_thread.start()
+        print("### Playback thread started")
         return True  # Indicate that we started playback
         
     def stop_playback(self):

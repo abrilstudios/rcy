@@ -352,32 +352,80 @@ class RcyView(QMainWindow):
         print(f"    Is Alt: {bool(modifiers & Qt.KeyboardModifier.AltModifier)}")
         print(f"    Is Meta: {bool(modifiers & Qt.KeyboardModifier.MetaModifier)}")
         
-        # Check if we're clicking near a marker or its handle
-        if self.is_near_marker(event.xdata, event.ydata, self.start_marker, self.start_marker_handle):
-            self.dragging_marker = 'start'
-            return
-        elif self.is_near_marker(event.xdata, event.ydata, self.end_marker, self.end_marker_handle):
-            self.dragging_marker = 'end'
+        # Using a more direct approach: if clicking on the first segment area, allow both marker and segment handling
+        # Get click position details to help debug
+        pos_info = ""
+        if event.xdata is not None:
+            # Get the view limits
+            x_min, x_max = event.inaxes.get_xlim()
+            # Determine if we're in first or last segment area
+            if hasattr(self.controller, 'current_slices') and self.controller.current_slices:
+                first_slice = self.controller.current_slices[0]
+                last_slice = self.controller.current_slices[-1]
+                total_time = self.controller.model.total_time
+                pos_info = (f"Click at x={event.xdata:.2f}, first_slice={first_slice:.2f}, "
+                           f"last_slice={last_slice:.2f}, total={total_time:.2f}")
+                print(pos_info)
+        
+        # PRIORITY 1: Check for keyboard modifiers first
+        # ==================================================
+        
+        # Shift+Click to force play the first segment (for easier access)
+        # This takes precedence over marker handling to ensure it always works
+        if modifiers & Qt.KeyboardModifier.ShiftModifier:
+            print(f"### Shift+Click detected - forcing first segment playback")
+            # Always use a very small value to ensure first segment
+            print(f"### Forcing first segment playback (0.01s)")
+            self.play_segment.emit(0.01)
             return
             
-        # Handle other clicks with modifiers - updated to fix conflicts
-        
         # Check for Alt+Cmd (Meta) combination for removing segments
         if (modifiers & Qt.KeyboardModifier.AltModifier) and (modifiers & Qt.KeyboardModifier.MetaModifier):
             print(f"Alt+Cmd combination detected - removing segment at {event.xdata}")
             self.remove_segment.emit(event.xdata)
             return
-        
-        # Ctrl+Click and Shift+Click no longer set markers
-        # They can be repurposed for other functionality in the future
             
         # Add segment with Alt+Click
         if modifiers & Qt.KeyboardModifier.AltModifier:
             print(f"Alt detected - adding segment at {event.xdata}")
             self.add_segment.emit(event.xdata)
             return
+        
+        # PRIORITY 2: Check for marker interaction - now with improved marker detection
+        # ==================================================
+        
+        # Check if we're clicking near start marker (with enhanced detection)
+        start_marker_x = self.start_marker.get_xdata()[0] if self.start_marker and self.start_marker.get_visible() else None
+        print(f"Start marker at: {start_marker_x}")
+        
+        # Enhanced detection for start marker dragging - higher priority near the edge of waveform
+        if start_marker_x is not None and abs(event.xdata - start_marker_x) < 0.1:
+            print("Starting to drag start marker (enhanced detection)")
+            self.dragging_marker = 'start'
+            return
             
-        # No modifiers - play segment at click position
+        # Check if we're clicking near end marker (with enhanced detection)
+        end_marker_x = self.end_marker.get_xdata()[0] if self.end_marker and self.end_marker.get_visible() else None
+        print(f"End marker at: {end_marker_x}")
+        
+        # Enhanced detection for end marker dragging
+        if end_marker_x is not None and abs(event.xdata - end_marker_x) < 0.1:
+            print("Starting to drag end marker (enhanced detection)")
+            self.dragging_marker = 'end'
+            return
+            
+        # Standard marker detection as fallback
+        if self.is_near_marker(event.xdata, event.ydata, self.start_marker, self.start_marker_handle):
+            print("Starting to drag start marker (standard detection)")
+            self.dragging_marker = 'start'
+            return
+        elif self.is_near_marker(event.xdata, event.ydata, self.end_marker, self.end_marker_handle):
+            print("Starting to drag end marker (standard detection)")
+            self.dragging_marker = 'end'
+            return
+                
+        # No modifiers - play segment at clicked position
+        print(f"### Emitting play_segment signal with click position: {event.xdata}")
         self.play_segment.emit(event.xdata)
             
     def is_near_marker(self, x, y, marker, marker_handle):
@@ -386,47 +434,19 @@ class RcyView(QMainWindow):
             print(f"Marker not visible or None")
             return False
         
-        # Get the axis for whichever subplot the click happened in
-        ax = self.ax_left if marker == self.start_marker_left or marker == self.end_marker_left else self.ax_right
-        
         marker_x = marker.get_xdata()[0]  # Vertical lines have the same x for all points
         print(f"Checking marker at x={marker_x}")
         
-        # First check if we're clicking directly on the triangle handle
-        if marker_handle and marker_handle.get_visible():
-            # Check if the point (x, y) is inside the triangle
-            # We need to create a simple point test since contains() expects a MouseEvent
-            triangle_coords = marker_handle.get_xy()
-            
-            # Simple triangle contains point logic
-            # Based on barycentric coordinates
-            x0, y0 = triangle_coords[0]
-            x1, y1 = triangle_coords[1]
-            x2, y2 = triangle_coords[2]
-            
-            # Calculate area of the entire triangle
-            area_total = 0.5 * abs((x0 * (y1 - y2) + x1 * (y2 - y0) + x2 * (y0 - y1)))
-            
-            if area_total == 0:  # Degenerate triangle
-                return False
-                
-            # Calculate three areas using the point and two vertices of the triangle
-            area1 = 0.5 * abs((x * (y1 - y2) + x1 * (y2 - y) + x2 * (y - y1)))
-            area2 = 0.5 * abs((x0 * (y - y2) + x * (y2 - y0) + x2 * (y0 - y)))
-            area3 = 0.5 * abs((x0 * (y1 - y) + x1 * (y - y0) + x * (y0 - y1)))
-            
-            # If the sum of the three areas is equal to the area of the triangle,
-            # the point is inside the triangle
-            if abs((area1 + area2 + area3) - area_total) < 1e-9:
-                return True
-        
-        # If not clicking on triangle, check if we're near the marker line
-        # Define "near" as within 5% of the total audio duration for easier grabbing
-        # This creates a consistent hit area regardless of zoom level
+        # Very simple detection for marker:
+        # If we're within a reasonable threshold of the marker, count as near
+        # This is the original behavior that worked before
         total_time = self.controller.model.total_time
         threshold = total_time * 0.04  # 4% of total duration for hit detection
         
-        return abs(x - marker_x) < threshold
+        is_near = abs(x - marker_x) < threshold
+        if is_near:
+            print(f"Click near marker (within threshold)")
+        return is_near
 
     def on_threshold_changed(self, value):
         threshold = value / 100.0
@@ -440,9 +460,18 @@ class RcyView(QMainWindow):
         # Save marker states - always keep markers visible
         start_visible = True
         end_visible = True
-        start_pos = self.start_marker.get_xdata()[0] if hasattr(self.start_marker, 'get_xdata') else 0
-        end_pos = self.end_marker.get_xdata()[0] if hasattr(self.end_marker, 'get_xdata') else self.controller.model.total_time
         
+        # Get current marker positions or use default values
+        start_pos = self.start_marker.get_xdata()[0] if hasattr(self.start_marker, 'get_xdata') and self.start_marker else 0
+        end_pos = self.end_marker.get_xdata()[0] if hasattr(self.end_marker, 'get_xdata') and self.end_marker else self.controller.model.total_time
+        
+        print(f"Marker positions before update - start: {start_pos}, end: {end_pos}")
+        
+        # If end marker is too close to start, adjust it
+        if abs(end_pos - start_pos) < 0.1:
+            print(f"End marker too close to start marker, adjusting: {end_pos} -> {self.controller.model.total_time}")
+            end_pos = self.controller.model.total_time
+            
         if self.stereo_display:
             # Clear previous lines except the main waveform plot lines in both subplots
             for line in self.ax_left.lines[1:]:
@@ -469,6 +498,10 @@ class RcyView(QMainWindow):
             # Update references for event handling
             self.start_marker = self.start_marker_left
             self.end_marker = self.end_marker_left
+            
+            # Debug visualization
+            print(f"Created start_marker at {start_pos} (visible: {self.start_marker.get_visible()})")
+            print(f"Created end_marker at {end_pos} (visible: {self.end_marker.get_visible()})")
         else:
             # Clear previous lines except the main waveform plot line
             for line in self.ax.lines[1:]:
@@ -484,6 +517,10 @@ class RcyView(QMainWindow):
             self.start_marker_left = self.start_marker
             self.end_marker_left = self.end_marker
             
+            # Debug visualization
+            print(f"Created start_marker at {start_pos} (visible: {self.start_marker.get_visible()})")
+            print(f"Created end_marker at {end_pos} (visible: {self.end_marker.get_visible()})")
+            
             # Plot new slice lines
             for slice_time in slice_times:
                 self.ax.axvline(x=slice_time, color=config.get_qt_color('sliceActive'), linestyle='--', alpha=0.5)
@@ -495,6 +532,12 @@ class RcyView(QMainWindow):
         self._update_marker_handle('start')
         self._update_marker_handle('end')
         
+        # Update controller with marker positions
+        if hasattr(self.controller, 'on_start_marker_changed'):
+            self.controller.on_start_marker_changed(start_pos)
+        if hasattr(self.controller, 'on_end_marker_changed'):
+            self.controller.on_end_marker_changed(end_pos)
+            
         self.canvas.draw()
         
         # Store the current slices in the controller
@@ -733,39 +776,50 @@ class RcyView(QMainWindow):
         empty_triangle = np.array([[0, 0], [0, 0], [0, 0]])
         
         # Set marker properties with hint about the marker type
+        # Improved visibility with higher alpha and zorder
         start_marker_props = {
             'closed': True,
             'color': config.get_qt_color('startMarker'),
             'fill': True,
-            'alpha': 0.8,
-            'visible': False,
-            'zorder': 10,  # Ensure triangles are above other elements
-            'label': 'start_marker_handle'  # Add label for debugging/identification
+            'alpha': 1.0,  # Fully opaque
+            'visible': True,  # Always start visible
+            'zorder': 100,  # Ensure triangles are above all other elements
+            'label': 'start_marker_handle',  # Add label for debugging/identification
+            'linewidth': 1.5  # Thicker outline
         }
         
         end_marker_props = {
             'closed': True,
             'color': config.get_qt_color('endMarker'),
             'fill': True,
-            'alpha': 0.8,
-            'visible': False,
-            'zorder': 10,  # Ensure triangles are above other elements
-            'label': 'end_marker_handle'  # Add label for debugging/identification
+            'alpha': 1.0,  # Fully opaque
+            'visible': True,  # Always start visible
+            'zorder': 100,  # Ensure triangles are above all other elements
+            'label': 'end_marker_handle',  # Add label for debugging/identification
+            'linewidth': 1.5  # Thicker outline
         }
         
         # Create the start marker handle (right-pointing triangle)
         if self.start_marker_handle is not None:
-            self.start_marker_handle.remove()
+            try:
+                self.start_marker_handle.remove()
+            except:
+                print("Warning: Could not remove existing start marker handle")
+                
         self.start_marker_handle = Polygon(empty_triangle, **start_marker_props)
         self.ax.add_patch(self.start_marker_handle)
-        print("Created start marker handle")
+        print("Created start marker handle (improved visibility)")
         
         # Create the end marker handle (left-pointing triangle)
         if self.end_marker_handle is not None:
-            self.end_marker_handle.remove()
+            try:
+                self.end_marker_handle.remove()
+            except:
+                print("Warning: Could not remove existing end marker handle")
+                
         self.end_marker_handle = Polygon(empty_triangle, **end_marker_props)
         self.ax.add_patch(self.end_marker_handle)
-        print("Created end marker handle")
+        print("Created end marker handle (improved visibility)")
 
     def _update_marker_handle(self, marker_type):
         """Update the position of a marker's triangle handle"""
@@ -778,10 +832,10 @@ class RcyView(QMainWindow):
         # Using a fixed ratio of the total time for consistent scale
         total_time = self.controller.model.total_time
         
-        # Fixed sizes relative to the total audio duration
-        # Use more reasonable sizes that will remain consistent regardless of zoom level
-        triangle_height_data = total_time * 0.02  # 2% of total duration
-        triangle_base_half_data = total_time * 0.02  # 2% of total duration
+        # Make the triangles larger to improve visibility
+        # Increased sizes relative to the total audio duration
+        triangle_height_data = total_time * 0.05  # 5% of total duration
+        triangle_base_half_data = total_time * 0.05  # 5% of total duration
         print(f"Triangle size: height={triangle_height_data}, half-base={triangle_base_half_data}, total_time={total_time}")
         
         if marker_type == 'start':
@@ -799,10 +853,13 @@ class RcyView(QMainWindow):
             return
         
         # Force marker to be visible
-        marker.set_visible(True)
+        if not marker.get_visible():
+            print(f"Forcing {marker_type} marker to be visible")
+            marker.set_visible(True)
             
         # Get marker position
         marker_x = marker.get_xdata()[0]
+        print(f"{marker_type} marker position: {marker_x}")
         
         # Position triangle at the bottom of the waveform
         # No offset from the bottom - triangles should be aligned with the bottom line
@@ -811,7 +868,7 @@ class RcyView(QMainWindow):
         # Create right triangle coordinates according to spec
         if marker_type == 'start':
             # Start marker: Right triangle that points RIGHT (→)
-            # (Right angle at bottom-right, points to the right)
+            # Make a more visible triangle for the start marker
             triangle_coords = np.array([
                 [marker_x, base_y],  # Bottom center point (aligned with marker)
                 [marker_x + triangle_base_half_data, base_y],  # Bottom-right (right angle corner)
@@ -819,7 +876,7 @@ class RcyView(QMainWindow):
             ])
         else:  # end marker
             # End marker: Right triangle that points LEFT (←)
-            # (Right angle at bottom-left, points to the left)
+            # Make a more visible triangle for the end marker
             triangle_coords = np.array([
                 [marker_x, base_y],  # Bottom center point (aligned with marker)
                 [marker_x - triangle_base_half_data, base_y],  # Bottom-left (right angle corner)
@@ -829,6 +886,8 @@ class RcyView(QMainWindow):
         # Update the triangle
         handle.set_xy(triangle_coords)
         handle.set_visible(True)
+        handle.set_zorder(100)  # Ensure triangles are always on top
+        print(f"Updated {marker_type} marker handle: visible={handle.get_visible()}, zorder={handle.get_zorder()}")
     
     def clear_markers(self):
         """Reset markers to file boundaries instead of hiding them"""
@@ -899,25 +958,35 @@ class RcyView(QMainWindow):
         their triangle handles are updated correctly.
         """
         if start_marker is None or end_marker is None:
+            print("Warning: One of the markers is None in _update_marker_visibility")
             return
             
         x_min, x_max = ax.get_xlim()
         
         # Always ensure the marker lines themselves are visible
         if not start_marker.get_visible():
+            print("Forcing start marker to be visible")
             start_marker.set_visible(True)
             
         if not end_marker.get_visible():
+            print("Forcing end marker to be visible")
             end_marker.set_visible(True)
             
+        # Debug marker positions
+        start_pos = start_marker.get_xdata()[0] if hasattr(start_marker, 'get_xdata') else "unknown"
+        end_pos = end_marker.get_xdata()[0] if hasattr(end_marker, 'get_xdata') else "unknown"
+        print(f"Marker positions - start: {start_pos}, end: {end_pos}")
+        
         # Force update triangle handles regardless of view
         if self.start_marker_handle and start_marker == self.start_marker:
             self.start_marker_handle.set_visible(True)
             self._update_marker_handle('start')
+            print("Updated start marker handle")
             
         if self.end_marker_handle and end_marker == self.end_marker:
             self.end_marker_handle.set_visible(True)
             self._update_marker_handle('end')
+            print("Updated end marker handle")
 
     def update_scroll_bar(self, visible_time, total_time):
         proportion = visible_time / total_time
@@ -1008,6 +1077,7 @@ class RcyView(QMainWindow):
         <h3>{config.get_string("shortcuts", "playbackSection")}</h3>
         <ul>
             <li><b>Click</b> on waveform: {config.get_string("shortcuts", "playSegment")}</li>
+            <li><b>Shift+Click</b>: Play first segment (useful if first segment is difficult to click)</li>
             <li><b>Spacebar</b>: Toggle playback (play/stop)</li>
             <li><b>Click</b> again during playback: Stop playback</li>
         </ul>
