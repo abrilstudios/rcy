@@ -9,6 +9,7 @@
     "sliceHover": "#a6b5bd",
     "gridLines": "#7f8fa6",
     "selectionHighlight": "#ff3366",
+    "activeSegmentHighlight": "#cccccc",
     "cutButton": "#000000"
   },
   "fonts": {

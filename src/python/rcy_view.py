@@ -26,6 +26,12 @@ class RcyView(QMainWindow):
         self.start_marker_handle = None
         self.end_marker_handle = None
         self.dragging_marker = None
+        
+        # Active segment highlight
+        self.active_segment_highlight = None
+        self.active_segment_highlight_right = None
+        self.current_active_segment = (None, None)  # (start, end) times of currently active segment
+        
         self.init_ui()
         self.create_menu_bar()
         
@@ -994,6 +1000,56 @@ class RcyView(QMainWindow):
 
     def get_scroll_position(self):
         return self.scroll_bar.value()
+        
+    def highlight_active_segment(self, start_time, end_time):
+        """Highlight the currently playing segment"""
+        print(f"Highlighting active segment: {start_time:.2f}s to {end_time:.2f}s")
+        
+        # Store current segment
+        self.current_active_segment = (start_time, end_time)
+        
+        # Clear any existing highlight
+        self.clear_active_segment_highlight()
+        
+        # Create new highlight spans with proper z-order (below markers but above waveform)
+        if self.stereo_display:
+            # Highlight in both waveforms
+            self.active_segment_highlight = self.ax_left.axvspan(
+                start_time, end_time, 
+                color=config.get_qt_color('activeSegmentHighlight'), 
+                alpha=0.25, zorder=5
+            )
+            self.active_segment_highlight_right = self.ax_right.axvspan(
+                start_time, end_time, 
+                color=config.get_qt_color('activeSegmentHighlight'), 
+                alpha=0.25, zorder=5
+            )
+        else:
+            # Just highlight in the single waveform for mono
+            self.active_segment_highlight = self.ax.axvspan(
+                start_time, end_time, 
+                color=config.get_qt_color('activeSegmentHighlight'), 
+                alpha=0.25, zorder=5
+            )
+        
+        # Update display
+        self.canvas.draw()
+    
+    def clear_active_segment_highlight(self):
+        """Remove the active segment highlight"""
+        if self.active_segment_highlight:
+            self.active_segment_highlight.remove()
+            self.active_segment_highlight = None
+            
+        if self.active_segment_highlight_right:
+            self.active_segment_highlight_right.remove()
+            self.active_segment_highlight_right = None
+            
+        # Reset active segment tracking
+        self.current_active_segment = (None, None)
+        
+        # Update display
+        self.canvas.draw()
 
     def populate_presets_menu(self, menu):
         """Populate the presets menu with available presets"""

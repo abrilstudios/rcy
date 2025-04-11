@@ -18,6 +18,7 @@ class WavAudioProcessor:
         self.preset_info = None
         self.is_playing = False
         self.playback_thread = None
+        self.playback_just_ended = False  # Flag to indicate playback has just ended
         self.is_stereo = False
         self.channels = 1
         
@@ -227,7 +228,12 @@ class WavAudioProcessor:
                 print(f"### ERROR during playback: {e}")
             finally:
                 self.is_playing = False
+                # Notify that playback has completed
+                # Since we can't use QTimer from a thread, we'll set a flag
+                # that can be checked by the main UI thread
                 print("### Playback thread exiting")
+                # Set a flag to indicate playback has ended
+                self.playback_just_ended = True
         
         # Start playback in a separate thread
         print("### Creating playback thread")
@@ -242,6 +248,9 @@ class WavAudioProcessor:
         if self.is_playing:
             sd.stop()
             self.is_playing = False
+            
+    # Removed _notify_playback_ended and set_playback_ended_callback methods
+    # We now use the playback_just_ended flag checked by a timer in the controller
             # The thread will end naturally when sd.wait() is interrupted
 
     def get_sample_at_time(self, time):

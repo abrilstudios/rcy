@@ -15,6 +15,12 @@ class RcyController:
         self.tempo = 120
         self.threshold = 0.20
         self.view = None
+        
+        # Setup timer to check playback status periodically
+        from PyQt6.QtCore import QTimer
+        self.playback_check_timer = QTimer()
+        self.playback_check_timer.timeout.connect(self.check_playback_status)
+        self.playback_check_timer.start(100)  # Check every 100ms
 
     def set_view(self, view):
         self.view = view
@@ -171,12 +177,22 @@ class RcyController:
         
         if start is not None and end is not None:
             print(f"### Playing segment: {start:.2f}s to {end:.2f}s")
+            
+            # Highlight the active segment in the view
+            if hasattr(self.view, 'highlight_active_segment'):
+                self.view.highlight_active_segment(start, end)
+                
+            # Play the segment
             result = self.model.play_segment(start, end)
             print(f"### Play segment result: {result}")
             
     def stop_playback(self):
         """Stop any currently playing audio"""
         self.model.stop_playback()
+        
+        # Clear the active segment highlight
+        if hasattr(self.view, 'clear_active_segment_highlight'):
+            self.view.clear_active_segment_highlight()
 
     def get_segment_boundaries(self, click_time):
         """Get the start and end times for the segment containing the click"""
@@ -276,6 +292,18 @@ class RcyController:
             # Use the click_time for determining the segment via play_segment
             self.play_segment(click_time)
             
+    def check_playback_status(self):
+        """Periodically check if playback has ended"""
+        if hasattr(self.model, 'playback_just_ended') and self.model.playback_just_ended:
+            print("### Controller detected playback just ended")
+            
+            # Reset the flag
+            self.model.playback_just_ended = False
+            
+            # Clear any active segment highlight
+            if self.view and hasattr(self.view, 'clear_active_segment_highlight'):
+                self.view.clear_active_segment_highlight()
+    
     def test_first_segment(self):
         """Special test method to debug first segment playback
         
