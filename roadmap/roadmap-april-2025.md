@@ -14,9 +14,11 @@ This document outlines the current and near-future priorities for the RCY applic
 - [x] Created `presets/` system for artist-authored waveform splits
 - [x] Implemented mono/stereo waveform handling
 - [x] Introduced real-time playback engine with segment preview
+- [x] Added MIDI and SFZ export for sliced segments
 - [x] Integrated waveform downsampling for fast, faithful display
 - [x] Separated model/view concerns and introduced full test coverage
 - [x] Design documentation written for key features and decisions
+- [x] Implemented basic color theming system
 
 ---
 
@@ -35,9 +37,9 @@ This document outlines the current and near-future priorities for the RCY applic
 - [ ] Add waveform editing tools (insert, delete, reassign slices)
 - [ ] Keyboard control of slices (`QWERTYUIOP` mapping for top-row triggers)
 - [ ] Preset browser with auto-load + metadata (tempo, artist, tags)
-- [ ] Skins and UI themes (e.g. Jungle, IDM, Classic Sampler, New Order)
-- [ ] Slice-to-MIDI export
-- [ ] Export to SFZ/SF2 directly
+- [ ] Advanced UI themes (e.g. Jungle, IDM, Classic Sampler, New Order)
+- [ ] Enhanced export options (WAV with metadata, SF2, REX)
+- [ ] Visualize loaded MIDI patterns against waveform
 
 ---
 
