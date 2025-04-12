@@ -7,5 +7,6 @@
     "targetLength": 2000,
     "minLength": 1000,
     "maxLength": 5000
-  }
+  },
+  "backend": "matplotlib"
 }
