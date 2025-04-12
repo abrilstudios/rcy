@@ -7,7 +7,7 @@ python src/python/test_pyqtgraph_minimal.py
 import sys
 import numpy as np
 from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
-from waveform_view import create_waveform_view
+from src.python.waveform_view import create_waveform_view
 
 class MinimalTest(QMainWindow):
     def __init__(self):
