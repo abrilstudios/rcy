@@ -6,6 +6,8 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 from matplotlib.patches import Polygon
+# Import but don't use until we're ready
+from waveform_view import create_waveform_view
 import numpy as np
 
 class RcyView(QMainWindow):
@@ -18,7 +20,7 @@ class RcyView(QMainWindow):
     end_marker_changed = pyqtSignal(float)
     cut_requested = pyqtSignal(float, float)  # start_time, end_time
 
-    def __init__(self, controller):
+    def __init__(self, controller, use_pyqtgraph=False):
         super().__init__()
         self.controller = controller
         self.start_marker = None
@@ -31,6 +33,10 @@ class RcyView(QMainWindow):
         self.active_segment_highlight = None
         self.active_segment_highlight_right = None
         self.current_active_segment = (None, None)  # (start, end) times of currently active segment
+        
+        # Store the waveform view selection
+        self.use_new_waveform_view = use_pyqtgraph
+        print(f"RcyView initialized with new waveform view: {self.use_new_waveform_view}")
         
         self.init_ui()
         self.create_menu_bar()
@@ -217,102 +223,120 @@ class RcyView(QMainWindow):
         # Add the slider layout to your main layout
         main_layout.addLayout(threshold_layout)
 
-        # Create plot
-        self.figure = Figure(figsize=(5, 4), dpi=100)
-        self.figure.patch.set_facecolor(config.get_qt_color('background'))
-        self.canvas = FigureCanvas(self.figure)
-        # Enable focus on the canvas for keyboard events
-        self.canvas.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        # Make the canvas focus when clicked
-        self.canvas.setFocus()
+        # Create waveform visualization
+        if self.use_new_waveform_view:
+            # Use the new PyQtGraph-based waveform view
+            self.waveform_view = create_waveform_view(backend='pyqtgraph')
+            # Connect waveform view signals to appropriate handlers
+            self.waveform_view.segment_clicked.connect(self.on_segment_clicked)
+            self.waveform_view.marker_dragged.connect(self.on_marker_dragged)
+            self.waveform_view.marker_released.connect(self.on_marker_released)
+            # We'll use this as the primary widget
+            self.waveform_widget = self.waveform_view
+        else:
+            # Use the traditional Matplotlib approach
+            self.figure = Figure(figsize=(5, 4), dpi=100)
+            self.figure.patch.set_facecolor(config.get_qt_color('background'))
+            self.canvas = FigureCanvas(self.figure)
+            # Enable focus on the canvas for keyboard events
+            self.canvas.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+            # Make the canvas focus when clicked
+            self.canvas.setFocus()
+            # We'll use this as the primary widget
+            self.waveform_widget = self.canvas
         
         # Flag for stereo display settings
         self.stereo_display = self._get_audio_config("stereoDisplay", True)
         
-        # Setup for either mono or stereo display
-        if self.stereo_display:
-            # Create two subplots for stereo
-            self.ax_left = self.figure.add_subplot(211)  # Top subplot for left channel
-            self.ax_right = self.figure.add_subplot(212)  # Bottom subplot for right channel
+        # Setup for either mono or stereo display - ONLY for Matplotlib backend
+        if not self.use_new_waveform_view:
+            if self.stereo_display:
+                # Create two subplots for stereo
+                self.ax_left = self.figure.add_subplot(211)  # Top subplot for left channel
+                self.ax_right = self.figure.add_subplot(212)  # Bottom subplot for right channel
             
-            # Configure left channel plot
-            self.ax_left.set_facecolor(config.get_qt_color('background'))
-            self.line_left, = self.ax_left.plot([], [], color=config.get_qt_color('waveform'), linewidth=1)
-            self.ax_left.set_xlabel('')
-            # Remove L/R labels as requested
-            self.ax_left.tick_params(axis='x', which='both', labelbottom=False)
-            self.ax_left.grid(False)
-            self.ax_left.tick_params(colors=config.get_qt_color('gridLines'))
-            
-            # Configure right channel plot
-            self.ax_right.set_facecolor(config.get_qt_color('background'))
-            self.line_right, = self.ax_right.plot([], [], color=config.get_qt_color('waveform'), linewidth=1)
-            self.ax_right.set_xlabel('')
-            # Remove L/R labels as requested
-            self.ax_right.tick_params(axis='x', which='both', labelbottom=False)
-            self.ax_right.grid(False)
-            self.ax_right.tick_params(colors=config.get_qt_color('gridLines'))
-            
-            # Initialize markers as hidden - on both subplots
-            self.start_marker_left = self.ax_left.axvline(x=0, color=config.get_qt_color('startMarker'), 
-                                                        linestyle='-', linewidth=1, alpha=0.8, visible=False)
-            self.end_marker_left = self.ax_left.axvline(x=0, color=config.get_qt_color('endMarker'), 
-                                                      linestyle='-', linewidth=1, alpha=0.8, visible=False)
-            
-            self.start_marker_right = self.ax_right.axvline(x=0, color=config.get_qt_color('startMarker'), 
+                # Configure left channel plot
+                self.ax_left.set_facecolor(config.get_qt_color('background'))
+                self.line_left, = self.ax_left.plot([], [], color=config.get_qt_color('waveform'), linewidth=1)
+                self.ax_left.set_xlabel('')
+                # Remove L/R labels as requested
+                self.ax_left.tick_params(axis='x', which='both', labelbottom=False)
+                self.ax_left.grid(False)
+                self.ax_left.tick_params(colors=config.get_qt_color('gridLines'))
+                
+                # Configure right channel plot
+                self.ax_right.set_facecolor(config.get_qt_color('background'))
+                self.line_right, = self.ax_right.plot([], [], color=config.get_qt_color('waveform'), linewidth=1)
+                self.ax_right.set_xlabel('')
+                # Remove L/R labels as requested
+                self.ax_right.tick_params(axis='x', which='both', labelbottom=False)
+                self.ax_right.grid(False)
+                self.ax_right.tick_params(colors=config.get_qt_color('gridLines'))
+                
+                # Initialize markers as hidden - on both subplots
+                self.start_marker_left = self.ax_left.axvline(x=0, color=config.get_qt_color('startMarker'), 
+                                                            linestyle='-', linewidth=1, alpha=0.8, visible=False)
+                self.end_marker_left = self.ax_left.axvline(x=0, color=config.get_qt_color('endMarker'), 
                                                           linestyle='-', linewidth=1, alpha=0.8, visible=False)
-            self.end_marker_right = self.ax_right.axvline(x=0, color=config.get_qt_color('endMarker'), 
-                                                        linestyle='-', linewidth=1, alpha=0.8, visible=False)
-            
-            # Use ax_left as the primary subplot for event handling
-            self.ax = self.ax_left
-            self.start_marker = self.start_marker_left
-            self.end_marker = self.end_marker_left
-            
-            # Adjust spacing between subplots
-            self.figure.subplots_adjust(hspace=0.1)
-        else:
-            # Single subplot for mono display (original behavior)
-            self.ax = self.figure.add_subplot(111)
-            self.ax.set_facecolor(config.get_qt_color('background'))
-            self.line, = self.ax.plot([], [], color=config.get_qt_color('waveform'), linewidth=1)
-            self.ax.set_xlabel('')
-            self.ax.tick_params(axis='x', which='both', labelbottom=False)
-            self.ax.grid(False)
-            self.ax.tick_params(colors=config.get_qt_color('gridLines'))
-            
-            # Initialize markers as hidden - using same width (1) as segment markers for consistency
-            self.start_marker = self.ax.axvline(x=0, color=config.get_qt_color('startMarker'), 
-                                              linestyle='-', linewidth=1, alpha=0.8, visible=False)
-            self.end_marker = self.ax.axvline(x=0, color=config.get_qt_color('endMarker'), 
-                                            linestyle='-', linewidth=1, alpha=0.8, visible=False)
-            
-            # For mono compatibility
-            self.ax_left = self.ax
-            self.ax_right = None
-            self.line_left = self.line
-            self.line_right = None
-            self.start_marker_left = self.start_marker
-            self.end_marker_left = self.end_marker
-            self.start_marker_right = None
-            self.end_marker_right = None
+                
+                self.start_marker_right = self.ax_right.axvline(x=0, color=config.get_qt_color('startMarker'), 
+                                                              linestyle='-', linewidth=1, alpha=0.8, visible=False)
+                self.end_marker_right = self.ax_right.axvline(x=0, color=config.get_qt_color('endMarker'), 
+                                                            linestyle='-', linewidth=1, alpha=0.8, visible=False)
+                
+                # Use ax_left as the primary subplot for event handling
+                self.ax = self.ax_left
+                self.start_marker = self.start_marker_left
+                self.end_marker = self.end_marker_left
+                
+                # Adjust spacing between subplots
+                self.figure.subplots_adjust(hspace=0.1)
+            else:
+                # Single subplot for mono display (original behavior)
+                self.ax = self.figure.add_subplot(111)
+                self.ax.set_facecolor(config.get_qt_color('background'))
+                self.line, = self.ax.plot([], [], color=config.get_qt_color('waveform'), linewidth=1)
+                self.ax.set_xlabel('')
+                self.ax.tick_params(axis='x', which='both', labelbottom=False)
+                self.ax.grid(False)
+                self.ax.tick_params(colors=config.get_qt_color('gridLines'))
+                
+                # Initialize markers as hidden - using same width (1) as segment markers for consistency
+                self.start_marker = self.ax.axvline(x=0, color=config.get_qt_color('startMarker'), 
+                                                  linestyle='-', linewidth=1, alpha=0.8, visible=False)
+                self.end_marker = self.ax.axvline(x=0, color=config.get_qt_color('endMarker'), 
+                                                linestyle='-', linewidth=1, alpha=0.8, visible=False)
+                
+                # For mono compatibility
+                self.ax_left = self.ax
+                self.ax_right = None
+                self.line_left = self.line
+                self.line_right = None
+                self.start_marker_left = self.start_marker
+                self.end_marker_left = self.end_marker
+                self.start_marker_right = None
+                self.end_marker_right = None
         
         # Initialize triangle handles (they'll be created properly when markers are shown)
         self.start_marker_handle = None
         self.end_marker_handle = None
         
-        # Initialize triangle handles with empty data
-        self._create_marker_handles()
+        # Initialize triangle handles with empty data - ONLY for Matplotlib backend
+        if not self.use_new_waveform_view:
+            self._create_marker_handles()
         
-        main_layout.addWidget(self.canvas)
-        # Connect all event handlers and store the connection IDs for debugging
-        self.cid_press = self.canvas.mpl_connect('button_press_event', self.on_plot_click)
-        self.cid_release = self.canvas.mpl_connect('button_release_event', self.on_button_release)
-        self.cid_motion = self.canvas.mpl_connect('motion_notify_event', self.on_motion_notify)
-        self.cid_key = self.canvas.mpl_connect('key_press_event', self.on_key_press)
-        
-        # Print connection IDs to verify they're working
-        print(f"Event connections: press={self.cid_press}, release={self.cid_release}, motion={self.cid_motion}, key={self.cid_key}")
+        # Add the waveform widget to the layout
+        main_layout.addWidget(self.waveform_widget)
+        # Connect event handlers depending on which visualization we're using
+        if not self.use_new_waveform_view:
+            # For Matplotlib we use the traditional event connections
+            self.cid_press = self.canvas.mpl_connect('button_press_event', self.on_plot_click)
+            self.cid_release = self.canvas.mpl_connect('button_release_event', self.on_button_release)
+            self.cid_motion = self.canvas.mpl_connect('motion_notify_event', self.on_motion_notify)
+            self.cid_key = self.canvas.mpl_connect('key_press_event', self.on_key_press)
+            
+            # Print connection IDs to verify they're working
+            print(f"Event connections: press={self.cid_press}, release={self.cid_release}, motion={self.cid_motion}, key={self.cid_key}")
 
         # Create scroll bar
         self.scroll_bar = QScrollBar(Qt.Orientation.Horizontal)
@@ -463,88 +487,114 @@ class RcyView(QMainWindow):
         print("Convert slice points to times")
         slice_times = [slice_point / self.controller.model.sample_rate for slice_point in slices]
         
-        # Save marker states - always keep markers visible
-        start_visible = True
-        end_visible = True
-        
-        # Get current marker positions or use default values
-        start_pos = self.start_marker.get_xdata()[0] if hasattr(self.start_marker, 'get_xdata') and self.start_marker else 0
-        end_pos = self.end_marker.get_xdata()[0] if hasattr(self.end_marker, 'get_xdata') and self.end_marker else self.controller.model.total_time
-        
-        print(f"Marker positions before update - start: {start_pos}, end: {end_pos}")
-        
-        # If end marker is too close to start, adjust it
-        if abs(end_pos - start_pos) < 0.1:
-            print(f"End marker too close to start marker, adjusting: {end_pos} -> {self.controller.model.total_time}")
-            end_pos = self.controller.model.total_time
+        if self.use_new_waveform_view:
+            # Get current marker positions
+            start_pos, end_pos = self.waveform_view.get_marker_positions()
             
-        if self.stereo_display:
-            # Clear previous lines except the main waveform plot lines in both subplots
-            for line in self.ax_left.lines[1:]:
-                line.remove()
-            for line in self.ax_right.lines[1:]:
-                line.remove()
-                
-            # Re-add our markers with consistent width to both subplots - always visible
-            self.start_marker_left = self.ax_left.axvline(x=start_pos, color=config.get_qt_color('startMarker'), 
-                                                        linestyle='-', linewidth=2, alpha=0.8, visible=True)
-            self.end_marker_left = self.ax_left.axvline(x=end_pos, color=config.get_qt_color('endMarker'), 
-                                                      linestyle='-', linewidth=2, alpha=0.8, visible=True)
+            # Use default values if markers are not set
+            if start_pos is None:
+                start_pos = 0
+            if end_pos is None:
+                end_pos = self.controller.model.total_time
             
-            self.start_marker_right = self.ax_right.axvline(x=start_pos, color=config.get_qt_color('startMarker'), 
-                                                          linestyle='-', linewidth=2, alpha=0.8, visible=True)
-            self.end_marker_right = self.ax_right.axvline(x=end_pos, color=config.get_qt_color('endMarker'), 
-                                                        linestyle='-', linewidth=2, alpha=0.8, visible=True)
+            print(f"Marker positions before update - start: {start_pos}, end: {end_pos}")
             
-            # Plot new slice lines on both subplots
-            for slice_time in slice_times:
-                self.ax_left.axvline(x=slice_time, color=config.get_qt_color('sliceActive'), linestyle='--', alpha=0.5)
-                self.ax_right.axvline(x=slice_time, color=config.get_qt_color('sliceActive'), linestyle='--', alpha=0.5)
+            # If end marker is too close to start, adjust it
+            if abs(end_pos - start_pos) < 0.1:
+                print(f"End marker too close to start marker, adjusting: {end_pos} -> {self.controller.model.total_time}")
+                end_pos = self.controller.model.total_time
             
-            # Update references for event handling
-            self.start_marker = self.start_marker_left
-            self.end_marker = self.end_marker_left
+            # Set marker positions
+            self.waveform_view.set_start_marker(start_pos)
+            self.waveform_view.set_end_marker(end_pos)
             
-            # Debug visualization
-            print(f"Created start_marker at {start_pos} (visible: {self.start_marker.get_visible()})")
-            print(f"Created end_marker at {end_pos} (visible: {self.end_marker.get_visible()})")
+            # Update the waveform view with slices and total time
+            self.waveform_view.update_slices(slice_times, self.controller.model.total_time)
         else:
-            # Clear previous lines except the main waveform plot line
-            for line in self.ax.lines[1:]:
-                line.remove()
+            # Original Matplotlib implementation
+            # Save marker states - always keep markers visible
+            start_visible = True
+            end_visible = True
+            
+            # Get current marker positions or use default values
+            start_pos = self.start_marker.get_xdata()[0] if hasattr(self.start_marker, 'get_xdata') and self.start_marker else 0
+            end_pos = self.end_marker.get_xdata()[0] if hasattr(self.end_marker, 'get_xdata') and self.end_marker else self.controller.model.total_time
+            
+            print(f"Marker positions before update - start: {start_pos}, end: {end_pos}")
+            
+            # If end marker is too close to start, adjust it
+            if abs(end_pos - start_pos) < 0.1:
+                print(f"End marker too close to start marker, adjusting: {end_pos} -> {self.controller.model.total_time}")
+                end_pos = self.controller.model.total_time
                 
-            # Re-add our markers with consistent width - always visible
-            self.start_marker = self.ax.axvline(x=start_pos, color=config.get_qt_color('startMarker'), 
+            if self.stereo_display:
+                # Clear previous lines except the main waveform plot lines in both subplots
+                for line in self.ax_left.lines[1:]:
+                    line.remove()
+                for line in self.ax_right.lines[1:]:
+                    line.remove()
+                    
+                # Re-add our markers with consistent width to both subplots - always visible
+                self.start_marker_left = self.ax_left.axvline(x=start_pos, color=config.get_qt_color('startMarker'), 
+                                                          linestyle='-', linewidth=2, alpha=0.8, visible=True)
+                self.end_marker_left = self.ax_left.axvline(x=end_pos, color=config.get_qt_color('endMarker'), 
+                                                        linestyle='-', linewidth=2, alpha=0.8, visible=True)
+                
+                self.start_marker_right = self.ax_right.axvline(x=start_pos, color=config.get_qt_color('startMarker'), 
+                                                              linestyle='-', linewidth=2, alpha=0.8, visible=True)
+                self.end_marker_right = self.ax_right.axvline(x=end_pos, color=config.get_qt_color('endMarker'), 
+                                                            linestyle='-', linewidth=2, alpha=0.8, visible=True)
+                
+                # Plot new slice lines on both subplots
+                for slice_time in slice_times:
+                    self.ax_left.axvline(x=slice_time, color=config.get_qt_color('sliceActive'), linestyle='--', alpha=0.5)
+                    self.ax_right.axvline(x=slice_time, color=config.get_qt_color('sliceActive'), linestyle='--', alpha=0.5)
+                
+                # Update references for event handling
+                self.start_marker = self.start_marker_left
+                self.end_marker = self.end_marker_left
+                
+                # Debug visualization
+                print(f"Created start_marker at {start_pos} (visible: {self.start_marker.get_visible()})")
+                print(f"Created end_marker at {end_pos} (visible: {self.end_marker.get_visible()})")
+            else:
+                # Clear previous lines except the main waveform plot line
+                for line in self.ax.lines[1:]:
+                    line.remove()
+                    
+                # Re-add our markers with consistent width - always visible
+                self.start_marker = self.ax.axvline(x=start_pos, color=config.get_qt_color('startMarker'), 
+                                                linestyle='-', linewidth=2, alpha=0.8, visible=True)
+                self.end_marker = self.ax.axvline(x=end_pos, color=config.get_qt_color('endMarker'), 
                                               linestyle='-', linewidth=2, alpha=0.8, visible=True)
-            self.end_marker = self.ax.axvline(x=end_pos, color=config.get_qt_color('endMarker'), 
-                                            linestyle='-', linewidth=2, alpha=0.8, visible=True)
+                
+                # Update references for mono compatibility
+                self.start_marker_left = self.start_marker
+                self.end_marker_left = self.end_marker
+                
+                # Debug visualization
+                print(f"Created start_marker at {start_pos} (visible: {self.start_marker.get_visible()})")
+                print(f"Created end_marker at {end_pos} (visible: {self.end_marker.get_visible()})")
+                
+                # Plot new slice lines
+                for slice_time in slice_times:
+                    self.ax.axvline(x=slice_time, color=config.get_qt_color('sliceActive'), linestyle='--', alpha=0.5)
             
-            # Update references for mono compatibility
-            self.start_marker_left = self.start_marker
-            self.end_marker_left = self.end_marker
+            # Recreate the triangle handles
+            self._create_marker_handles()
             
-            # Debug visualization
-            print(f"Created start_marker at {start_pos} (visible: {self.start_marker.get_visible()})")
-            print(f"Created end_marker at {end_pos} (visible: {self.end_marker.get_visible()})")
+            # Always update both marker handles
+            self._update_marker_handle('start')
+            self._update_marker_handle('end')
             
-            # Plot new slice lines
-            for slice_time in slice_times:
-                self.ax.axvline(x=slice_time, color=config.get_qt_color('sliceActive'), linestyle='--', alpha=0.5)
-        
-        # Recreate the triangle handles
-        self._create_marker_handles()
-        
-        # Always update both marker handles
-        self._update_marker_handle('start')
-        self._update_marker_handle('end')
+            # Draw the canvas
+            self.canvas.draw()
         
         # Update controller with marker positions
         if hasattr(self.controller, 'on_start_marker_changed'):
             self.controller.on_start_marker_changed(start_pos)
         if hasattr(self.controller, 'on_end_marker_changed'):
             self.controller.on_end_marker_changed(end_pos)
-            
-        self.canvas.draw()
         
         # Store the current slices in the controller
         self.controller.current_slices = slice_times
@@ -606,6 +656,12 @@ class RcyView(QMainWindow):
     
     def set_start_marker(self, x_pos):
         """Set the position of the start marker"""
+        if self.use_new_waveform_view:
+            # Delegate to the waveform view component
+            self.waveform_view.set_start_marker(x_pos)
+            return
+            
+        # Original Matplotlib implementation
         # Ensure start marker is within the audio bounds
         # For direct setting, we don't clamp to current view limits
         
@@ -635,6 +691,12 @@ class RcyView(QMainWindow):
         
     def set_end_marker(self, x_pos):
         """Set the position of the end marker"""
+        if self.use_new_waveform_view:
+            # Delegate to the waveform view component
+            self.waveform_view.set_end_marker(x_pos)
+            return
+            
+        # Original Matplotlib implementation
         # Ensure end marker is within the audio bounds
         # For direct setting, we don't clamp to current view limits
         
@@ -667,6 +729,11 @@ class RcyView(QMainWindow):
     
     def get_marker_positions(self):
         """Get the positions of both markers, or None if not visible"""
+        if self.use_new_waveform_view:
+            # Delegate to the waveform view component
+            return self.waveform_view.get_marker_positions()
+            
+        # Original Matplotlib implementation
         start_pos = self.start_marker.get_xdata()[0] if self.start_marker.get_visible() else None
         end_pos = self.end_marker.get_xdata()[0] if self.end_marker.get_visible() else None
         return start_pos, end_pos
@@ -705,8 +772,17 @@ class RcyView(QMainWindow):
                 
             # If no markers, find the segment that would be clicked
             # We'll use the center of the current view as the "virtual click" position
-            x_min, x_max = self.ax.get_xlim()
-            center_pos = (x_min + x_max) / 2
+            if self.use_new_waveform_view:
+                # Get view range from PyQtGraph
+                center_pos = self.waveform_view.get_view_center()
+            else:
+                # Original Matplotlib implementation - make sure we have the ax property
+                if hasattr(self, 'ax'):
+                    x_min, x_max = self.ax.get_xlim()
+                    center_pos = (x_min + x_max) / 2
+                else:
+                    # Fallback to a reasonable default
+                    center_pos = self.controller.model.total_time / 2
             
             # Emulate a click at the center of the current view
             print(f"Toggle: Emulating click at center of view: {center_pos}")
@@ -732,6 +808,25 @@ class RcyView(QMainWindow):
             
         # 'c' key no longer needed for clearing markers
         # Can be repurposed for other functionality
+    
+    def on_segment_clicked(self, x_position):
+        """Handle segment click events from waveform view."""
+        print(f"Segment clicked at {x_position:.3f}s")
+        self.play_segment.emit(x_position)
+        
+    def on_marker_dragged(self, marker_type, position):
+        """Handle marker drag events from waveform view."""
+        print(f"Marker {marker_type} dragged to {position:.3f}s")
+        self.dragging_marker = marker_type
+        
+    def on_marker_released(self, marker_type, position):
+        """Handle marker release events from waveform view."""
+        print(f"Marker {marker_type} released at {position:.3f}s")
+        if marker_type == 'start':
+            self.start_marker_changed.emit(position)
+        else:
+            self.end_marker_changed.emit(position)
+        self.dragging_marker = None
             
     def on_cut_button_clicked(self):
         """Handle the Cut button click"""
@@ -745,18 +840,28 @@ class RcyView(QMainWindow):
                                 config.get_string("dialogs", "cannotCutMessage"))
             return
         
-        # Briefly highlight the selection in both waveforms if in stereo mode
-        if self.stereo_display:
-            # Highlight in both waveforms
-            selection_left = self.ax_left.axvspan(start_pos, end_pos, color=config.get_qt_color('selectionHighlight'), alpha=0.3, zorder=10)
-            selection_right = self.ax_right.axvspan(start_pos, end_pos, color=config.get_qt_color('selectionHighlight'), alpha=0.3, zorder=10)
-            selection_areas = [selection_left, selection_right]
+        # Briefly highlight the selection
+        if self.use_new_waveform_view:
+            # Use the waveform view's highlight_segment method
+            # The function name in PyQtGraphWaveformView is highlight_segment, not highlight_active_segment
+            if hasattr(self.waveform_view, 'highlight_segment'):
+                self.waveform_view.highlight_segment(start_pos, end_pos, temporary=True)
+            else:
+                self.waveform_view.highlight_active_segment(start_pos, end_pos)
         else:
-            # Just highlight in the single waveform for mono
-            selection_area = self.ax.axvspan(start_pos, end_pos, color=config.get_qt_color('selectionHighlight'), alpha=0.3, zorder=10)
-            selection_areas = [selection_area]
-            
-        self.canvas.draw()
+            # Original Matplotlib implementation
+            # Briefly highlight the selection in both waveforms if in stereo mode
+            if self.stereo_display:
+                # Highlight in both waveforms
+                selection_left = self.ax_left.axvspan(start_pos, end_pos, color=config.get_qt_color('selectionHighlight'), alpha=0.3, zorder=10)
+                selection_right = self.ax_right.axvspan(start_pos, end_pos, color=config.get_qt_color('selectionHighlight'), alpha=0.3, zorder=10)
+                selection_areas = [selection_left, selection_right]
+            else:
+                # Just highlight in the single waveform for mono
+                selection_area = self.ax.axvspan(start_pos, end_pos, color=config.get_qt_color('selectionHighlight'), alpha=0.3, zorder=10)
+                selection_areas = [selection_area]
+                
+            self.canvas.draw()
             
         # Confirm the action
         reply = QMessageBox.question(self,
@@ -764,10 +869,18 @@ class RcyView(QMainWindow):
                                     config.get_string("dialogs", "confirmCutMessage"),
                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         
-        # Remove highlight from all areas
-        for area in selection_areas:
-            area.remove()
-        self.canvas.draw()
+        # Remove highlight
+        if self.use_new_waveform_view:
+            # Check which method is available
+            if hasattr(self.waveform_view, 'clear_segment_highlight'):
+                self.waveform_view.clear_segment_highlight()
+            else:
+                self.waveform_view.clear_active_segment_highlight()
+        else:
+            # Remove highlight from all areas
+            for area in selection_areas:
+                area.remove()
+            self.canvas.draw()
                                     
         if reply == QMessageBox.StandardButton.Yes:
             # Emit the signal to request cutting
@@ -901,11 +1014,19 @@ class RcyView(QMainWindow):
         if hasattr(self.controller.model, 'total_time'):
             total_time = self.controller.model.total_time
             
-            # Reset start marker to beginning of file
-            self.set_start_marker(0.0)
-            
-            # Reset end marker to end of file
-            self.set_end_marker(total_time)
+            if self.use_new_waveform_view:
+                # Use the waveform view component to reset markers
+                self.waveform_view.set_start_marker(0.0)
+                self.waveform_view.set_end_marker(total_time)
+            else:
+                # Original Matplotlib implementation
+                # Reset start marker to beginning of file
+                self.set_start_marker(0.0)
+                
+                # Reset end marker to end of file
+                self.set_end_marker(total_time)
+                
+                self.canvas.draw()
             
             # Let controller know about the reset
             if hasattr(self.controller, 'on_start_marker_changed'):
@@ -916,47 +1037,50 @@ class RcyView(QMainWindow):
             print(f"Reset markers to file boundaries (0.0s to {total_time:.2f}s)")
         else:
             print("Cannot reset markers: file duration unknown")
-            
-        self.canvas.draw()
     
     def update_plot(self, time, data_left, data_right=None):
         """Update the plot with time and audio data.
         For mono files, data_right can be None or same as data_left.
         For stereo files, data_left and data_right will be different channels.
         """
-        if self.stereo_display and data_right is not None:
-            # Stereo display - update both channels
-            self.line_left.set_data(time, data_left)
-            self.line_right.set_data(time, data_right)
-            
-            # Set identical x limits for both subplots
-            self.ax_left.set_xlim(time[0], time[-1])
-            self.ax_right.set_xlim(time[0], time[-1])
-            
-            # Set y limits based on each channel's min/max
-            self.ax_left.set_ylim(min(data_left), max(data_left))
-            self.ax_right.set_ylim(min(data_right), max(data_right))
-            
-            # Update markers on both plots
-            self._update_marker_visibility(self.ax_left, self.start_marker_left, self.end_marker_left)
-            self._update_marker_visibility(self.ax_right, self.start_marker_right, self.end_marker_right)
+        if self.use_new_waveform_view:
+            # Delegate to the waveform view component
+            self.waveform_view.update_plot(time, data_left, data_right)
         else:
-            # Mono display - update single plot
-            self.line_left.set_data(time, data_left)
-            self.ax_left.set_xlim(time[0], time[-1])
-            self.ax_left.set_ylim(min(data_left), max(data_left))
+            # Original Matplotlib implementation
+            if self.stereo_display and data_right is not None:
+                # Stereo display - update both channels
+                self.line_left.set_data(time, data_left)
+                self.line_right.set_data(time, data_right)
+                
+                # Set identical x limits for both subplots
+                self.ax_left.set_xlim(time[0], time[-1])
+                self.ax_right.set_xlim(time[0], time[-1])
+                
+                # Set y limits based on each channel's min/max
+                self.ax_left.set_ylim(min(data_left), max(data_left))
+                self.ax_right.set_ylim(min(data_right), max(data_right))
+                
+                # Update markers on both plots
+                self._update_marker_visibility(self.ax_left, self.start_marker_left, self.end_marker_left)
+                self._update_marker_visibility(self.ax_right, self.start_marker_right, self.end_marker_right)
+            else:
+                # Mono display - update single plot
+                self.line_left.set_data(time, data_left)
+                self.ax_left.set_xlim(time[0], time[-1])
+                self.ax_left.set_ylim(min(data_left), max(data_left))
+                
+                # Update markers
+                self._update_marker_visibility(self.ax_left, self.start_marker_left, self.end_marker_left)
             
-            # Update markers
-            self._update_marker_visibility(self.ax_left, self.start_marker_left, self.end_marker_left)
-        
-        # Update the triangle handles if needed
-        if self.start_marker.get_visible() and self.start_marker_handle:
-            self._update_marker_handle('start')
-            
-        if self.end_marker.get_visible() and self.end_marker_handle:
-            self._update_marker_handle('end')
-            
-        self.canvas.draw()
+            # Update the triangle handles if needed
+            if self.start_marker.get_visible() and self.start_marker_handle:
+                self._update_marker_handle('start')
+                
+            if self.end_marker.get_visible() and self.end_marker_handle:
+                self._update_marker_handle('end')
+                
+            self.canvas.draw()
     
     def _update_marker_visibility(self, ax, start_marker, end_marker):
         """Update marker visibility based on current view
@@ -1008,6 +1132,16 @@ class RcyView(QMainWindow):
         # Store current segment
         self.current_active_segment = (start_time, end_time)
         
+        if self.use_new_waveform_view:
+            # Delegate to the waveform view component
+            # Check which method is available
+            if hasattr(self.waveform_view, 'highlight_segment'):
+                self.waveform_view.highlight_segment(start_time, end_time)
+            else:
+                self.waveform_view.highlight_active_segment(start_time, end_time)
+            return
+            
+        # Original Matplotlib implementation
         # Clear any existing highlight
         self.clear_active_segment_highlight()
         
@@ -1037,6 +1171,18 @@ class RcyView(QMainWindow):
     
     def clear_active_segment_highlight(self):
         """Remove the active segment highlight"""
+        if self.use_new_waveform_view:
+            # Delegate to the waveform view component
+            # Check which method is available
+            if hasattr(self.waveform_view, 'clear_segment_highlight'):
+                self.waveform_view.clear_segment_highlight()
+            else:
+                self.waveform_view.clear_active_segment_highlight()
+            # Reset active segment tracking
+            self.current_active_segment = (None, None)
+            return
+            
+        # Original Matplotlib implementation
         if self.active_segment_highlight:
             self.active_segment_highlight.remove()
             self.active_segment_highlight = None

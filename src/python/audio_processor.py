@@ -6,7 +6,7 @@ import os
 import pathlib
 import sys
 import threading
-from src.python.config_manager import config
+from config_manager import config
 
 class WavAudioProcessor:
     def __init__(self,

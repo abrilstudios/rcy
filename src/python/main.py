@@ -5,6 +5,9 @@ from audio_processor import WavAudioProcessor
 from rcy_controller import RcyController
 from rcy_view import RcyView
 from config_manager import config
+
+# Import but don't use yet until we're ready
+from waveform_view import create_waveform_view
   
 def main():
     # Set application name using string resources
@@ -27,8 +30,15 @@ def main():
         controller = RcyController(model)
         controller.num_measures = initial_measures  # Set before view creation
         
-        # Create and connect view
-        view = RcyView(controller)
+        # Get waveform backend setting
+        backend = config.get_value_from_json_file("audio.json", "backend", "matplotlib")
+        print(f"Using waveform backend: {backend}")
+        
+        # Enable PyQtGraph if it's set in the config
+        use_pyqtgraph = (backend == "pyqtgraph")
+        
+        # Create and connect view, passing backend info
+        view = RcyView(controller, use_pyqtgraph=use_pyqtgraph)
         controller.set_view(view)
         
         # Ensure view has correct number of measures

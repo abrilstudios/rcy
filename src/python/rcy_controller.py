@@ -1,10 +1,10 @@
 import os
 import soundfile as sf
-from src.python.audio_processor import WavAudioProcessor
+from audio_processor import WavAudioProcessor
 from midiutil import MIDIFile
 from math import ceil
-from src.python.export_utils import ExportUtils
-from src.python.config_manager import config
+from export_utils import ExportUtils
+from config_manager import config
 
 class RcyController:
     def __init__(self, model):
@@ -130,7 +130,7 @@ class RcyController:
             
             # Apply downsampling if configured to always apply or if we have enough data to benefit
             if always_apply or len(time) > target_length:
-                from src.python.utils.audio_preview import get_downsampled_data
+                from utils.audio_preview import get_downsampled_data
                 time, data_left, data_right = get_downsampled_data(
                     time, data_left, data_right, target_length, method=ds_method
                 )
