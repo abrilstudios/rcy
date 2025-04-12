@@ -8,5 +8,5 @@
     "minLength": 1000,
     "maxLength": 5000
   },
-  "backend": "matplotlib"
+  "backend": "pyqtgraph"
 }

@@ -8,7 +8,15 @@ from PyQt6.QtGui import QColor, QPen, QBrush
 from config_manager import config
 import matplotlib
 matplotlib.use('Qt5Agg')  # Use Qt5Agg backend for matplotlib
-import pyqtgraph as pg
+
+# PyQtGraph is imported conditionally to avoid initialization issues
+# and potential segmentation faults in some environments
+try:
+    import pyqtgraph as pg
+    PYQTGRAPH_AVAILABLE = True
+except Exception as e:
+    print(f"Warning: PyQtGraph not available or failed to load: {e}")
+    PYQTGRAPH_AVAILABLE = False
 
 
 class BaseWaveformView(QWidget):
@@ -71,6 +79,10 @@ class MatplotlibWaveformView(BaseWaveformView):
         self.canvas = FigureCanvas(self.figure)
         self.canvas.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.canvas.setFocus()
+        
+        # Initialize highlight properties
+        self.active_segment_highlight = None
+        self.active_segment_highlight_right = None
         
         # Setup for either mono or stereo display
         if self.stereo_display:
@@ -506,6 +518,9 @@ class MatplotlibWaveformView(BaseWaveformView):
         
         # Update display
         self.canvas.draw()
+        
+    # Alias for highlight_active_segment to maintain consistent interface with PyQtGraphWaveformView
+    highlight_segment = highlight_active_segment
     
     def clear_active_segment_highlight(self):
         """Remove the active segment highlight"""
@@ -519,16 +534,81 @@ class MatplotlibWaveformView(BaseWaveformView):
             
         # Update display
         self.canvas.draw()
+        
+    # Alias for clear_active_segment_highlight to maintain consistent interface with PyQtGraphWaveformView
+    clear_segment_highlight = clear_active_segment_highlight
+    
+    def get_view_center(self):
+        """Get the center position of the current view"""
+        if self.ax is None:
+            return 0
+            
+        # Get the current view range
+        x_min, x_max = self.ax.get_xlim()
+        
+        # Return the center position
+        return (x_min + x_max) / 2
+        
+    def highlight_segment(self, start_time, end_time, temporary=False):
+        """Highlight a segment of the waveform
+        
+        Args:
+            start_time: Start time in seconds
+            end_time: End time in seconds
+            temporary: If True, uses a different color for temporary highlights
+        """
+        # Use different colors for temporary vs active highlights
+        if temporary:
+            color_key = 'selectionHighlight'
+            alpha = 0.3
+        else:
+            color_key = 'activeSegmentHighlight'
+            alpha = 0.25
+            
+        # Clear existing highlights (if for the same purpose)
+        if not temporary:
+            self.clear_active_segment_highlight()
+        
+        # Create new highlight spans
+        if self.stereo_display:
+            # Highlight in both waveforms
+            self.active_segment_highlight = self.ax_left.axvspan(
+                start_time, end_time, 
+                color=config.get_qt_color(color_key), 
+                alpha=alpha, zorder=5
+            )
+            self.active_segment_highlight_right = self.ax_right.axvspan(
+                start_time, end_time, 
+                color=config.get_qt_color(color_key), 
+                alpha=alpha, zorder=5
+            )
+        else:
+            # Just highlight in the single waveform for mono
+            self.active_segment_highlight = self.ax.axvspan(
+                start_time, end_time, 
+                color=config.get_qt_color(color_key), 
+                alpha=alpha, zorder=5
+            )
+        
+        # Update display
+        self.canvas.draw()
 
 
 class PyQtGraphWaveformView(BaseWaveformView):
     """PyQtGraph implementation of the waveform visualization"""
     
     def __init__(self, parent=None):
+        # Check if PyQtGraph is available before proceeding
+        if not PYQTGRAPH_AVAILABLE:
+            raise ImportError("PyQtGraph is not available")
+            
         super().__init__(parent)
         
         # Enable antialiasing for smoother drawing
-        pg.setConfigOptions(antialias=True)
+        try:
+            pg.setConfigOptions(antialias=True)
+        except Exception as e:
+            print(f"Warning: Could not set PyQtGraph config options: {e}")
         
         # Initialize properties
         self.time_data = None
@@ -539,11 +619,15 @@ class PyQtGraphWaveformView(BaseWaveformView):
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
         
-        # Create graphics layout widget
-        self.graphics_layout = pg.GraphicsLayoutWidget()
-        
-        # Set background color
-        self.graphics_layout.setBackground(QColor(config.get_qt_color('background')))
+        # Create graphics layout widget within a try-except block
+        try:
+            self.graphics_layout = pg.GraphicsLayoutWidget()
+            
+            # Set background color
+            self.graphics_layout.setBackground(QColor(config.get_qt_color('background')))
+        except Exception as e:
+            print(f"ERROR: Failed to create PyQtGraph layout widget: {e}")
+            raise
         
         # Configure plots based on stereo/mono setting
         if self.stereo_display:
@@ -986,6 +1070,61 @@ class PyQtGraphWaveformView(BaseWaveformView):
         
         # Clear the list
         self.active_segment_items = []
+    
+    def get_view_center(self):
+        """Get the center position of the current view"""
+        if self.active_plot is None:
+            return 0
+            
+        # Get the current view range
+        x_min, x_max = self.active_plot.getViewBox().viewRange()[0]
+        
+        # Return the center position
+        return (x_min + x_max) / 2
+        
+    def highlight_segment(self, start_time, end_time, temporary=False):
+        """Highlight a segment of the waveform
+        
+        Args:
+            start_time: Start time in seconds
+            end_time: End time in seconds
+            temporary: If True, uses a different color for temporary highlights
+        """
+        # Use different colors for temporary vs active highlights
+        if temporary:
+            color_key = 'selectionHighlight'
+            alpha = 75  # ~30%
+        else:
+            color_key = 'activeSegmentHighlight'
+            alpha = 64  # 25%
+            
+        # Get highlight color
+        color = QColor(config.get_qt_color(color_key))
+        color.setAlpha(alpha)
+        
+        # Create brushes for filling
+        brush = QBrush(color)
+        
+        # Clear existing highlights (if for the same purpose)
+        if not temporary:
+            self.clear_active_segment_highlight()
+        
+        # Create linear regions (highlighted spans)
+        for plot in [self.plot_left, self.plot_right]:
+            if plot is None:
+                continue
+                
+            # Create a linear region item
+            region = pg.LinearRegionItem(
+                values=[start_time, end_time],
+                movable=False,
+                brush=brush
+            )
+            region.setZValue(0)  # Behind waveform but above background
+            
+            # Add to plot and track in active segment items
+            plot.addItem(region)
+            self.active_segment_items.append(region)
 
 
 def create_waveform_view(backend='matplotlib', parent=None):
@@ -996,6 +1135,17 @@ def create_waveform_view(backend='matplotlib', parent=None):
     
     # Create the appropriate view
     if backend == 'pyqtgraph':
-        return PyQtGraphWaveformView(parent)
+        # Check if PyQtGraph is available
+        if not PYQTGRAPH_AVAILABLE:
+            print("WARNING: PyQtGraph backend requested but not available. Falling back to Matplotlib.")
+            return MatplotlibWaveformView(parent)
+            
+        try:
+            # Try to create PyQtGraph view with error handling
+            return PyQtGraphWaveformView(parent)
+        except Exception as e:
+            print(f"ERROR: Failed to create PyQtGraph waveform view: {e}")
+            print("Falling back to Matplotlib backend.")
+            return MatplotlibWaveformView(parent)
     else:
         return MatplotlibWaveformView(parent)
