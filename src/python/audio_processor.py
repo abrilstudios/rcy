@@ -159,21 +159,36 @@ class WavAudioProcessor:
         return self.segments
 
     def remove_segment(self, click_time):
-        print(f"remove_segment {click_time}")
-        print(f"remove_segment {self.segments}")
+        print(f"AudioProcessor.remove_segment({click_time})")
+        print(f"Current segments: {self.segments}")
         if not self.segments:
+            print("No segments to remove")
             return
-        click_sample = int(click_time * self.sample_rate)
-        print(f"remove_segment {click_sample}")
-        closest_index = min(range(len(self.segments)),
-                            key=lambda i: abs(self.segments[i] - click_sample))
-        del self.segments[closest_index]
+        try:
+            click_sample = int(click_time * self.sample_rate)
+            print(f"Looking for segment near sample {click_sample}")
+            closest_index = min(range(len(self.segments)),
+                                key=lambda i: abs(self.segments[i] - click_sample))
+            print(f"Found closest segment at index {closest_index}, value {self.segments[closest_index]}")
+            del self.segments[closest_index]
+            print(f"Successfully removed segment. Remaining segments: {self.segments}")
+        except Exception as e:
+            print(f"ERROR in remove_segment: {e}")
+            import traceback
+            traceback.print_exc()
 
     def add_segment(self, click_time):
-        print(f"remove_segment {click_time}")
-        new_segment = int(click_time * self.sample_rate)
-        self.segments.append(new_segment)
-        self.segments.sort()
+        print(f"AudioProcessor.add_segment({click_time})")
+        try:
+            new_segment = int(click_time * self.sample_rate)
+            print(f"Adding segment at sample {new_segment}")
+            self.segments.append(new_segment)
+            self.segments.sort()
+            print(f"Successfully added segment. Current segments: {self.segments}")
+        except Exception as e:
+            print(f"ERROR in add_segment: {e}")
+            import traceback
+            traceback.print_exc()
 
     def get_segments(self):
         return self.segments

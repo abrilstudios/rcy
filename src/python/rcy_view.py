@@ -231,6 +231,12 @@ class RcyView(QMainWindow):
             self.waveform_view.segment_clicked.connect(self.on_segment_clicked)
             self.waveform_view.marker_dragged.connect(self.on_marker_dragged)
             self.waveform_view.marker_released.connect(self.on_marker_released)
+            
+            # Connect segment manipulation signals with debug messages
+            print("Connecting waveform_view.add_segment signal")
+            self.waveform_view.add_segment.connect(lambda pos: self.on_add_segment(pos))
+            print("Connecting waveform_view.remove_segment signal")
+            self.waveform_view.remove_segment.connect(lambda pos: self.on_remove_segment(pos))
             # We'll use this as the primary widget
             self.waveform_widget = self.waveform_view
         else:
@@ -409,10 +415,22 @@ class RcyView(QMainWindow):
             self.play_segment.emit(0.01)
             return
             
+        # Check for Ctrl+Alt (Option) combination for removing segments
+        if (modifiers & Qt.KeyboardModifier.ControlModifier) and (modifiers & Qt.KeyboardModifier.AltModifier):
+            print(f"Ctrl+Alt (Option) combination detected - removing segment at {event.xdata}")
+            self.remove_segment.emit(event.xdata)
+            return
+            
         # Check for Alt+Cmd (Meta) combination for removing segments
         if (modifiers & Qt.KeyboardModifier.AltModifier) and (modifiers & Qt.KeyboardModifier.MetaModifier):
             print(f"Alt+Cmd combination detected - removing segment at {event.xdata}")
             self.remove_segment.emit(event.xdata)
+            return
+            
+        # Add segment with Ctrl+Click
+        if modifiers & Qt.KeyboardModifier.ControlModifier:
+            print(f"Ctrl detected - adding segment at {event.xdata}")
+            self.add_segment.emit(event.xdata)
             return
             
         # Add segment with Alt+Click
@@ -1216,6 +1234,22 @@ class RcyView(QMainWindow):
             QMessageBox.critical(self,
                                 config.get_string("dialogs", "errorTitle"),
                                 f"Failed to load preset: {preset_id}")
+                                
+    def on_add_segment(self, position):
+        """Handle add_segment signal from waveform view"""
+        print(f"RcyView.on_add_segment({position})")
+        try:
+            self.add_segment.emit(position)
+        except Exception as e:
+            print(f"ERROR in on_add_segment: {e}")
+            
+    def on_remove_segment(self, position):
+        """Handle remove_segment signal from waveform view"""
+        print(f"RcyView.on_remove_segment({position})")
+        try:
+            self.remove_segment.emit(position)
+        except Exception as e:
+            print(f"ERROR in on_remove_segment: {e}")
     
     def load_audio_file(self):
         filename, _ = QFileDialog.getOpenFileName(self,
@@ -1286,8 +1320,8 @@ class RcyView(QMainWindow):
         
         <h3>{config.get_string("shortcuts", "segmentsSection")}</h3>
         <ul>
-            <li><b>Alt+Click</b>: {config.get_string("shortcuts", "addSegment")}</li>
-            <li><b>Alt+Cmd+Click</b> (Alt+Meta on macOS): {config.get_string("shortcuts", "removeSegment")}</li>
+            <li><b>Alt+Click</b> or <b>Ctrl+Click</b>: {config.get_string("shortcuts", "addSegment")}</li>
+            <li><b>Alt+Cmd+Click</b> (Alt+Meta on macOS) or <b>Ctrl+Alt+Click</b>: {config.get_string("shortcuts", "removeSegment")}</li>
         </ul>
         
         <h3>{config.get_string("shortcuts", "fileOperationsSection")}</h3>
