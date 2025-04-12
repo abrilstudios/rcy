@@ -141,18 +141,35 @@ class WavAudioProcessor:
         self.segments = [i * samples_per_slice for i in range(1, num_measures * measure_resolution)]
         return self.segments
 
-    def split_by_transients(self, threshold=0.2):
-        print(f"split_by_transients: {threshold}")
-        delta = threshold * 0.1
+    def split_by_transients(self, threshold=None):
+        # Get transient detection parameters from config
+        td_config = config.get_value_from_json_file("audio.json", "transientDetection", {})
+        
+        # Use provided threshold or fallback to config value or default
+        if threshold is None:
+            threshold = td_config.get("threshold", 0.2)
+        
+        # Get other parameters from config with defaults
+        wait_time = td_config.get("waitTime", 1)
+        pre_max = td_config.get("preMax", 1)
+        post_max = td_config.get("postMax", 1)
+        delta_factor = td_config.get("deltaFactor", 0.1)
+        
+        # Calculate delta based on the threshold and delta factor
+        delta = threshold * delta_factor
+        
+        print(f"split_by_transients: threshold={threshold}, wait={wait_time}, "
+              f"pre_max={pre_max}, post_max={post_max}, delta={delta}")
+        
         # Use left channel for transient detection
         onset_env = librosa.onset.onset_strength(y=self.data_left, sr=self.sample_rate)
         onsets = librosa.onset.onset_detect(
             onset_envelope=onset_env, 
             sr=self.sample_rate,
             delta=delta,
-            wait=1,
-            pre_max=1,
-            post_max=1,
+            wait=wait_time,
+            pre_max=pre_max,
+            post_max=post_max,
         )
         onset_samples = librosa.frames_to_samples(onsets)
         self.segments = onset_samples.tolist()

@@ -13,7 +13,11 @@ class RcyController:
         self.num_measures = 1
         self.measure_resolution = 4
         self.tempo = 120
-        self.threshold = 0.20
+        
+        # Get transient detection parameters from config
+        td_config = config.get_value_from_json_file("audio.json", "transientDetection", {})
+        self.threshold = td_config.get("threshold", 0.20)
+        
         self.view = None
         
         # Setup timer to check playback status periodically
