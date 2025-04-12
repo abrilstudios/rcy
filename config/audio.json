@@ -8,5 +8,12 @@
     "minLength": 1000,
     "maxLength": 5000
   },
+  "transientDetection": {
+    "threshold": 0.2,
+    "waitTime": 1,
+    "preMax": 1,
+    "postMax": 1,
+    "deltaFactor": 0.1
+  },
   "backend": "pyqtgraph"
 }

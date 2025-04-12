@@ -207,17 +207,24 @@ class RcyView(QMainWindow):
         threshold_label = QLabel(config.get_string("labels", "onsetThreshold"))
         threshold_layout.addWidget(threshold_label)
 
+        # Get default threshold from config
+        td_config = config.get_value_from_json_file("audio.json", "transientDetection", {})
+        default_threshold = td_config.get("threshold", 0.2)
+        
+        # Convert the threshold to slider value (multiply by 100)
+        default_slider_value = int(default_threshold * 100)
+        
         # Create the slider
         self.threshold_slider = QSlider(Qt.Orientation.Horizontal)
         self.threshold_slider.setRange(1, 100)  # Range from 0.01 to 1.00
-        self.threshold_slider.setValue(10)  # Default value 0.10
+        self.threshold_slider.setValue(default_slider_value)  # Set from config
         self.threshold_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
         self.threshold_slider.setTickInterval(10)
         self.threshold_slider.valueChanged.connect(self.on_threshold_changed)
         threshold_layout.addWidget(self.threshold_slider)
 
         # Create a label to display the current value
-        self.threshold_value_label = QLabel("0.10")
+        self.threshold_value_label = QLabel(f"{default_threshold:.2f}")
         threshold_layout.addWidget(self.threshold_value_label)
 
         # Add the slider layout to your main layout
