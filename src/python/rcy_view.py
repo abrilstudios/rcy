@@ -6,6 +6,8 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 from matplotlib.patches import Polygon
+# Import but don't use until we're ready
+from waveform_view import create_waveform_view
 import numpy as np
 
 class RcyView(QMainWindow):
