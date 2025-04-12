@@ -2,7 +2,7 @@
 Abstract waveform visualization interface that can use different rendering backends.
 This module provides a factory for creating waveform views with either Matplotlib or PyQtGraph.
 """
-from PyQt6.QtWidgets import QWidget, QVBoxLayout
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QApplication
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtGui import QColor, QPen, QBrush
 from config_manager import config
@@ -25,6 +25,8 @@ class BaseWaveformView(QWidget):
     marker_dragged = pyqtSignal(str, float)   # (marker_type, position)
     segment_clicked = pyqtSignal(float)       # (x_position)
     marker_released = pyqtSignal(str, float)  # (marker_type, position)
+    add_segment = pyqtSignal(float)           # (x_position)
+    remove_segment = pyqtSignal(float)        # (x_position)
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -862,6 +864,13 @@ class PyQtGraphWaveformView(BaseWaveformView):
         if event.button() != Qt.MouseButton.LeftButton:
             return
         
+        # Get keyboard modifiers
+        modifiers = QApplication.keyboardModifiers()
+        print(f"PyQtGraph modifiers: {modifiers}")
+        print(f"Is Control: {bool(modifiers & Qt.KeyboardModifier.ControlModifier)}")
+        print(f"Is Alt: {bool(modifiers & Qt.KeyboardModifier.AltModifier)}")
+        print(f"Is Meta: {bool(modifiers & Qt.KeyboardModifier.MetaModifier)}")
+        
         # Get mouse position in scene coordinates
         scene_pos = event.scenePos()
         
@@ -889,7 +898,41 @@ class PyQtGraphWaveformView(BaseWaveformView):
                 if abs(x_pos - end_pos) < 0.1:
                     return  # Let the marker's drag handle this
                 
-                # Emit segment clicked signal
+                # Check for keyboard modifiers
+                
+                # Check for Ctrl+Alt (Option) combination for removing segments
+                if (modifiers & Qt.KeyboardModifier.ControlModifier) and (modifiers & Qt.KeyboardModifier.AltModifier):
+                    print(f"Ctrl+Alt (Option) combination detected - removing segment at {x_pos}")
+                    try:
+                        self.remove_segment.emit(x_pos)
+                        print("Emitted remove_segment signal successfully")
+                    except Exception as e:
+                        print(f"ERROR emitting remove_segment signal: {e}")
+                    return
+                    
+                # Check for Alt+Cmd (Meta) combination for removing segments
+                if (modifiers & Qt.KeyboardModifier.AltModifier) and (modifiers & Qt.KeyboardModifier.MetaModifier):
+                    print(f"Alt+Cmd combination detected - removing segment at {x_pos}")
+                    try:
+                        self.remove_segment.emit(x_pos)
+                        print("Emitted remove_segment signal successfully")
+                    except Exception as e:
+                        print(f"ERROR emitting remove_segment signal: {e}")
+                    return
+                    
+                # Add segment with Ctrl+Click
+                if modifiers & Qt.KeyboardModifier.ControlModifier:
+                    print(f"Ctrl detected - adding segment at {x_pos}")
+                    self.add_segment.emit(x_pos)
+                    return
+                
+                # Add segment with Alt+Click
+                if modifiers & Qt.KeyboardModifier.AltModifier:
+                    print(f"Alt detected - adding segment at {x_pos}")
+                    self.add_segment.emit(x_pos)
+                    return
+                
+                # No modifiers - emit regular segment click
                 self.segment_clicked.emit(x_pos)
                 return
     

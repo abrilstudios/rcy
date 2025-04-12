@@ -178,7 +178,12 @@ class RcyController:
         self.view.update_slices(slices)
 
     def remove_segment(self, click_time):
-        self.model.remove_segment(click_time)
+        print(f"RcyController.remove_segment({click_time})")
+        try:
+            self.model.remove_segment(click_time)
+            print("Successfully called model.remove_segment")
+        except Exception as e:
+            print(f"ERROR in model.remove_segment: {e}")
         self.update_view()
 
     def add_segment(self, click_time):
