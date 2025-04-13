@@ -15,6 +15,9 @@
     "postMax": 1,
     "deltaFactor": 0.1
   },
+  "playback": {
+    "mode": "one-shot"
+  },
   "playbackTempo": {
     "enabled": false,
     "targetBpm": 120

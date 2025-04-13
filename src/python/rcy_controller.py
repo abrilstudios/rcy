@@ -23,6 +23,22 @@ class RcyController:
         self.playback_tempo_enabled = pt_config.get("enabled", False)
         self.target_bpm = pt_config.get("targetBpm", 120)
         
+        # Get playback mode from config
+        playback_config = config.get_value_from_json_file("audio.json", "playback", {})
+        self.playback_mode = playback_config.get("mode", "one-shot")
+        
+        # Validate playback mode
+        valid_modes = ["one-shot", "loop", "loop-reverse"]
+        if self.playback_mode not in valid_modes:
+            print(f"Warning: Invalid playback mode '{self.playback_mode}', using 'one-shot'")
+            self.playback_mode = "one-shot"
+        
+        # Playback state tracking
+        self.is_playing_reverse = False
+        self.current_segment = (None, None)
+        
+        print(f"Playback mode initialized to: {self.playback_mode}")
+        
         self.view = None
         
         # Setup timer to check playback status periodically
@@ -60,6 +76,10 @@ class RcyController:
                 self.target_bpm,
                 1.0  # Initial ratio
             )
+        
+        # Set initial playback mode in view if the method exists
+        if hasattr(self.view, 'update_playback_mode_menu'):
+            self.view.update_playback_mode_menu(self.playback_mode)
 
     def on_threshold_changed(self, threshold):
         self.threshold = threshold
@@ -226,14 +246,49 @@ class RcyController:
         self.model.add_segment(click_time)
         self.update_view()
 
+    def set_playback_mode(self, mode):
+        """Set the playback mode
+        
+        Args:
+            mode (str): One of 'one-shot', 'loop', or 'loop-reverse'
+        
+        Returns:
+            bool: True if mode was valid and set successfully
+        """
+        valid_modes = ["one-shot", "loop", "loop-reverse"]
+        if mode not in valid_modes:
+            print(f"Error: Invalid playback mode '{mode}'")
+            return False
+            
+        # Only update if different
+        if mode != self.playback_mode:
+            print(f"Playback mode changed from '{self.playback_mode}' to '{mode}'")
+            self.playback_mode = mode
+            
+            # Update view if menu exists
+            if self.view and hasattr(self.view, 'update_playback_mode_menu'):
+                self.view.update_playback_mode_menu(mode)
+                
+        return True
+        
+    def get_playback_mode(self):
+        """Get the current playback mode
+        
+        Returns:
+            str: Current playback mode
+        """
+        return self.playback_mode
+        
     def play_segment(self, click_time):
         """Play or stop a segment based on click location"""
         print(f"### Controller received play_segment with click_time: {click_time}")
         
-        # If already playing, just stop regardless of click position
+        # Check both if the model is actively playing and if we're in a loop cycle
         if self.model.is_playing:
             print("### Already playing, stopping playback")
             self.stop_playback()
+            # Clear current segment to prevent further looping
+            self.current_segment = (None, None)
             return
             
         # If not playing, determine segment boundaries and play
@@ -243,19 +298,27 @@ class RcyController:
         print(f"### Segment boundaries returned: {start} to {end}")
         
         if start is not None and end is not None:
-            print(f"### Playing segment: {start:.2f}s to {end:.2f}s")
+            print(f"### Playing segment: {start:.2f}s to {end:.2f}s, mode: {self.playback_mode}")
+            
+            # Store current segment for looping
+            self.current_segment = (start, end)
+            self.is_playing_reverse = False
             
             # Highlight the active segment in the view
             if hasattr(self.view, 'highlight_active_segment'):
                 self.view.highlight_active_segment(start, end)
                 
             # Play the segment
-            result = self.model.play_segment(start, end)
+            result = self.model.play_segment(start, end, reverse=False)
             print(f"### Play segment result: {result}")
             
     def stop_playback(self):
         """Stop any currently playing audio"""
         self.model.stop_playback()
+        
+        # Clear the current_segment to prevent loop continuation
+        if self.playback_mode in ["loop", "loop-reverse"]:
+            self.current_segment = (None, None)
         
         # Clear the active segment highlight
         if hasattr(self.view, 'clear_active_segment_highlight'):
@@ -320,6 +383,16 @@ class RcyController:
             
         # If not playing, play the selected region
         if self.start_marker_pos is not None and self.end_marker_pos is not None:
+            # Store current segment for looping
+            self.current_segment = (self.start_marker_pos, self.end_marker_pos)
+            self.is_playing_reverse = False
+            
+            print(f"### Playing selected region: {self.start_marker_pos:.2f}s to {self.end_marker_pos:.2f}s, mode: {self.playback_mode}")
+            
+            # Highlight the active segment in the view
+            if hasattr(self.view, 'highlight_active_segment'):
+                self.view.highlight_active_segment(self.start_marker_pos, self.end_marker_pos)
+                
             self.model.play_segment(self.start_marker_pos, self.end_marker_pos)
     
     def cut_audio(self, start_time, end_time):
@@ -359,6 +432,38 @@ class RcyController:
             # Use the click_time for determining the segment via play_segment
             self.play_segment(click_time)
             
+    def handle_loop_playback(self):
+        """Handle looping of the current segment according to playback mode"""
+        start, end = self.current_segment
+        
+        if start is None or end is None:
+            print("### No current segment to loop")
+            return False
+            
+        if self.playback_mode == "loop":
+            # Simple loop - play the same segment again
+            print(f"### Loop playback: {start:.2f}s to {end:.2f}s")
+            self.model.play_segment(start, end)
+            return True
+            
+        elif self.playback_mode == "loop-reverse":
+            # Loop with direction change
+            if self.is_playing_reverse:
+                # Just finished reverse playback, now play forward
+                print(f"### Loop-reverse: Forward playback {start:.2f}s to {end:.2f}s")
+                self.is_playing_reverse = False
+                self.model.play_segment(start, end, reverse=False)
+            else:
+                # Just finished forward playback, now play reverse
+                print(f"### Loop-reverse: Reverse playback {end:.2f}s to {start:.2f}s")
+                self.is_playing_reverse = True
+                # Use reverse=True to properly play the segment in reverse
+                self.model.play_segment(start, end, reverse=True)
+            return True
+            
+        # Not a looping mode
+        return False
+            
     def check_playback_status(self):
         """Periodically check if playback has ended"""
         if hasattr(self.model, 'playback_just_ended') and self.model.playback_just_ended:
@@ -367,7 +472,12 @@ class RcyController:
             # Reset the flag
             self.model.playback_just_ended = False
             
-            # Clear any active segment highlight
+            # Handle looping if needed
+            if self.playback_mode in ["loop", "loop-reverse"]:
+                if self.handle_loop_playback():
+                    return
+            
+            # If not looping or loop handling failed, clear highlight
             if self.view and hasattr(self.view, 'clear_active_segment_highlight'):
                 self.view.clear_active_segment_highlight()
     
