@@ -15,5 +15,8 @@
     "postMax": 1,
     "deltaFactor": 0.1
   },
+  "playback": {
+    "mode": "one-shot"
+  },
   "backend": "pyqtgraph"
 }
