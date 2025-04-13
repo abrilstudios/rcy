@@ -66,6 +66,60 @@ def apply_playback_tempo(segment, original_sample_rate, source_bpm, target_bpm, 
     
     return segment, adjusted_sample_rate
 
+def resample_to_standard_rate(segment, adjusted_sample_rate, target_sample_rate=44100, is_stereo=False):
+    """Resample audio from adjusted sample rate back to standard rate
+    
+    This function resamples audio that has been pitch-shifted via sample rate adjustment
+    back to a standard sample rate (default 44100 Hz), making it compatible with 
+    samplers and DAWs while preserving the pitch shift.
+    
+    Args:
+        segment: Audio segment data (mono or stereo)
+        adjusted_sample_rate: Current sample rate of the audio (after tempo adjustment)
+        target_sample_rate: Standard sample rate to resample to (default 44100 Hz)
+        is_stereo: Whether the segment is stereo (2 channels)
+        
+    Returns:
+        np.ndarray: Resampled audio segment at target_sample_rate
+    """
+    # No need to resample if rates are nearly identical
+    if abs(adjusted_sample_rate - target_sample_rate) < 1.0:
+        return segment
+    
+    # Handle stereo audio (resample each channel separately)
+    if is_stereo:
+        # Get left and right channels
+        left_channel = segment[:, 0]
+        right_channel = segment[:, 1]
+        
+        # Resample each channel
+        left_resampled = librosa.resample(
+            left_channel, 
+            orig_sr=adjusted_sample_rate, 
+            target_sr=target_sample_rate,
+            res_type='kaiser_fast'  # Faster method that's still good quality
+        )
+        
+        right_resampled = librosa.resample(
+            right_channel, 
+            orig_sr=adjusted_sample_rate, 
+            target_sr=target_sample_rate,
+            res_type='kaiser_fast'
+        )
+        
+        # Recombine channels
+        resampled = np.column_stack((left_resampled, right_resampled))
+    else:
+        # Mono audio resampling
+        resampled = librosa.resample(
+            segment, 
+            orig_sr=adjusted_sample_rate, 
+            target_sr=target_sample_rate,
+            res_type='kaiser_fast'  # Faster method that's still good quality
+        )
+    
+    return resampled
+
 def apply_tail_fade(segment, sample_rate, is_stereo=False, enabled=False, duration_ms=10, curve="exponential"):
     """Apply fade-out at the end of a segment
     
@@ -151,7 +205,9 @@ def process_segment_for_output(
     target_bpm=None,
     tail_fade_enabled=False,
     fade_duration_ms=10,
-    fade_curve="exponential"
+    fade_curve="exponential",
+    for_export=False,
+    resample_on_export=True
 ):
     """Process audio segment through the complete pipeline for output
     
@@ -159,7 +215,8 @@ def process_segment_for_output(
     1. Extract segment from source data
     2. Apply reverse if needed
     3. Apply playback tempo adjustment
-    4. Apply tail fade if enabled
+    4. Resample to standard rate (if for_export=True and resample_on_export=True)
+    5. Apply tail fade if enabled
     
     Args:
         data_left: Left channel audio data
@@ -175,9 +232,11 @@ def process_segment_for_output(
         tail_fade_enabled: Whether to apply fade-out
         fade_duration_ms: Duration of fade in milliseconds
         fade_curve: Type of fade curve ("linear" or "exponential")
+        for_export: Whether this processing is for export (vs. playback)
+        resample_on_export: Whether to resample to standard rate on export
         
     Returns:
-        tuple: (processed_segment, adjusted_sample_rate)
+        tuple: (processed_segment, output_sample_rate)
     """
     # Stage 1: Extract the segment
     segment = extract_segment(
@@ -193,12 +252,25 @@ def process_segment_for_output(
         segment, sample_rate, source_bpm, target_bpm, playback_tempo_enabled
     )
     
-    # Stage 4: Apply tail fade
+    # Store the original adjusted rate for return value
+    output_sample_rate = adjusted_sample_rate
+    
+    # Stage 4: Resample to standard sample rate if for export
+    if for_export and resample_on_export and playback_tempo_enabled:
+        # Only resample if tempo adjustment was actually applied
+        if adjusted_sample_rate != sample_rate:
+            segment = resample_to_standard_rate(
+                segment, adjusted_sample_rate, sample_rate, is_stereo
+            )
+            # For export, we'll use the original sample rate in the WAV header
+            output_sample_rate = sample_rate
+    
+    # Stage 5: Apply tail fade
     segment = apply_tail_fade(
-        segment, sample_rate, is_stereo, tail_fade_enabled, fade_duration_ms, fade_curve
+        segment, adjusted_sample_rate, is_stereo, tail_fade_enabled, fade_duration_ms, fade_curve
     )
     
-    return segment, adjusted_sample_rate
+    return segment, output_sample_rate
 
 class WavAudioProcessor:
     def __init__(self,
@@ -478,7 +550,7 @@ class WavAudioProcessor:
             fade_duration_ms = tail_fade_config.get("durationMs", 10)
             fade_curve = tail_fade_config.get("curve", "exponential")
             
-            # Process the segment through our pipeline
+            # Process the segment through our pipeline (for playback, not export)
             segment, playback_sample_rate = process_segment_for_output(
                 self.data_left,
                 self.data_right,
@@ -492,7 +564,9 @@ class WavAudioProcessor:
                 self.target_bpm,
                 tail_fade_enabled,
                 fade_duration_ms,
-                fade_curve
+                fade_curve,
+                for_export=False,  # This is for playback, not export
+                resample_on_export=True  # Not used since for_export is False
             )
             
             print(f"### Segment processed with shape: {segment.shape}")

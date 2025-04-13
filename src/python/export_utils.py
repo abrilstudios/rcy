@@ -77,8 +77,8 @@ class ExportUtils:
         for i, (start, end) in enumerate(zip(segments[:-1], segments[1:])):
             print(f"Debug: Processing segment {i+1}: {start} to {end}")
             
-            # Process the segment through our pipeline - same as playback
-            segment_data, adjusted_sample_rate = process_segment_for_output(
+            # Process the segment through our pipeline with resampling for export
+            segment_data, export_sample_rate = process_segment_for_output(
                 data_left,
                 data_right,
                 start,
@@ -91,11 +91,13 @@ class ExportUtils:
                 target_bpm,
                 tail_fade_enabled,
                 fade_duration_ms,
-                fade_curve
+                fade_curve,
+                for_export=True,  # Indicate this is for export
+                resample_on_export=True  # Enable resampling back to standard rate
             )
             
-            # Use adjusted sample rate if tempo adjustment is enabled
-            export_sample_rate = adjusted_sample_rate
+            # The returned export_sample_rate will be the original sample rate
+            # if resampling was performed, or the adjusted rate if not
             
             segment_filename = f"segment_{i+1}.wav"
             segment_path = os.path.join(directory, segment_filename)

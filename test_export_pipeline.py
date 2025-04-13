@@ -72,17 +72,17 @@ def main():
                 print(f"Duration: {len(sound_file) / sound_file.samplerate:.4f} seconds")
                 print(f"Channels: {sound_file.channels}")
                 
-                # Compare to original sample rate
-                ratio = sound_file.samplerate / model.sample_rate
-                print(f"Sample rate ratio: {ratio:.4f}x")
-                expected_ratio = target_bpm / model.source_bpm
-                print(f"Expected ratio: {expected_ratio:.4f}x")
-                
-                # Verify the sample rate matches our expectation
-                if abs(ratio - expected_ratio) < 0.01:
-                    print("\n✅ SUCCESS: Exported file has correct sample rate adjustment")
+                # Verify the sample rate is the standard rate (44100 Hz)
+                if sound_file.samplerate == model.sample_rate:
+                    print(f"\n✅ SUCCESS: Exported file has standard sample rate: {sound_file.samplerate} Hz")
                 else:
-                    print("\n❌ ERROR: Sample rate doesn't match expected ratio")
+                    print(f"\n❌ ERROR: Sample rate is not standard: {sound_file.samplerate} Hz")
+                
+                # The pitch adjustment is now preserved in the audio content
+                # rather than in the sample rate, so we can't directly verify it
+                # Just show the expected ratio for reference
+                expected_ratio = target_bpm / model.source_bpm
+                print(f"Tempo ratio applied during processing: {expected_ratio:.4f}x")
 
 if __name__ == "__main__":
     main()
