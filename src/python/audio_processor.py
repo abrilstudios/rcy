@@ -103,9 +103,7 @@ class WavAudioProcessor:
             self.segments = []
             
             # Calculate source BPM based on the loaded audio file
-            measures = 4  # Default
-            if self.preset_info and 'measures' in self.preset_info:
-                measures = self.preset_info.get('measures')
+            measures = None  # Use the value from preset_info
             self.calculate_source_bpm(measures=measures)
         except Exception as e:
             print(f"Error loading audio file {filename}: {e}")
@@ -340,7 +338,8 @@ class WavAudioProcessor:
     def calculate_source_bpm(self, measures=None):
         """Calculate source BPM based on audio duration and measure count
         
-        Formula: Source BPM = (60 × measures) / duration
+        Formula: Source BPM = (60 × beats) / duration
+        Where beats = measures × 4 (assuming 4/4 time signature)
         """
         if not hasattr(self, 'total_time') or self.total_time <= 0:
             print("Warning: Cannot calculate source BPM, invalid duration")
@@ -357,13 +356,19 @@ class WavAudioProcessor:
         if measures <= 0:
             measures = 4
             
-        # Calculate BPM
-        source_bpm = (60.0 * measures) / self.total_time
+        # Get beats per measure from config (default to 4/4 time signature)
+        beats_per_measure = 4  # Standard 4/4 time for breakbeats
+        
+        # Calculate total beats in the audio file
+        total_beats = measures * beats_per_measure
+        
+        # Calculate BPM based on total beats
+        source_bpm = (60.0 * total_beats) / self.total_time
         
         # Store the calculated value
         self.source_bpm = source_bpm
         
-        print(f"Calculated source BPM: {source_bpm:.2f} based on {measures} measures and {self.total_time:.2f}s duration")
+        print(f"Calculated source BPM: {source_bpm:.2f} based on {measures} measures × {beats_per_measure} beats = {total_beats} beats over {self.total_time:.2f}s duration")
         return source_bpm
     
     def get_playback_ratio(self):
