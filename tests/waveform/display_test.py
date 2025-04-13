@@ -4,7 +4,7 @@ Manual test for waveform visualization.
 This script creates a window with waveform visualization for interactive testing.
 
 Usage:
-    python -m tests.waveform.display_test [matplotlib|pyqtgraph]
+    python -m tests.waveform.display_test
 """
 import sys
 import numpy as np
@@ -13,13 +13,8 @@ from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPu
 
 def main():
     """Main function to create and show the waveform test window"""
-    # Parse command line arguments
-    if len(sys.argv) > 1 and sys.argv[1] in ['matplotlib', 'pyqtgraph']:
-        backend = sys.argv[1]
-    else:
-        backend = 'pyqtgraph'  # Default to PyQtGraph
-    
-    print(f"Using {backend} backend for waveform visualization")
+    # PyQtGraph is now the only backend
+    print("Using PyQtGraph for waveform visualization")
     
     # Create application
     app = QApplication([])
@@ -33,7 +28,7 @@ def main():
     
     # Create main window
     win = QMainWindow()
-    win.setWindowTitle(f"Waveform Visualization Test ({backend})")
+    win.setWindowTitle("Waveform Visualization Test (PyQtGraph)")
     win.resize(800, 600)
     
     # Create central widget with layout
@@ -41,8 +36,8 @@ def main():
     main_layout = QVBoxLayout(central_widget)
     win.setCentralWidget(central_widget)
     
-    # Create PyQtGraph waveform view
-    waveform_view = create_waveform_view(backend=backend)
+    # Create waveform view (PyQtGraph-based)
+    waveform_view = create_waveform_view()
     main_layout.addWidget(waveform_view)
     
     # Generate sample data
