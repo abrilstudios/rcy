@@ -55,10 +55,6 @@ class PyQtGraphWaveformView(BaseWaveformView):
     """PyQtGraph implementation of the waveform visualization"""
     
     def __init__(self, parent=None):
-        # Check if PyQtGraph is available before proceeding
-        if not PYQTGRAPH_AVAILABLE:
-            raise ImportError("PyQtGraph is not available")
-            
         super().__init__(parent)
         
         # Enable antialiasing for smoother drawing

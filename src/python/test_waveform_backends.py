@@ -1,6 +1,5 @@
 """
-Test script to compare Matplotlib and PyQtGraph waveform visualizations side by side.
-This helps evaluate performance and appearance differences between the backends.
+Performance test script for PyQtGraph waveform visualization.
 """
 import sys
 import numpy as np
@@ -40,69 +39,43 @@ class BenchmarkTest:
         self.times = []
 
 
-class ComparisonWindow(QMainWindow):
-    """Window for comparing waveform visualization backends"""
+class PerformanceTestWindow(QMainWindow):
+    """Window for testing PyQtGraph waveform visualization performance"""
     
     def __init__(self):
         super().__init__()
         
         # Set window properties
-        self.setWindowTitle("Waveform Backend Comparison")
-        self.setGeometry(100, 100, 1400, 800)
+        self.setWindowTitle("PyQtGraph Waveform Performance Test")
+        self.setGeometry(100, 100, 1200, 600)
         
-        # Create benchmark tools
-        self.matplotlib_benchmark = BenchmarkTest()
-        self.pyqtgraph_benchmark = BenchmarkTest()
+        # Create benchmark tool
+        self.benchmark = BenchmarkTest()
         
         # Create central widget and main layout
         central_widget = QWidget()
         main_layout = QVBoxLayout(central_widget)
         
-        # Create views layout (side by side)
-        views_layout = QHBoxLayout()
+        # Create waveform panel
+        waveform_panel = QVBoxLayout()
+        self.waveform_label = QLabel("PyQtGraph Waveform View")
+        self.waveform_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        waveform_panel.addWidget(self.waveform_label)
         
-        # Create left panel (Matplotlib)
-        left_panel = QVBoxLayout()
-        self.left_label = QLabel("Matplotlib")
-        self.left_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        left_panel.addWidget(self.left_label)
+        # Create waveform view
+        self.waveform_view = create_waveform_view()
+        self.waveform_view.segment_clicked.connect(
+            lambda pos: self.on_segment_clicked(pos))
+        self.waveform_view.marker_dragged.connect(
+            lambda marker, pos: self.on_marker_dragged(marker, pos))
         
-        # Create Matplotlib waveform view
-        self.matplotlib_view = create_waveform_view(backend='matplotlib')
-        self.matplotlib_view.segment_clicked.connect(
-            lambda pos: self.on_segment_clicked('matplotlib', pos))
-        self.matplotlib_view.marker_dragged.connect(
-            lambda marker, pos: self.on_marker_dragged('matplotlib', marker, pos))
+        waveform_panel.addWidget(self.waveform_view)
+        self.performance_info = QLabel("Render time: --")
+        self.performance_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        waveform_panel.addWidget(self.performance_info)
         
-        left_panel.addWidget(self.matplotlib_view)
-        self.left_info = QLabel("Render time: --")
-        self.left_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        left_panel.addWidget(self.left_info)
-        
-        # Create right panel (PyQtGraph)
-        right_panel = QVBoxLayout()
-        self.right_label = QLabel("PyQtGraph")
-        self.right_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        right_panel.addWidget(self.right_label)
-        
-        # Create PyQtGraph waveform view
-        self.pyqtgraph_view = create_waveform_view(backend='pyqtgraph')
-        self.pyqtgraph_view.segment_clicked.connect(
-            lambda pos: self.on_segment_clicked('pyqtgraph', pos))
-        self.pyqtgraph_view.marker_dragged.connect(
-            lambda marker, pos: self.on_marker_dragged('pyqtgraph', marker, pos))
-        
-        right_panel.addWidget(self.pyqtgraph_view)
-        self.right_info = QLabel("Render time: --")
-        self.right_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        right_panel.addWidget(self.right_info)
-        
-        # Add panels to the views layout
-        views_layout.addLayout(left_panel)
-        views_layout.addLayout(right_panel)
-        
-        # Add views layout to main layout
-        main_layout.addLayout(views_layout)
+        # Add panel to the main layout
+        main_layout.addLayout(waveform_panel)
         
         # Create test controls
         controls_layout = QHBoxLayout()
@@ -180,10 +153,8 @@ class ComparisonWindow(QMainWindow):
         self.load_test_data('sine')
         
         # Set initial marker positions at start and end of waveform
-        self.matplotlib_view.set_start_marker(0)
-        self.matplotlib_view.set_end_marker(self.duration)
-        self.pyqtgraph_view.set_start_marker(0)
-        self.pyqtgraph_view.set_end_marker(self.duration)
+        self.waveform_view.set_start_marker(0)
+        self.waveform_view.set_end_marker(self.duration)
     
     def load_test_data(self, data_type):
         """Load test data for visualization"""
@@ -251,135 +222,91 @@ class ComparisonWindow(QMainWindow):
             left_ds = self.data_left
             right_ds = self.data_right
         
-        # Time and update the Matplotlib view
-        self.matplotlib_benchmark.start()
-        self.matplotlib_view.update_plot(time_ds, left_ds, right_ds)
-        self.matplotlib_view.total_time = self.duration
-        matplotlib_time = self.matplotlib_benchmark.stop()
-        
         # Time and update the PyQtGraph view
-        self.pyqtgraph_benchmark.start()
-        self.pyqtgraph_view.update_plot(time_ds, left_ds, right_ds)
-        self.pyqtgraph_view.total_time = self.duration
-        pyqtgraph_time = self.pyqtgraph_benchmark.stop()
+        self.benchmark.start()
+        self.waveform_view.update_plot(time_ds, left_ds, right_ds)
+        self.waveform_view.total_time = self.duration
+        render_time = self.benchmark.stop()
         
-        # Update info labels
-        self.left_info.setText(f"Render time: {matplotlib_time*1000:.1f}ms")
-        self.right_info.setText(f"Render time: {pyqtgraph_time*1000:.1f}ms")
+        # Update info label
+        self.performance_info.setText(f"Render time: {render_time*1000:.1f}ms")
         
         # Update window title
-        self.setWindowTitle(f"Waveform Backend Comparison - {data_description}")
+        self.setWindowTitle(f"PyQtGraph Waveform Performance Test - {data_description}")
         
         # Set markers at start and end of waveform whenever we load new data
-        self.matplotlib_view.set_start_marker(0)
-        self.matplotlib_view.set_end_marker(self.duration)
-        self.pyqtgraph_view.set_start_marker(0)
-        self.pyqtgraph_view.set_end_marker(self.duration)
+        self.waveform_view.set_start_marker(0)
+        self.waveform_view.set_end_marker(self.duration)
         
         print(f"Loaded {data_description}: {len(time_ds)} samples")
-        print(f"  Matplotlib: {matplotlib_time*1000:.1f}ms")
-        print(f"  PyQtGraph: {pyqtgraph_time*1000:.1f}ms")
-        print(f"  Speed ratio: {matplotlib_time/pyqtgraph_time:.1f}x")
+        print(f"  Render time: {render_time*1000:.1f}ms")
     
     def add_slices(self):
-        """Add test slices to both waveform views"""
+        """Add test slices to the waveform view"""
         # Create evenly spaced slices
         slices = np.linspace(0, self.duration, 11)[1:-1]  # Skip first and last
         
         # Add some random variation
         slices += np.random.uniform(-0.2, 0.2, len(slices))
         
-        # Time and update the Matplotlib view
-        self.matplotlib_benchmark.start()
-        self.matplotlib_view.update_slices(slices, self.duration)
-        matplotlib_time = self.matplotlib_benchmark.stop()
-        
         # Time and update the PyQtGraph view
-        self.pyqtgraph_benchmark.start()
-        self.pyqtgraph_view.update_slices(slices, self.duration)
-        pyqtgraph_time = self.pyqtgraph_benchmark.stop()
+        self.benchmark.start()
+        self.waveform_view.update_slices(slices, self.duration)
+        render_time = self.benchmark.stop()
         
-        # Update info labels
-        self.left_info.setText(f"Slice time: {matplotlib_time*1000:.1f}ms")
-        self.right_info.setText(f"Slice time: {pyqtgraph_time*1000:.1f}ms")
+        # Update info label
+        self.performance_info.setText(f"Slice time: {render_time*1000:.1f}ms")
         
         print(f"Added {len(slices)} slices")
-        print(f"  Matplotlib: {matplotlib_time*1000:.1f}ms")
-        print(f"  PyQtGraph: {pyqtgraph_time*1000:.1f}ms")
-        print(f"  Speed ratio: {matplotlib_time/pyqtgraph_time:.1f}x")
+        print(f"  Render time: {render_time*1000:.1f}ms")
     
     def set_markers(self):
-        """Set test markers on both waveform views"""
+        """Set test markers on the waveform view"""
         # Set markers at 25% and 75% of the duration
         start_pos = self.duration * 0.25
         end_pos = self.duration * 0.75
         
-        # Time and update the Matplotlib view
-        self.matplotlib_benchmark.start()
-        self.matplotlib_view.set_start_marker(start_pos)
-        self.matplotlib_view.set_end_marker(end_pos)
-        matplotlib_time = self.matplotlib_benchmark.stop()
-        
         # Time and update the PyQtGraph view
-        self.pyqtgraph_benchmark.start()
-        self.pyqtgraph_view.set_start_marker(start_pos)
-        self.pyqtgraph_view.set_end_marker(end_pos)
-        pyqtgraph_time = self.pyqtgraph_benchmark.stop()
+        self.benchmark.start()
+        self.waveform_view.set_start_marker(start_pos)
+        self.waveform_view.set_end_marker(end_pos)
+        render_time = self.benchmark.stop()
         
-        # Update info labels
-        self.left_info.setText(f"Marker time: {matplotlib_time*1000:.1f}ms")
-        self.right_info.setText(f"Marker time: {pyqtgraph_time*1000:.1f}ms")
+        # Update info label
+        self.performance_info.setText(f"Marker time: {render_time*1000:.1f}ms")
         
         print(f"Set markers at {start_pos:.2f}s and {end_pos:.2f}s")
-        print(f"  Matplotlib: {matplotlib_time*1000:.1f}ms")
-        print(f"  PyQtGraph: {pyqtgraph_time*1000:.1f}ms")
-        print(f"  Speed ratio: {matplotlib_time/pyqtgraph_time:.1f}x")
+        print(f"  Render time: {render_time*1000:.1f}ms")
     
     def highlight_segment(self):
-        """Highlight a segment in both waveform views"""
+        """Highlight a segment in the waveform view"""
         # Highlight the middle third
         start_pos = self.duration / 3
         end_pos = self.duration * 2 / 3
         
-        # Time and update the Matplotlib view
-        self.matplotlib_benchmark.start()
-        self.matplotlib_view.highlight_active_segment(start_pos, end_pos)
-        matplotlib_time = self.matplotlib_benchmark.stop()
-        
         # Time and update the PyQtGraph view
-        self.pyqtgraph_benchmark.start()
-        self.pyqtgraph_view.highlight_active_segment(start_pos, end_pos)
-        pyqtgraph_time = self.pyqtgraph_benchmark.stop()
+        self.benchmark.start()
+        self.waveform_view.highlight_active_segment(start_pos, end_pos)
+        render_time = self.benchmark.stop()
         
-        # Update info labels
-        self.left_info.setText(f"Highlight time: {matplotlib_time*1000:.1f}ms")
-        self.right_info.setText(f"Highlight time: {pyqtgraph_time*1000:.1f}ms")
+        # Update info label
+        self.performance_info.setText(f"Highlight time: {render_time*1000:.1f}ms")
         
         print(f"Highlighted segment from {start_pos:.2f}s to {end_pos:.2f}s")
-        print(f"  Matplotlib: {matplotlib_time*1000:.1f}ms")
-        print(f"  PyQtGraph: {pyqtgraph_time*1000:.1f}ms")
-        print(f"  Speed ratio: {matplotlib_time/pyqtgraph_time:.1f}x")
+        print(f"  Render time: {render_time*1000:.1f}ms")
     
     def clear_highlight(self):
-        """Clear segment highlight in both waveform views"""
-        # Time and update the Matplotlib view
-        self.matplotlib_benchmark.start()
-        self.matplotlib_view.clear_active_segment_highlight()
-        matplotlib_time = self.matplotlib_benchmark.stop()
-        
+        """Clear segment highlight in the waveform view"""
         # Time and update the PyQtGraph view
-        self.pyqtgraph_benchmark.start()
-        self.pyqtgraph_view.clear_active_segment_highlight()
-        pyqtgraph_time = self.pyqtgraph_benchmark.stop()
+        self.benchmark.start()
+        self.waveform_view.clear_active_segment_highlight()
+        render_time = self.benchmark.stop()
         
-        # Update info labels
-        self.left_info.setText(f"Clear time: {matplotlib_time*1000:.1f}ms")
-        self.right_info.setText(f"Clear time: {pyqtgraph_time*1000:.1f}ms")
+        # Update info label
+        self.performance_info.setText(f"Clear time: {render_time*1000:.1f}ms")
         
         print(f"Cleared highlights")
-        print(f"  Matplotlib: {matplotlib_time*1000:.1f}ms")
-        print(f"  PyQtGraph: {pyqtgraph_time*1000:.1f}ms")
-        print(f"  Speed ratio: {matplotlib_time/pyqtgraph_time:.1f}x")
+        print(f"  Render time: {render_time*1000:.1f}ms")
     
     def run_benchmark(self):
         """Run a comprehensive benchmark test"""
@@ -391,8 +318,7 @@ class ComparisonWindow(QMainWindow):
         results = []
         
         # Update UI during benchmark
-        self.left_info.setText("Running benchmark...")
-        self.right_info.setText("Running benchmark...")
+        self.performance_info.setText("Running benchmark...")
         
         # Run benchmarks for each sample size
         for samples in test_samples:
@@ -402,64 +328,52 @@ class ComparisonWindow(QMainWindow):
             right = np.sin(2 * np.pi * t + 0.5) + 0.1 * np.sin(2 * np.pi * 10 * t + 0.5)
             
             # Run 5 iterations for each
-            matplotlib_times = []
-            pyqtgraph_times = []
+            render_times = []
             
             for i in range(5):
-                # Matplotlib test
-                self.matplotlib_benchmark.start()
-                self.matplotlib_view.update_plot(t, left, right)
-                matplotlib_time = self.matplotlib_benchmark.stop()
-                matplotlib_times.append(matplotlib_time)
-                
                 # PyQtGraph test
-                self.pyqtgraph_benchmark.start()
-                self.pyqtgraph_view.update_plot(t, left, right)
-                pyqtgraph_time = self.pyqtgraph_benchmark.stop()
-                pyqtgraph_times.append(pyqtgraph_time)
+                self.benchmark.start()
+                self.waveform_view.update_plot(t, left, right)
+                render_time = self.benchmark.stop()
+                render_times.append(render_time)
                 
                 # Process events to keep UI responsive
                 QApplication.processEvents()
             
-            # Calculate averages
-            matplotlib_avg = sum(matplotlib_times) / len(matplotlib_times)
-            pyqtgraph_avg = sum(pyqtgraph_times) / len(pyqtgraph_times)
-            speed_ratio = matplotlib_avg / pyqtgraph_avg
+            # Calculate average
+            avg_time = sum(render_times) / len(render_times)
             
             # Store results
-            results.append((samples, matplotlib_avg, pyqtgraph_avg, speed_ratio))
+            results.append((samples, avg_time))
         
         # Display results
         print("\nBenchmark Results:")
-        print("Samples | Matplotlib (ms) | PyQtGraph (ms) | Ratio")
-        print("------------------------------------------------")
-        for samples, matplotlib_time, pyqtgraph_time, ratio in results:
-            print(f"{samples:7d} | {matplotlib_time*1000:14.2f} | {pyqtgraph_time*1000:13.2f} | {ratio:5.1f}x")
+        print("Samples | Render Time (ms)")
+        print("---------------------------")
+        for samples, render_time in results:
+            print(f"{samples:7d} | {render_time*1000:14.2f}")
         
-        # Update info labels with average results
-        total_ratio = sum(r[3] for r in results) / len(results)
-        self.left_info.setText(f"Benchmark complete - Average: {total_ratio:.1f}x slower than PyQtGraph")
-        self.right_info.setText(f"Benchmark complete - Average: {total_ratio:.1f}x faster than Matplotlib")
+        # Update info label with average results
+        avg_render_time = sum(r[1] for r in results) / len(results)
+        self.performance_info.setText(f"Benchmark complete - Average render time: {avg_render_time*1000:.2f}ms")
     
     def reset_benchmark(self):
         """Reset benchmark statistics"""
-        self.matplotlib_benchmark.reset()
-        self.pyqtgraph_benchmark.reset()
-        self.left_info.setText("Stats reset")
-        self.right_info.setText("Stats reset")
+        self.benchmark.reset()
+        self.performance_info.setText("Stats reset")
     
-    def on_segment_clicked(self, backend, position):
+    def on_segment_clicked(self, position):
         """Handle segment click events"""
-        print(f"{backend.capitalize()} segment clicked at {position:.3f}s")
+        print(f"Segment clicked at {position:.3f}s")
     
-    def on_marker_dragged(self, backend, marker_type, position):
+    def on_marker_dragged(self, marker_type, position):
         """Handle marker drag events"""
-        print(f"{backend.capitalize()} {marker_type} marker dragged to {position:.3f}s")
+        print(f"{marker_type} marker dragged to {position:.3f}s")
 
 
 def main():
     app = QApplication(sys.argv)
-    window = ComparisonWindow()
+    window = PerformanceTestWindow()
     window.show()
     sys.exit(app.exec())
 

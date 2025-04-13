@@ -21,7 +21,7 @@ class MinimalTest(QMainWindow):
         self.setCentralWidget(self.central_widget)
         
         # Create PyQtGraph waveform view
-        self.waveform_view = create_waveform_view(backend='pyqtgraph')
+        self.waveform_view = create_waveform_view()
         self.layout.addWidget(self.waveform_view)
         
         # Generate sample data
