@@ -1,5 +1,25 @@
 # RCY Playback and Export Pipelines
 
+## Sample Accuracy in Drum and Bass: Why RCY Remembers the S1000
+
+In most modern DAWs, tempo and pitch manipulation are handled behind the scenes—rubberbanding, granular stretch, elastic this and that. But in the world of classic jungle and drum and bass, that kind of ambiguity is dangerous. Because on a real system—a proper system—you can hear the difference.
+
+RCY was built to fix that. It doesn't rubberband your loops or pitch-correct them with machine learning. It does what the Akai S1000 did: changes pitch and tempo by changing sample rate. That means what you hear when you stretch a break is the real deal—no interpolation, no spectral guessing. Just raw audio playing faster or slower, with all the aliasing, crunch, and movement that implies.
+
+### Remembering the S1000 (and S950)
+
+The S1000 made 16-bit digital playback musical by accident. You pitched things up to save RAM. You played things down to get weight. The aliasing and frequency response became part of the vibe. Even more so with the 12-bit S950, which introduced deliberate bandwidth limitation and crunchy downsampling—the exact character people now chase with plugins labeled vintage mode.
+
+RCY isn't a plugin. It's a workflow. It keeps pitch/tempo tied to the playback engine the way the S1000 did—resampling, not stretching. When you export, it gives you back audio in the same shape you heard it. We're even looking at bringing in true 12-bit S950-style output as an export option—future work, but grounded in the same philosophy: if you can hear it, you should be able to export it.
+
+### Why It Matters
+
+Because in drum and bass, timing isn't just tight—it's sacred. Shifting a snare by 1 ms can kill a groove. Adding subtle phase smear from time-stretching algorithms can ruin the weight. You only get one chance to be felt on a big rig, and guesswork isn't good enough.
+
+RCY brings back the idea that your sampler is an instrument, not a black box. That every change is deliberate. That what you hear in your headphones is what comes out the speakers—exactly.
+
+---
+
 This document describes the audio processing pipeline for both playback and export in RCY, explaining the design philosophy, implementation details, and technical decisions.
 
 ## Design Philosophy
