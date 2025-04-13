@@ -226,9 +226,18 @@ class WavAudioProcessor:
         else:
             return 0, data_length / self.sample_rate
 
-    def play_segment(self, start_time, end_time):
-        """Play a segment of audio in a non-blocking way, with toggle support"""
-        print(f"### Model play_segment called with start_time={start_time}, end_time={end_time}")
+    def play_segment(self, start_time, end_time, reverse=False):
+        """Play a segment of audio in a non-blocking way, with toggle support
+        
+        Args:
+            start_time: Start time in seconds
+            end_time: End time in seconds
+            reverse: Whether to play the segment in reverse
+        
+        Returns:
+            bool: True if playback started, False otherwise
+        """
+        print(f"### Model play_segment called with start_time={start_time}, end_time={end_time}, reverse={reverse}")
         
         # If already playing, stop the current playback
         if self.is_playing:
@@ -236,6 +245,12 @@ class WavAudioProcessor:
             self.stop_playback()
             return False  # Indicate that we stopped playback instead of starting it
         
+        # Always ensure start_time < end_time for sample extraction
+        # We'll handle reverse playback by reversing the segment data
+        if start_time > end_time:
+            print(f"### Swapping start/end times: {start_time} > {end_time}")
+            start_time, end_time = end_time, start_time
+            
         # Extract the segment data
         start_sample = int(start_time * self.sample_rate)
         end_sample = int(end_time * self.sample_rate)
@@ -256,12 +271,23 @@ class WavAudioProcessor:
             print("### Creating mono segment")
             segment = self.data_left[start_sample:end_sample]
         
+        # Reverse the segment if needed
+        if reverse:
+            print("### Reversing segment for playback")
+            if self.is_stereo:
+                # For stereo audio, we need to flip the rows but keep columns intact
+                segment = np.flipud(segment.copy())
+            else:
+                # For mono audio, just flip the array
+                segment = np.flip(segment.copy())
+        
         print(f"### Segment created with shape: {segment.shape}")
         
         # Define the playback function for threading
         def play_audio():
             try:
                 print(f"### Starting playback thread for segment {start_time:.2f}s to {end_time:.2f}s")
+                print(f"### Direction: {'reverse' if reverse else 'forward'}")
                 self.is_playing = True
                 sd.play(segment, self.sample_rate)
                 sd.wait()  # This blocks until playback is complete
