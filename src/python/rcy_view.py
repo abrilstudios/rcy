@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QApplication, QLabel, QLineEdit, QComboBox, QMessageBox, QMainWindow, QFileDialog, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QScrollBar, QSlider, QDialog, QTextBrowser
+from PyQt6.QtWidgets import QApplication, QLabel, QLineEdit, QComboBox, QMessageBox, QMainWindow, QFileDialog, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QScrollBar, QSlider, QDialog, QTextBrowser, QInputDialog, QCheckBox
 from PyQt6.QtGui import QAction, QActionGroup, QValidator, QIntValidator, QFont
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from config_manager import config
@@ -66,6 +66,106 @@ class RcyView(QMainWindow):
                 self.toggle_playback()
                 return True
         return super().eventFilter(obj, event)
+        
+    def toggle_playback_tempo(self, enabled):
+        """Toggle playback tempo adjustment on/off
+        
+        Args:
+            enabled (bool): Whether playback tempo adjustment is enabled
+        """
+        print(f"Toggling playback tempo adjustment: {enabled}")
+        
+        # Update menu action if it exists
+        if hasattr(self, 'playback_tempo_action'):
+            self.playback_tempo_action.setChecked(enabled)
+        
+        # Update checkbox if it exists
+        if hasattr(self, 'playback_tempo_checkbox'):
+            self.playback_tempo_checkbox.setChecked(enabled)
+        
+        # Get the current target BPM from the dropdown
+        target_bpm = None
+        if hasattr(self, 'playback_tempo_combo'):
+            current_index = self.playback_tempo_combo.currentIndex()
+            if current_index >= 0:
+                target_bpm = self.playback_tempo_combo.itemData(current_index)
+        
+        # Update controller
+        if hasattr(self.controller, 'set_playback_tempo'):
+            self.controller.set_playback_tempo(enabled, target_bpm)
+    
+    def set_target_bpm(self, bpm):
+        """Set the target BPM for playback tempo adjustment
+        
+        Args:
+            bpm (int): Target BPM value
+        """
+        print(f"Setting target BPM to {bpm}")
+        
+        # Update dropdown if it exists
+        if hasattr(self, 'playback_tempo_combo'):
+            # Find the index for this BPM
+            for i in range(self.playback_tempo_combo.count()):
+                if self.playback_tempo_combo.itemData(i) == bpm:
+                    self.playback_tempo_combo.setCurrentIndex(i)
+                    break
+        
+        # Get current enabled state from checkbox
+        enabled = False
+        if hasattr(self, 'playback_tempo_checkbox'):
+            enabled = self.playback_tempo_checkbox.isChecked()
+        
+        # Update controller
+        if hasattr(self.controller, 'set_playback_tempo'):
+            self.controller.set_playback_tempo(enabled, bpm)
+    
+    def on_playback_tempo_changed(self, index):
+        """Handle changes to the playback tempo dropdown
+        
+        Args:
+            index (int): Index of the selected item
+        """
+        if index < 0:
+            return
+            
+        # Get the selected BPM
+        bpm = self.playback_tempo_combo.itemData(index)
+        print(f"Playback tempo changed to {bpm} BPM")
+        
+        # Get current enabled state
+        enabled = self.playback_tempo_checkbox.isChecked()
+        
+        # Update controller
+        if hasattr(self.controller, 'set_playback_tempo'):
+            self.controller.set_playback_tempo(enabled, bpm)
+    
+    def update_playback_tempo_display(self, enabled, source_bpm, target_bpm, ratio):
+        """Update the playback tempo UI display
+        
+        Args:
+            enabled (bool): Whether playback tempo adjustment is enabled
+            source_bpm (float): Source tempo in BPM
+            target_bpm (int): Target tempo in BPM
+            ratio (float): The playback ratio
+        """
+        # Update checkbox
+        if hasattr(self, 'playback_tempo_checkbox'):
+            self.playback_tempo_checkbox.setChecked(enabled)
+        
+        # Update source BPM display
+        if hasattr(self, 'source_bpm_display'):
+            self.source_bpm_display.setText(f"{source_bpm:.1f}")
+        
+        # Update dropdown to show the target BPM
+        if hasattr(self, 'playback_tempo_combo'):
+            for i in range(self.playback_tempo_combo.count()):
+                if self.playback_tempo_combo.itemData(i) == target_bpm:
+                    self.playback_tempo_combo.setCurrentIndex(i)
+                    break
+        
+        # Update menu action
+        if hasattr(self, 'playback_tempo_action'):
+            self.playback_tempo_action.setChecked(enabled)
 
     def create_menu_bar(self):
         menubar = self.menuBar()
@@ -98,6 +198,25 @@ class RcyView(QMainWindow):
         
         # Options menu
         options_menu = menubar.addMenu("Options")
+        
+        # Playback Tempo submenu
+        playback_tempo_menu = options_menu.addMenu("Playback Tempo")
+        
+        # Enable/disable playback tempo adjustment
+        self.playback_tempo_action = QAction("Enable Tempo Adjustment", self)
+        self.playback_tempo_action.setCheckable(True)
+        self.playback_tempo_action.triggered.connect(self.toggle_playback_tempo)
+        playback_tempo_menu.addAction(self.playback_tempo_action)
+        
+        # Add separator
+        playback_tempo_menu.addSeparator()
+        
+        # Add common BPM choices
+        common_bpms = [80, 90, 100, 110, 120, 130, 140, 160, 170, 180]
+        for bpm in common_bpms:
+            bpm_action = QAction(f"{bpm} BPM", self)
+            bpm_action.triggered.connect(lambda checked, bpm=bpm: self.set_target_bpm(bpm))
+            playback_tempo_menu.addAction(bpm_action)
         
         # Playback Mode submenu
         playback_mode_menu = options_menu.addMenu("Playback Mode")
@@ -198,6 +317,35 @@ class RcyView(QMainWindow):
         self.tempo_display.setReadOnly(True)
         info_layout.addWidget(self.tempo_label)
         info_layout.addWidget(self.tempo_display)
+        
+        ## Playback Tempo Controls
+        # Create a horizontal layout for playback tempo
+        playback_tempo_layout = QHBoxLayout()
+        
+        # Create checkbox for enabling/disabling
+        self.playback_tempo_checkbox = QCheckBox("Tempo Adjust:")
+        self.playback_tempo_checkbox.setChecked(False)
+        self.playback_tempo_checkbox.toggled.connect(self.toggle_playback_tempo)
+        playback_tempo_layout.addWidget(self.playback_tempo_checkbox)
+        
+        # Create dropdown for target BPM
+        self.playback_tempo_combo = QComboBox()
+        common_bpms = [80, 90, 100, 110, 120, 130, 140, 160, 170, 180]
+        for bpm in common_bpms:
+            self.playback_tempo_combo.addItem(f"{bpm} BPM", bpm)
+        self.playback_tempo_combo.currentIndexChanged.connect(self.on_playback_tempo_changed)
+        playback_tempo_layout.addWidget(self.playback_tempo_combo)
+        
+        # Source BPM display
+        self.source_bpm_label = QLabel("Source:")
+        self.source_bpm_display = QLineEdit("0.0")
+        self.source_bpm_display.setReadOnly(True)
+        self.source_bpm_display.setFixedWidth(60)
+        playback_tempo_layout.addWidget(self.source_bpm_label)
+        playback_tempo_layout.addWidget(self.source_bpm_display)
+        
+        # Add the playback tempo layout to the info layout
+        info_layout.addLayout(playback_tempo_layout)
 
         ## Load Button
         #self.load_button = QPushButton("Load Audio")

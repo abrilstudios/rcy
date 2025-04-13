@@ -22,12 +22,31 @@ class WavAudioProcessor:
         self.is_stereo = False
         self.channels = 1
         
+        # Initialize playback tempo settings
+        self._init_playback_tempo()
+        
         # Try to load the specified preset
         try:
             self.load_preset(preset_id)
         except Exception as e:
             print(f"ERROR: Failed to load preset '{preset_id}': {e}")
             sys.exit(1)
+    
+    def _init_playback_tempo(self):
+        """Initialize playback tempo settings from config"""
+        # Get playback tempo config with defaults
+        pt_config = config.get_value_from_json_file("audio.json", "playbackTempo", {})
+        
+        # Read settings with defaults
+        self.playback_tempo_enabled = pt_config.get("enabled", False)
+        self.target_bpm = int(pt_config.get("targetBpm", 120))
+        
+        # Source BPM is calculated from audio duration and measures
+        # Will be set properly after loading preset
+        self.source_bpm = 120.0  # Default value
+        
+        print(f"Playback tempo initialized: {self.playback_tempo_enabled}, "
+              f"target={self.target_bpm} BPM")
 
     def load_preset(self, preset_id):
         """Load an audio preset by its ID"""
@@ -82,6 +101,10 @@ class WavAudioProcessor:
             # Create time array based on the actual data length
             self.time = np.linspace(0, self.total_time, len(self.data_left))
             self.segments = []
+            
+            # Calculate source BPM based on the loaded audio file
+            measures = None  # Use the value from preset_info
+            self.calculate_source_bpm(measures=measures)
         except Exception as e:
             print(f"Error loading audio file {filename}: {e}")
             raise
@@ -283,17 +306,32 @@ class WavAudioProcessor:
         
         print(f"### Segment created with shape: {segment.shape}")
         
+        # Get the sample rate to use for playback (adjusted or original)
+        playback_sample_rate = self.sample_rate
+        if self.playback_tempo_enabled:
+            playback_sample_rate = self.get_adjusted_sample_rate()
+            print(f"### Using tempo-adjusted sample rate: {playback_sample_rate} Hz")
+        
         # Define the playback function for threading
         def play_audio():
             try:
                 print(f"### Starting playback thread for segment {start_time:.2f}s to {end_time:.2f}s")
                 print(f"### Direction: {'reverse' if reverse else 'forward'}")
+                
+                if self.playback_tempo_enabled:
+                    ratio = self.get_playback_ratio()
+                    print(f"### Tempo adjustment active: {ratio:.2f}x ({self.source_bpm:.1f} → {self.target_bpm} BPM)")
+                
                 self.is_playing = True
-                sd.play(segment, self.sample_rate)
+                
+                # Use the adjusted sample rate
+                sd.play(segment, playback_sample_rate)
                 sd.wait()  # This blocks until playback is complete
                 print("### Playback complete")
             except Exception as e:
                 print(f"### ERROR during playback: {e}")
+                import traceback
+                traceback.print_exc()
             finally:
                 self.is_playing = False
                 # Notify that playback has completed
@@ -323,6 +361,99 @@ class WavAudioProcessor:
 
     def get_sample_at_time(self, time):
         return int(time * self.sample_rate)
+    
+    def calculate_source_bpm(self, measures=None):
+        """Calculate source BPM based on audio duration and measure count
+        
+        Formula: Source BPM = (60 × beats) / duration
+        Where beats = measures × 4 (assuming 4/4 time signature)
+        """
+        if not hasattr(self, 'total_time') or self.total_time <= 0:
+            print("Warning: Cannot calculate source BPM, invalid duration")
+            return 120.0  # Default fallback
+            
+        # Use provided measures or get from preset info
+        if measures is None:
+            if self.preset_info and 'measures' in self.preset_info:
+                measures = self.preset_info.get('measures', 4)
+            else:
+                measures = 4  # Default if not specified
+                
+        # Ensure positive value
+        if measures <= 0:
+            measures = 4
+            
+        # Get beats per measure from config (default to 4/4 time signature)
+        beats_per_measure = 4  # Standard 4/4 time for breakbeats
+        
+        # Calculate total beats in the audio file
+        total_beats = measures * beats_per_measure
+        
+        # Calculate BPM based on total beats
+        source_bpm = (60.0 * total_beats) / self.total_time
+        
+        # Store the calculated value
+        self.source_bpm = source_bpm
+        
+        print(f"Calculated source BPM: {source_bpm:.2f} based on {measures} measures × {beats_per_measure} beats = {total_beats} beats over {self.total_time:.2f}s duration")
+        return source_bpm
+    
+    def get_playback_ratio(self):
+        """Calculate the playback ratio for tempo adjustment
+        
+        Formula: playbackRatio = targetBPM / sourceBPM
+        """
+        if not self.playback_tempo_enabled:
+            return 1.0  # No adjustment
+            
+        if not hasattr(self, 'source_bpm') or self.source_bpm <= 0:
+            # Recalculate if needed
+            self.calculate_source_bpm()
+            
+        if self.source_bpm <= 0:
+            return 1.0  # Safety check
+            
+        # Calculate the ratio
+        ratio = self.target_bpm / self.source_bpm
+        
+        print(f"Playback ratio: {ratio:.2f} (target: {self.target_bpm} BPM / source: {self.source_bpm:.2f} BPM)")
+        return ratio
+    
+    def get_adjusted_sample_rate(self):
+        """Get the sample rate adjusted for tempo change"""
+        if not self.playback_tempo_enabled:
+            return self.sample_rate
+            
+        # Calculate the playback ratio
+        ratio = self.get_playback_ratio()
+        
+        # Apply ratio to sample rate
+        adjusted_rate = int(self.sample_rate * ratio)
+        
+        print(f"Adjusted sample rate: {adjusted_rate} Hz (original: {self.sample_rate} Hz, ratio: {ratio:.2f})")
+        return adjusted_rate
+    
+    def set_playback_tempo(self, enabled, target_bpm=None):
+        """Configure playback tempo settings
+        
+        Args:
+            enabled (bool): Whether tempo adjustment is enabled
+            target_bpm (int, optional): Target tempo in BPM
+        """
+        self.playback_tempo_enabled = enabled
+        
+        if target_bpm is not None:
+            self.target_bpm = int(target_bpm)
+            
+        # Ensure source BPM is calculated
+        if not hasattr(self, 'source_bpm') or self.source_bpm <= 0:
+            self.calculate_source_bpm()
+            
+        print(f"Playback tempo updated: {self.playback_tempo_enabled}, "
+              f"target={self.target_bpm} BPM, source={self.source_bpm:.2f} BPM")
+        
+        # Return the new playback ratio for convenience
+        return self.get_playback_ratio()
         
     def cut_audio(self, start_sample, end_sample):
         """Trim audio to the region between start_sample and end_sample"""
