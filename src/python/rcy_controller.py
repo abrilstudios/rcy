@@ -18,6 +18,11 @@ class RcyController:
         td_config = config.get_value_from_json_file("audio.json", "transientDetection", {})
         self.threshold = td_config.get("threshold", 0.20)
         
+        # Get playback tempo parameters from config
+        pt_config = config.get_value_from_json_file("audio.json", "playbackTempo", {})
+        self.playback_tempo_enabled = pt_config.get("enabled", False)
+        self.target_bpm = pt_config.get("targetBpm", 120)
+        
         self.view = None
         
         # Setup timer to check playback status periodically
@@ -40,6 +45,21 @@ class RcyController:
         # Initialize marker positions
         self.start_marker_pos = None
         self.end_marker_pos = None
+        
+        # Initialize playback tempo UI
+        if hasattr(self.view, 'update_playback_tempo_display'):
+            # Get source BPM from model if available
+            source_bpm = 120.0
+            if hasattr(self.model, 'source_bpm'):
+                source_bpm = self.model.source_bpm
+                
+            # Update the view with initial values
+            self.view.update_playback_tempo_display(
+                self.playback_tempo_enabled,
+                source_bpm,
+                self.target_bpm,
+                1.0  # Initial ratio
+            )
 
     def on_threshold_changed(self, threshold):
         self.threshold = threshold
@@ -92,10 +112,22 @@ class RcyController:
             self.tempo = self.model.get_tempo(self.num_measures)
             print(f"Tempo: {self.tempo:.2f} BPM based on {self.num_measures} measures")
             
+            # Calculate source BPM for playback tempo adjustment
+            self.model.calculate_source_bpm(measures=self.num_measures)
+            
             # Update view
             self.update_view()
             self.view.update_scroll_bar(self.visible_time, self.model.total_time)
             self.view.update_tempo(self.tempo)
+            
+            # Update playback tempo display if available
+            if hasattr(self.view, 'update_playback_tempo_display') and hasattr(self.model, 'source_bpm'):
+                self.view.update_playback_tempo_display(
+                    self.playback_tempo_enabled,
+                    self.model.source_bpm,
+                    self.target_bpm,
+                    self.model.get_playback_ratio() if hasattr(self.model, 'get_playback_ratio') else 1.0
+                )
             
             return True
         except Exception as e:
@@ -365,3 +397,37 @@ class RcyController:
         import time
         time.sleep(0.5)
         print("### First segment test complete")
+        
+    def set_playback_tempo(self, enabled, target_bpm=None):
+        """Configure playback tempo settings
+        
+        Args:
+            enabled (bool): Whether tempo adjustment is enabled
+            target_bpm (int, optional): Target tempo in BPM
+        
+        Returns:
+            float: The adjustment factor (ratio of target to source tempo)
+        """
+        # Update controller state
+        self.playback_tempo_enabled = enabled
+        
+        if target_bpm is not None:
+            self.target_bpm = int(target_bpm)
+            
+        # Update model with settings
+        playback_ratio = self.model.set_playback_tempo(
+            enabled, 
+            self.target_bpm
+        )
+        
+        # Update view if available
+        if self.view and hasattr(self.view, 'update_playback_tempo_display'):
+            source_bpm = getattr(self.model, 'source_bpm', 120.0)
+            self.view.update_playback_tempo_display(
+                enabled,
+                source_bpm,
+                self.target_bpm,
+                playback_ratio
+            )
+            
+        return playback_ratio
