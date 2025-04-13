@@ -30,15 +30,8 @@ def main():
         controller = RcyController(model)
         controller.num_measures = initial_measures  # Set before view creation
         
-        # Get waveform backend setting
-        backend = config.get_value_from_json_file("audio.json", "backend", "matplotlib")
-        print(f"Using waveform backend: {backend}")
-        
-        # Enable PyQtGraph if it's set in the config
-        use_pyqtgraph = (backend == "pyqtgraph")
-        
-        # Create and connect view, passing backend info
-        view = RcyView(controller, use_pyqtgraph=use_pyqtgraph)
+        # Create and connect view
+        view = RcyView(controller)
         controller.set_view(view)
         
         # Ensure view has correct number of measures

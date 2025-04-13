@@ -2,11 +2,6 @@ from PyQt6.QtWidgets import QApplication, QLabel, QLineEdit, QComboBox, QMessage
 from PyQt6.QtGui import QAction, QActionGroup, QValidator, QIntValidator, QFont
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from config_manager import config
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
-from matplotlib.lines import Line2D
-from matplotlib.patches import Polygon
-# Import but don't use until we're ready
 from waveform_view import create_waveform_view
 import numpy as np
 
@@ -20,7 +15,7 @@ class RcyView(QMainWindow):
     end_marker_changed = pyqtSignal(float)
     cut_requested = pyqtSignal(float, float)  # start_time, end_time
 
-    def __init__(self, controller, use_pyqtgraph=False):
+    def __init__(self, controller):
         super().__init__()
         self.controller = controller
         self.start_marker = None
@@ -33,10 +28,6 @@ class RcyView(QMainWindow):
         self.active_segment_highlight = None
         self.active_segment_highlight_right = None
         self.current_active_segment = (None, None)  # (start, end) times of currently active segment
-        
-        # Store the waveform view selection
-        self.use_new_waveform_view = use_pyqtgraph
-        print(f"RcyView initialized with new waveform view: {self.use_new_waveform_view}")
         
         self.init_ui()
         self.create_menu_bar()
@@ -411,33 +402,19 @@ class RcyView(QMainWindow):
         # Add the slider layout to your main layout
         main_layout.addLayout(threshold_layout)
 
-        # Create waveform visualization
-        if self.use_new_waveform_view:
-            # Use the new PyQtGraph-based waveform view
-            self.waveform_view = create_waveform_view(backend='pyqtgraph')
-            # Connect waveform view signals to appropriate handlers
-            self.waveform_view.segment_clicked.connect(self.on_segment_clicked)
-            self.waveform_view.marker_dragged.connect(self.on_marker_dragged)
-            self.waveform_view.marker_released.connect(self.on_marker_released)
-            
-            # Connect segment manipulation signals with debug messages
-            print("Connecting waveform_view.add_segment signal")
-            self.waveform_view.add_segment.connect(lambda pos: self.on_add_segment(pos))
-            print("Connecting waveform_view.remove_segment signal")
-            self.waveform_view.remove_segment.connect(lambda pos: self.on_remove_segment(pos))
-            # We'll use this as the primary widget
-            self.waveform_widget = self.waveform_view
-        else:
-            # Use the traditional Matplotlib approach
-            self.figure = Figure(figsize=(5, 4), dpi=100)
-            self.figure.patch.set_facecolor(config.get_qt_color('background'))
-            self.canvas = FigureCanvas(self.figure)
-            # Enable focus on the canvas for keyboard events
-            self.canvas.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-            # Make the canvas focus when clicked
-            self.canvas.setFocus()
-            # We'll use this as the primary widget
-            self.waveform_widget = self.canvas
+        # Create waveform visualization using PyQtGraph
+        self.waveform_view = create_waveform_view()
+        # Connect waveform view signals to appropriate handlers
+        self.waveform_view.segment_clicked.connect(self.on_segment_clicked)
+        self.waveform_view.marker_dragged.connect(self.on_marker_dragged)
+        self.waveform_view.marker_released.connect(self.on_marker_released)
+        
+        # Connect segment manipulation signals
+        self.waveform_view.add_segment.connect(lambda pos: self.on_add_segment(pos))
+        self.waveform_view.remove_segment.connect(lambda pos: self.on_remove_segment(pos))
+        
+        # Use waveform_view as the primary widget
+        self.waveform_widget = self.waveform_view
         
         # Flag for stereo display settings
         self.stereo_display = self._get_audio_config("stereoDisplay", True)
@@ -1004,14 +981,14 @@ class RcyView(QMainWindow):
             self.controller.play_segment(center_pos)
     
     def on_key_press(self, event):
-        """Handle matplotlib key press events"""
+        """Handle key press events"""
         # Print in detail what key was pressed
-        print(f"Matplotlib key pressed: {event.key}")
-        print(f"Matplotlib key modifiers: {QApplication.keyboardModifiers()}")
+        print(f"Key pressed: {event.key}")
+        print(f"Key modifiers: {QApplication.keyboardModifiers()}")
         
         # Handle spacebar for play/stop toggle
         if event.key == ' ' or event.key == 'space':
-            print("Spacebar detected in matplotlib handler! Toggling playback...")
+            print("Spacebar detected! Toggling playback...")
             self.toggle_playback()
             return
             
