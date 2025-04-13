@@ -1,5 +1,5 @@
-from PyQt6.QtWidgets import QApplication, QLabel, QLineEdit, QComboBox, QMessageBox, QMainWindow, QFileDialog, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QScrollBar, QSlider, QDialog, QTextBrowser
-from PyQt6.QtGui import QAction, QValidator, QIntValidator, QFont
+from PyQt6.QtWidgets import QApplication, QLabel, QLineEdit, QComboBox, QMessageBox, QMainWindow, QFileDialog, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QScrollBar, QSlider, QDialog, QTextBrowser, QInputDialog, QCheckBox
+from PyQt6.QtGui import QAction, QActionGroup, QValidator, QIntValidator, QFont
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from config_manager import config
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
