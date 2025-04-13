@@ -218,6 +218,36 @@ class RcyView(QMainWindow):
             bpm_action.triggered.connect(lambda checked, bpm=bpm: self.set_target_bpm(bpm))
             playback_tempo_menu.addAction(bpm_action)
         
+        # Playback Mode submenu
+        playback_mode_menu = options_menu.addMenu("Playback Mode")
+        
+        # Create action group for radio button behavior
+        playback_mode_group = QActionGroup(self)
+        playback_mode_group.setExclusive(True)
+        
+        # Add playback mode options with radio buttons
+        self.one_shot_action = QAction("One-Shot", self)
+        self.one_shot_action.setCheckable(True)
+        self.one_shot_action.triggered.connect(lambda: self.set_playback_mode("one-shot"))
+        playback_mode_group.addAction(self.one_shot_action)
+        playback_mode_menu.addAction(self.one_shot_action)
+        
+        self.loop_action = QAction("Loop", self)
+        self.loop_action.setCheckable(True)
+        self.loop_action.triggered.connect(lambda: self.set_playback_mode("loop"))
+        playback_mode_group.addAction(self.loop_action)
+        playback_mode_menu.addAction(self.loop_action)
+        
+        self.loop_reverse_action = QAction("Loop and Reverse", self)
+        self.loop_reverse_action.setCheckable(True)
+        self.loop_reverse_action.triggered.connect(lambda: self.set_playback_mode("loop-reverse"))
+        playback_mode_group.addAction(self.loop_reverse_action)
+        playback_mode_menu.addAction(self.loop_reverse_action)
+        
+        # Set initial selection to one-shot (default)
+        # The controller will update this later if needed
+        self.one_shot_action.setChecked(True)
+        
         # Help menu
         help_menu = menubar.addMenu(config.get_string("menus", "help"))
         
@@ -942,7 +972,16 @@ class RcyView(QMainWindow):
             start_pos, end_pos = self.get_marker_positions()
             if start_pos is not None and end_pos is not None:
                 # Use markers if both are set
-                print(f"Toggle: Playing from markers {start_pos} to {end_pos}")
+                print(f"Toggle: Playing from markers {start_pos} to {end_pos} with mode: {self.controller.get_playback_mode()}")
+                
+                # Highlight the active segment in the view
+                if hasattr(self, 'highlight_active_segment'):
+                    self.highlight_active_segment(start_pos, end_pos)
+                
+                # Store the current segment in the controller for looping
+                self.controller.current_segment = (start_pos, end_pos)
+                self.controller.is_playing_reverse = False
+                
                 self.controller.model.play_segment(start_pos, end_pos)
                 return
                 
@@ -1392,6 +1431,32 @@ class RcyView(QMainWindow):
             QMessageBox.critical(self,
                                 config.get_string("dialogs", "errorTitle"),
                                 f"Failed to load preset: {preset_id}")
+                                
+    def update_playback_mode_menu(self, mode):
+        """Update the playback mode menu to reflect the current mode
+        
+        Args:
+            mode (str): The current playback mode
+        """
+        if mode == "one-shot":
+            self.one_shot_action.setChecked(True)
+        elif mode == "loop":
+            self.loop_action.setChecked(True)
+        elif mode == "loop-reverse":
+            self.loop_reverse_action.setChecked(True)
+        else:
+            print(f"Warning: Unknown playback mode '{mode}'")
+            self.one_shot_action.setChecked(True)
+    
+    def set_playback_mode(self, mode):
+        """Set the playback mode in the controller
+        
+        Args:
+            mode (str): The playback mode to set
+        """
+        print(f"View set_playback_mode: {mode}")
+        if self.controller:
+            self.controller.set_playback_mode(mode)
                                 
     def on_add_segment(self, position):
         """Handle add_segment signal from waveform view"""
