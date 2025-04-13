@@ -274,7 +274,12 @@ class WavAudioProcessor:
         # Reverse the segment if needed
         if reverse:
             print("### Reversing segment for playback")
-            segment = np.flipud(segment)
+            if self.is_stereo:
+                # For stereo audio, we need to flip the rows but keep columns intact
+                segment = np.flipud(segment.copy())
+            else:
+                # For mono audio, just flip the array
+                segment = np.flip(segment.copy())
         
         print(f"### Segment created with shape: {segment.shape}")
         

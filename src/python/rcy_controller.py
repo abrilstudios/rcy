@@ -56,6 +56,10 @@ class RcyController:
         # Initialize marker positions
         self.start_marker_pos = None
         self.end_marker_pos = None
+        
+        # Set initial playback mode in view if the method exists
+        if hasattr(self.view, 'update_playback_mode_menu'):
+            self.view.update_playback_mode_menu(self.playback_mode)
 
     def on_threshold_changed(self, threshold):
         self.threshold = threshold
@@ -247,10 +251,12 @@ class RcyController:
         """Play or stop a segment based on click location"""
         print(f"### Controller received play_segment with click_time: {click_time}")
         
-        # If already playing, just stop regardless of click position
+        # Check both if the model is actively playing and if we're in a loop cycle
         if self.model.is_playing:
             print("### Already playing, stopping playback")
             self.stop_playback()
+            # Clear current segment to prevent further looping
+            self.current_segment = (None, None)
             return
             
         # If not playing, determine segment boundaries and play
@@ -271,12 +277,16 @@ class RcyController:
                 self.view.highlight_active_segment(start, end)
                 
             # Play the segment
-            result = self.model.play_segment(start, end)
+            result = self.model.play_segment(start, end, reverse=False)
             print(f"### Play segment result: {result}")
             
     def stop_playback(self):
         """Stop any currently playing audio"""
         self.model.stop_playback()
+        
+        # Clear the current_segment to prevent loop continuation
+        if self.playback_mode in ["loop", "loop-reverse"]:
+            self.current_segment = (None, None)
         
         # Clear the active segment highlight
         if hasattr(self.view, 'clear_active_segment_highlight'):
@@ -410,14 +420,13 @@ class RcyController:
                 # Just finished reverse playback, now play forward
                 print(f"### Loop-reverse: Forward playback {start:.2f}s to {end:.2f}s")
                 self.is_playing_reverse = False
-                self.model.play_segment(start, end)
+                self.model.play_segment(start, end, reverse=False)
             else:
                 # Just finished forward playback, now play reverse
                 print(f"### Loop-reverse: Reverse playback {end:.2f}s to {start:.2f}s")
                 self.is_playing_reverse = True
-                # For now, use regular playback with reversed start/end
-                # In a full implementation, we'd need to actually reverse the audio data
-                self.model.play_segment(end, start)
+                # Use reverse=True to properly play the segment in reverse
+                self.model.play_segment(start, end, reverse=True)
             return True
             
         # Not a looping mode

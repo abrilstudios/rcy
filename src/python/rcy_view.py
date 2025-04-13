@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import QApplication, QLabel, QLineEdit, QComboBox, QMessageBox, QMainWindow, QFileDialog, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QScrollBar, QSlider, QDialog, QTextBrowser
-from PyQt6.QtGui import QAction, QValidator, QIntValidator, QFont
+from PyQt6.QtGui import QAction, QActionGroup, QValidator, QIntValidator, QFont
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from config_manager import config
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -125,9 +125,9 @@ class RcyView(QMainWindow):
         playback_mode_group.addAction(self.loop_reverse_action)
         playback_mode_menu.addAction(self.loop_reverse_action)
         
-        # Set initial selection based on controller mode
-        current_mode = self.controller.get_playback_mode()
-        self.update_playback_mode_menu(current_mode)
+        # Set initial selection to one-shot (default)
+        # The controller will update this later if needed
+        self.one_shot_action.setChecked(True)
         
         # Help menu
         help_menu = menubar.addMenu(config.get_string("menus", "help"))
