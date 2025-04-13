@@ -4,6 +4,8 @@ import os
 import numpy as np
 import soundfile as sf
 from midiutil import MIDIFile
+from config_manager import config
+from audio_processor import process_segment_for_output
 
 class MIDIFileWithMetadata(MIDIFile):
     def __init__(self, *args, **kwargs):
@@ -38,10 +40,25 @@ class ExportUtils:
         total_duration = len(data_left) / sample_rate
         tempo = model.get_tempo(num_measures)
 
+        # Get the playback tempo settings from the model
+        playback_tempo_enabled = model.playback_tempo_enabled
+        source_bpm = model.source_bpm
+        target_bpm = model.target_bpm
+        
+        # Get tail fade settings from config
+        tail_fade_config = config.get_value_from_json_file("audio.json", "tailFade", {})
+        tail_fade_enabled = tail_fade_config.get("enabled", False)
+        fade_duration_ms = tail_fade_config.get("durationMs", 10)
+        fade_curve = tail_fade_config.get("curve", "exponential")
+
         print(f"Debug: Total duration: {total_duration} seconds")
         print(f"Debug: Tempo: {tempo} BPM")
         print(f"Debug: Number of segments: {len(segments)}")
         print(f"Debug: Is stereo: {is_stereo}")
+        print(f"Debug: Playback tempo enabled: {playback_tempo_enabled}")
+        if playback_tempo_enabled:
+            print(f"Debug: Source BPM: {source_bpm}, Target BPM: {target_bpm}")
+        print(f"Debug: Tail fade enabled: {tail_fade_enabled}")
 
         sfz_content = []
         midi = MIDIFileWithMetadata(1)  # One track
@@ -58,19 +75,33 @@ class ExportUtils:
         beats_per_second = tempo / 60
 
         for i, (start, end) in enumerate(zip(segments[:-1], segments[1:])):
-            # Export audio segment based on stereo/mono
-            if is_stereo:
-                # Create stereo segment by combining left and right channels
-                left_segment = data_left[start:end]
-                right_segment = data_right[start:end]
-                segment_data = np.column_stack((left_segment, right_segment))
-            else:
-                # Just use left channel for mono
-                segment_data = data_left[start:end]
-                
+            print(f"Debug: Processing segment {i+1}: {start} to {end}")
+            
+            # Process the segment through our pipeline - same as playback
+            segment_data, adjusted_sample_rate = process_segment_for_output(
+                data_left,
+                data_right,
+                start,
+                end,
+                sample_rate,
+                is_stereo,
+                False,  # No reverse for export
+                playback_tempo_enabled,
+                source_bpm,
+                target_bpm,
+                tail_fade_enabled,
+                fade_duration_ms,
+                fade_curve
+            )
+            
+            # Use adjusted sample rate if tempo adjustment is enabled
+            export_sample_rate = adjusted_sample_rate
+            
             segment_filename = f"segment_{i+1}.wav"
             segment_path = os.path.join(directory, segment_filename)
-            sf.write(segment_path, segment_data, sample_rate)
+            
+            print(f"Debug: Exporting segment with sample rate: {export_sample_rate} Hz")
+            sf.write(segment_path, segment_data, export_sample_rate)
 
             # Add to SFZ content
             sfz_content.append(f"""
@@ -81,9 +112,19 @@ lokey={60 + i}
 hikey={60 + i}
 """)
 
-            # Add to MIDI file
+            # Calculate beat positions based on source tempo
+            # This ensures MIDI sequence aligns with exported audio
             start_beat = start / sample_rate * beats_per_second
-            duration_beats = (end - start) / sample_rate * beats_per_second
+            
+            # If tempo adjustment is applied, the duration changes too
+            if playback_tempo_enabled and source_bpm > 0 and target_bpm > 0:
+                duration_seconds = (end - start) / sample_rate
+                # Scale duration based on tempo change
+                adjusted_duration = duration_seconds * (source_bpm / target_bpm)
+                duration_beats = adjusted_duration * beats_per_second
+            else:
+                duration_beats = (end - start) / sample_rate * beats_per_second
+            
             midi.addNote(0, 0, 60 + i, start_beat, duration_beats, 100)
 
             print(f"Debug: Segment {i+1}: start={start/sample_rate:.2f}s, duration={(end-start)/sample_rate:.2f}s, start_beat={start_beat:.2f}, duration_beats={duration_beats:.2f}")

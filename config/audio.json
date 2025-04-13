@@ -21,5 +21,10 @@
   "playbackTempo": {
     "enabled": false,
     "targetBpm": 120
+  },
+  "tailFade": {
+    "enabled": false,
+    "durationMs": 10,
+    "curve": "exponential"
   }
 }
