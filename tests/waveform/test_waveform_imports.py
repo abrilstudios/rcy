@@ -17,18 +17,17 @@ def test_waveform_view_import():
 def test_waveform_classes_import():
     """Test that waveform view classes can be imported"""
     try:
-        from waveform_view import BaseWaveformView, MatplotlibWaveformView
-        assert issubclass(MatplotlibWaveformView, BaseWaveformView)
+        from waveform_view import BaseWaveformView, PyQtGraphWaveformView
+        assert issubclass(PyQtGraphWaveformView, BaseWaveformView)
     except ImportError as e:
         pytest.fail(f"Failed to import waveform view classes: {e}")
 
 
 def test_pyqtgraph_availability():
-    """Test PyQtGraph availability (without initializing it)"""
+    """Test PyQtGraph availability"""
     try:
-        from waveform_view import PYQTGRAPH_AVAILABLE
-        # Just print availability, don't assert since we don't want the test to fail
-        # if PyQtGraph is not available on some systems
-        print(f"PyQtGraph available: {PYQTGRAPH_AVAILABLE}")
+        import pyqtgraph as pg
+        # PyQtGraph is now a required dependency
+        print(f"PyQtGraph version: {pg.__version__}")
     except ImportError as e:
-        pytest.fail(f"Failed to check PyQtGraph availability: {e}")
+        pytest.fail(f"PyQtGraph not available: {e}")
