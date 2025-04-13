@@ -21,6 +21,5 @@
   "playbackTempo": {
     "enabled": false,
     "targetBpm": 120
-  },
-  "backend": "pyqtgraph"
+  }
 }

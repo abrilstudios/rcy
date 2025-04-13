@@ -31,7 +31,7 @@ def waveform_view(app):
     win.setCentralWidget(central_widget)
     
     # Create PyQtGraph waveform view
-    waveform_view = create_waveform_view(backend='pyqtgraph')
+    waveform_view = create_waveform_view()
     layout.addWidget(waveform_view)
     
     # Generate sample data
@@ -91,7 +91,7 @@ if __name__ == "__main__":
     win.setCentralWidget(central_widget)
     
     # Create PyQtGraph waveform view
-    waveform_view = create_waveform_view(backend='pyqtgraph')
+    waveform_view = create_waveform_view()
     layout.addWidget(waveform_view)
     
     # Generate sample data
