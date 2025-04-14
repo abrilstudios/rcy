@@ -22,7 +22,7 @@ RCY isn't just a tool—it's a perspective on breakbeat culture. The design refe
 - A typography system based on Futura PT Book
 - A careful balance between utility and historical resonance
 
-Read our [Breakbeat Science](docs/breakbeat-science.md) guide to understand the three core workflows that shaped jungle, drum & bass, and big beat, and how they're implemented in RCY.
+Read our [Breakbeat Science](docs/breakbeat-science.md) guide to understand the three core workflows that shaped jungle, drum & bass, and big beat, and how they're implemented in RCY. For those interested in the history and techniques of sampling in drum & bass, check out our comprehensive [Drum & Bass Sampling Techniques](drum_and_bass_sample_techniques.md) document.
 
 ## Requirements
 
@@ -73,7 +73,7 @@ The `presets/` directory contains historically-informed breakbeat slice patterns
 - **Think Break**: Source Direct and Paradox approaches
 - **Apache Break**: Photek-inspired edits
 
-Each preset includes documentation about the artistic context and technical approach. For a deeper understanding of the cultural and technical foundations of these presets, see our [Breakbeat Science](docs/breakbeat-science.md) document.
+Each preset includes documentation about the artistic context and technical approach. For a deeper understanding of the cultural and technical foundations of these presets, see our [Breakbeat Science](docs/breakbeat-science.md) document. To learn about the technical design of RCY's audio processing, check our [Playback and Export Pipelines](designs/playback-export-pipelines.md) documentation.
 
 ## Contributing
 
