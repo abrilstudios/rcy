@@ -2,8 +2,6 @@
 
 **RCY** is a tool designed to process breakbeat loops, enabling users to slice and export them in the **SFZ** format for seamless integration with samplers like the **TAL-Sampler**. Inspired by the aesthetics of New Order's Movement, brutalist design, and hauntological software, RCY combines utility with an appreciation for drum break history.
 
-<img width="1280" alt="RCY" src=".github/social_preview.png">
-
 <img width="800" alt="RCY Screenshot" src="screenshots/rcy.png">
 
 ## Features
