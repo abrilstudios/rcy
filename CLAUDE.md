@@ -27,6 +27,13 @@ RCY uses a modular directory layout with absolute imports and explicit runtime c
   from audio_processor import WavAudioProcessor
   ```
 
+## 🛑 Error Handling
+
+- **Never use `hasattr()` to condition on a method existing**
+- Always explicitly call the function
+- This makes code failures explicit rather than silently degrading
+- It's better for the application to fail with a clear error than to silently skip functionality
+
 ---
 
 ## 🔄 Configuration Management
@@ -50,7 +57,9 @@ RCY uses a modular directory layout with absolute imports and explicit runtime c
 
 ## 🚀 Development Workflow
 
+- **Never do work directly on the main branch unless specifically requested to do so**
 - Create feature branches from main for new work
+- Use descriptive branch names with prefixes like `feature/`, `fix/`, `enhancement/`, etc.
 - Follow the git commit message conventions
 - Use pull requests for code review
 - Ensure tests pass before merging
