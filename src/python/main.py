@@ -15,7 +15,7 @@ def main():
     QApplication.setApplicationDisplayName(config.get_string("ui", "applicationName"))
     QApplication.setOrganizationName(config.get_string("ui", "organizationName"))
     QApplication.setOrganizationDomain(config.get_string("ui", "organizationDomain"))
-    app = QApplication([''])
+    app = QApplication(sys.argv)
 
     try:
         # Create model with default preset 'amen_classic'
@@ -35,23 +35,28 @@ def main():
         controller.set_view(view)
         
         # Ensure view has correct number of measures
-        if hasattr(view, 'measures_input'):
-            view.measures_input.setText(str(initial_measures))
+        view.measures_input.setText(str(initial_measures))
+        
+        # Initial update
+        controller.update_view()
+        
+        # Ensure tempo is calculated and displayed with correct measure count
+        controller.tempo = controller.model.get_tempo(controller.num_measures)
+        view.update_tempo(controller.tempo)
+        print(f"Initial tempo: {controller.tempo:.2f} BPM based on {controller.num_measures} measures")
+        
+        # Check for audio file in command line arguments
+        if len(sys.argv) > 1:
+            audio_file = sys.argv[1]
+            # Import audio file if provided
+            controller.load_audio_file(audio_file)
+        
+        view.show()
+        return app.exec()
+        
     except Exception as e:
-        app = QApplication(sys.argv)
         QMessageBox.critical(None, "Error", f"Failed to initialize application: {e}")
         sys.exit(1)
-    
-    # Initial update
-    controller.update_view()
-    
-    # Ensure tempo is calculated and displayed with correct measure count
-    controller.tempo = controller.model.get_tempo(controller.num_measures)
-    view.update_tempo(controller.tempo)
-    print(f"Initial tempo: {controller.tempo:.2f} BPM based on {controller.num_measures} measures")
-    
-    view.show()
-    sys.exit(app.exec())
 
 if __name__ == "__main__":
     main()

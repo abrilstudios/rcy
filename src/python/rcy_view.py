@@ -165,11 +165,18 @@ class RcyView(QMainWindow):
         file_menu = menubar.addMenu(config.get_string("menus", "file"))
 
         # Open action
-        open_action = QAction(config.get_string("menus", "open"), self)
+        open_action = QAction("Open Session", self)
         open_action.setShortcut('Ctrl+O')
-        open_action.setStatusTip('Open an audio file')
-        open_action.triggered.connect(self.load_audio_file)
+        open_action.setStatusTip('Open a saved session file')
+        open_action.triggered.connect(self.load_session_file)
         file_menu.addAction(open_action)
+        
+        # Import Audio action
+        import_action = QAction("Import Audio", self)
+        import_action.setShortcut('Ctrl+I')
+        import_action.setStatusTip('Import a new audio file')
+        import_action.triggered.connect(self.import_audio_file)
+        file_menu.addAction(import_action)
         
         # Open Preset submenu
         presets_menu = file_menu.addMenu("Open Preset")
@@ -586,25 +593,35 @@ class RcyView(QMainWindow):
         # Get current marker positions
         start_pos, end_pos = self.waveform_view.get_marker_positions()
         
+        # Always get the current file's total time
+        total_time = self.controller.model.total_time
+        
         # Use default values if markers are not set
         if start_pos is None:
             start_pos = 0
         if end_pos is None:
-            end_pos = self.controller.model.total_time
+            end_pos = total_time
         
         print(f"Marker positions before update - start: {start_pos}, end: {end_pos}")
         
-        # If end marker is too close to start, adjust it
-        if abs(end_pos - start_pos) < 0.1:
-            print(f"End marker too close to start marker, adjusting: {end_pos} -> {self.controller.model.total_time}")
-            end_pos = self.controller.model.total_time
+        # Validate marker positions against current file boundaries
+        if start_pos < 0:
+            start_pos = 0
+        
+        if end_pos > total_time:
+            end_pos = total_time
+            
+        # If end marker is too close to start or exceeds file length, adjust it
+        if abs(end_pos - start_pos) < 0.1 or end_pos > total_time:
+            print(f"End marker too close to start marker or beyond file end, adjusting: {end_pos} -> {total_time}")
+            end_pos = total_time
         
         # Set marker positions
         self.waveform_view.set_start_marker(start_pos)
         self.waveform_view.set_end_marker(end_pos)
         
         # Update the waveform view with slices and total time
-        self.waveform_view.update_slices(slice_times, self.controller.model.total_time)
+        self.waveform_view.update_slices(slice_times, total_time)
         
         # Update controller with marker positions
         if hasattr(self.controller, 'on_start_marker_changed'):
@@ -1075,17 +1092,32 @@ class RcyView(QMainWindow):
         except Exception as e:
             print(f"ERROR in on_remove_segment: {e}")
     
-    def load_audio_file(self):
+    def load_session_file(self):
+        """Load an existing RCY session file"""
+        # Note: This is a placeholder for future implementation
+        # For now, just show a message that this feature is coming
+        QMessageBox.information(self,
+                              "Coming Soon",
+                              "Loading session files will be implemented in a future version.\n\n"
+                              "Currently, presets are used as sessions.")
+    
+    def import_audio_file(self):
+        """Import a new audio file"""
         filename, _ = QFileDialog.getOpenFileName(self,
-            config.get_string("dialogs", "openFileTitle"),
+            "Import Audio File",
             "",
             config.get_string("dialogs", "audioFileFilter"))
         if filename:
             self.controller.load_audio_file(filename)
         else:
             QMessageBox.critical(self,
-                                 config.get_string("dialogs", "errorTitle"),
-                                 config.get_string("dialogs", "errorLoadingFile"))
+                                config.get_string("dialogs", "errorTitle"),
+                                config.get_string("dialogs", "errorLoadingFile"))
+                                
+    # Keep for backward compatibility with any code that might call it
+    def load_audio_file(self):
+        """Deprecated - use import_audio_file instead"""
+        self.import_audio_file()
 
     def on_measure_resolution_changed(self, index):
         # Get the resolution value from the configuration data
