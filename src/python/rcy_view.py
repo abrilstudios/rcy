@@ -796,7 +796,7 @@ class RcyView(QMainWindow):
                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         
         # Remove highlight
-        self.waveform_view.clear_segment_highlight()
+        self.waveform_view.clear_active_segment_highlight()
                                     
         if reply == QMessageBox.StandardButton.Yes:
             # Emit the signal to request cutting
