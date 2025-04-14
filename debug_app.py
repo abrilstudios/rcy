@@ -61,18 +61,14 @@ def run_app():
         controller.num_measures = initial_measures
         logger.info("Controller created")
         
-        # Create view
-        backend = config.get_value_from_json_file("audio.json", "backend", "matplotlib")
-        use_pyqtgraph = (backend == "pyqtgraph")
-        logger.info(f"Using backend: {backend}")
-        
-        view = RcyView(controller, use_pyqtgraph=use_pyqtgraph)
+        # Create view - now always uses PyQtGraph
+        view = RcyView(controller)
+        logger.info("View created with PyQtGraph")
         logger.info("View created")
         controller.set_view(view)
         
         # Set measures
-        if hasattr(view, 'measures_input'):
-            view.measures_input.setText(str(initial_measures))
+        view.measures_input.setText(str(initial_measures))
         
         # Initial update
         controller.update_view()
@@ -80,6 +76,13 @@ def run_app():
         # Update tempo
         controller.tempo = controller.model.get_tempo(controller.num_measures)
         view.update_tempo(controller.tempo)
+        
+        # Check for audio file in command line arguments
+        if len(sys.argv) > 1:
+            audio_file = sys.argv[1]
+            logger.info(f"Loading audio file from command line: {audio_file}")
+            # Import audio file if provided
+            controller.load_audio_file(audio_file)
         
         # Automatically split by transients to show current settings
         controller.split_audio(method='transients')

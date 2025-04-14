@@ -92,11 +92,18 @@ class RcyController:
                                            directory)
 
     def load_audio_file(self, filename):
+        """Load an audio file from filename"""
         self.model.set_filename(filename)
         self.tempo = self.model.get_tempo(self.num_measures)
+        
+        # Update view first to get everything initialized
         self.update_view()
         self.view.update_scroll_bar(self.visible_time, self.model.total_time)
         self.view.update_tempo(self.tempo)
+        
+        # Now reset markers after everything is updated
+        self.view.clear_markers()
+            
         return True
         
     def load_preset(self, preset_id):
@@ -118,13 +125,12 @@ class RcyController:
                 self.num_measures = measures
                 print(f"Preset '{preset_id}' specifies {self.num_measures} measures")
                 
-                # Update the UI
-                if hasattr(self.view, 'measures_input'):
-                    # Temporarily block signals to avoid recursive updates
-                    old_state = self.view.measures_input.blockSignals(True)
-                    self.view.measures_input.setText(str(self.num_measures))
-                    self.view.measures_input.blockSignals(old_state)
-                    print(f"Updated measures input to {self.num_measures}")
+                # Update the UI - only block signals if needed
+                # Temporarily block signals to avoid recursive updates
+                old_state = self.view.measures_input.blockSignals(True)
+                self.view.measures_input.setText(str(self.num_measures))
+                self.view.measures_input.blockSignals(old_state)
+                print(f"Updated measures input to {self.num_measures}")
             else:
                 print(f"Preset '{preset_id}' has same measure count ({measures}), no update needed")
             
@@ -140,14 +146,16 @@ class RcyController:
             self.view.update_scroll_bar(self.visible_time, self.model.total_time)
             self.view.update_tempo(self.tempo)
             
-            # Update playback tempo display if available
-            if hasattr(self.view, 'update_playback_tempo_display') and hasattr(self.model, 'source_bpm'):
-                self.view.update_playback_tempo_display(
-                    self.playback_tempo_enabled,
-                    self.model.source_bpm,
-                    self.target_bpm,
-                    self.model.get_playback_ratio() if hasattr(self.model, 'get_playback_ratio') else 1.0
-                )
+            # Reset markers to file boundaries after view update
+            self.view.clear_markers()
+            
+            # Update playback tempo display
+            self.view.update_playback_tempo_display(
+                self.playback_tempo_enabled,
+                self.model.source_bpm,
+                self.target_bpm,
+                self.model.get_playback_ratio() if hasattr(self.model, 'get_playback_ratio') else 1.0
+            )
             
             return True
         except Exception as e:
