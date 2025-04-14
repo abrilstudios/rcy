@@ -28,7 +28,7 @@ class MIDIFileWithMetadata(MIDIFile):
 
 class ExportUtils:
     @staticmethod
-    def export_segments(model, tempo, num_measures, directory):
+    def export_segments(model, tempo, num_measures, directory, start_marker_pos=None, end_marker_pos=None):
         segments = model.get_segments()
         # Get left and right channel data
         data_left = model.data_left
@@ -65,16 +65,37 @@ class ExportUtils:
         midi.addTempo(0, 0, tempo)
         midi.addTimeSignature(0, 0, 4, 4, 24, 8)  # Assuming 4/4 time signature
 
+        # Check if we have markers set but no segments
+        if (not segments) and start_marker_pos is not None and end_marker_pos is not None:
+            print(f"No segments defined but markers are set. Using marker positions for export.")
+            # Convert marker time positions to sample positions
+            start_sample = int(start_marker_pos * sample_rate)
+            end_sample = int(end_marker_pos * sample_rate)
+            # Create a segment list with just these markers
+            segments = [start_sample, end_sample]
+            print(f"Created segments from markers: {segments[0]} to {segments[1]} samples")
+            
+        # If still no segments, use the entire file
+        if not segments:
+            print(f"No segments or markers. Exporting the entire file.")
+            segments = [0, len(data_left)]
+            
         # Ensure the first segment starts at 0 and the last ends at the audio length
-        if segments and segments[0] != 0:
+        elif segments[0] != 0 and (start_marker_pos is None or start_marker_pos > 0):
             segments.insert(0, 0)
-        if segments and segments[-1] != len(data_left):
+            
+        if segments[-1] != len(data_left) and (end_marker_pos is None or end_marker_pos < total_duration):
             segments.append(len(data_left))
 
         # Calculate beats per second
         beats_per_second = tempo / 60
 
         for i, (start, end) in enumerate(zip(segments[:-1], segments[1:])):
+            # Skip segments of zero length
+            if start == end:
+                print(f"Debug: Skipping zero-length segment at position {start}")
+                continue
+                
             print(f"Debug: Processing segment {i+1}: {start} to {end}")
             
             # Process the segment through our pipeline with resampling for export

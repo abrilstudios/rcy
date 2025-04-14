@@ -86,10 +86,13 @@ class RcyController:
         self.split_audio(method='transients')
 
     def export_segments(self, directory):
+        # Pass marker positions for when there are no segments defined
         return ExportUtils.export_segments(self.model,
                                            self.tempo,
                                            self.num_measures,
-                                           directory)
+                                           directory,
+                                           self.start_marker_pos,
+                                           self.end_marker_pos)
 
     def load_audio_file(self, filename):
         """Load an audio file from filename"""
