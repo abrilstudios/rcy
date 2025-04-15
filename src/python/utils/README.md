@@ -17,7 +17,7 @@ Two primary downsampling methods are provided:
 ### Usage
 
 ```python
-from src.python.utils.audio_preview import get_downsampled_data
+from utils.audio_preview import get_downsampled_data
 
 # For visualization, downsample the data
 ds_time, ds_left, ds_right = get_downsampled_data(
