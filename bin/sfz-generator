@@ -10,5 +10,5 @@ PROJECT_ROOT=$(dirname "$SCRIPT_DIR")
 # Set PYTHONPATH to include src directory
 export PYTHONPATH="$PROJECT_ROOT/src:$PYTHONPATH"
 
-# Run the SFZ generator module
-python -m python.utils.sfz.generate_sfz "$@"
+# Run the script directly to avoid module import warning
+python "$PROJECT_ROOT/src/python/utils/sfz/generate_sfz.py" "$@"
