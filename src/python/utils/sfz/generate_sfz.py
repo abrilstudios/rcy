@@ -93,14 +93,15 @@ def generate_sfz(audio_files: List[str], start_key: int = 36,
     lines.append(f"// {len(audio_files)} samples mapped from key {start_key}")
     lines.append("")
     
-    # Add default_path control using absolute path for better compatibility
+    # Add default_path control for better compatibility
     if input_dir:
-        abs_path = os.path.abspath(input_dir)
-        if not abs_path.endswith('/'):
-            abs_path += '/'
+        # Use the input directory as provided, without exposing full system paths
+        # This works with most samplers as long as the SFZ is in the right location
+        if not input_dir.endswith('/'):
+            input_dir += '/'
         
         lines.append("<control>")
-        lines.append(f"default_path={abs_path}")
+        lines.append(f"default_path={input_dir}")
         lines.append("</control>")
         lines.append("")
     
