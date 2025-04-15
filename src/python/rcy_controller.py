@@ -5,6 +5,7 @@ from midiutil import MIDIFile
 from math import ceil
 from export_utils import ExportUtils
 from config_manager import config
+from utils.audio_preview import get_downsampled_data
 
 class RcyController:
     def __init__(self, model):
@@ -197,7 +198,7 @@ class RcyController:
             
             # Apply downsampling if configured to always apply or if we have enough data to benefit
             if always_apply or len(time) > target_length:
-                from utils.audio_preview import get_downsampled_data
+                # Use get_downsampled_data imported at the top of the file
                 time, data_left, data_right = get_downsampled_data(
                     time, data_left, data_right, target_length, method=ds_method
                 )
