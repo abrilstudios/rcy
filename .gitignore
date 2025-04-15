@@ -30,3 +30,6 @@ build/
 *.swp
 *.swo
 
+# Sample libraries and temporary workspace
+tal/
+
