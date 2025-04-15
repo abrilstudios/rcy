@@ -27,7 +27,7 @@ Example:
 
 Usage:
 ```
-./bin/sfz-generator -i /path/to/samples -o output.sfz [options]
+./bin/sfz-generator -i /path/to/samples -o /path/to/samples/output.sfz [options]
 ```
 
 Options:
@@ -38,7 +38,16 @@ Options:
 - `--extensions`: File extensions to include (default: wav)
 - `-v, --verbose`: Enable verbose output
 
-Example:
+Important Notes:
+- Place the output SFZ file in the ROOT DIRECTORY of your sample collection
+- Works with both flat and nested sample directories
+- The generator preserves the directory structure in the SFZ file
+
+Examples:
 ```
-./bin/sfz-generator -i audio/drums -o presets/drums.sfz --start-key 36
+# For a flat sample directory:
+./bin/sfz-generator -i tal/909_Tube_Kit -o tal/909_Tube_Kit/909_kit.sfz --start-key 36
+
+# For a nested sample library (with subdirectories):
+./bin/sfz-generator -i tal/drum_samples -o tal/drum_samples/drum_kit.sfz --start-key 36
 ```

@@ -95,24 +95,20 @@ def generate_sfz(audio_files: List[str], start_key: int = 36,
     
     # Add default_path control for better compatibility
     if input_dir:
-        # Use the input directory as provided, without exposing full system paths
-        # This works with most samplers as long as the SFZ is in the right location
-        if not input_dir.endswith('/'):
-            input_dir += '/'
+        # Use empty default path - handles both flat and nested directories
+        clean_path = ""  # Empty default path
         
         lines.append("<control>")
-        lines.append(f"default_path={input_dir}")
+        lines.append(f"default_path={clean_path}")
         lines.append("</control>")
         lines.append("")
     
     for i, audio_path in enumerate(audio_files):
         key = start_key + i
         
-        # Extract just the filename part for use with default_path
-        if input_dir:
-            sample_path = os.path.basename(audio_path)
-        else:
-            sample_path = audio_path
+        # Use the full relative path to preserve directory structure
+        # This supports nested directories properly
+        sample_path = audio_path
         
         # Build the region line
         region = [f"<region> sample={sample_path} key={key}"]
@@ -159,6 +155,11 @@ def main():
         print("    generate_sfz.py -i /path/to/samples -o output.sfz --start-key 60")
         print("\n  Include multiple audio formats:")
         print("    generate_sfz.py -i /path/to/samples -o output.sfz --extensions wav aif mp3")
+        print("\nImportant File Structure Notes:")
+        print("  - For best compatibility with samplers, place the output SFZ file in the")
+        print("    SAME DIRECTORY as the sample files.")
+        print("  - The generator uses filenames only (no paths) for compatibility with")
+        print("    samplers like TAL Sampler.")
         return 0
 
     # Configure logging level

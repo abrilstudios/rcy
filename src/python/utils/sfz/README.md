@@ -13,7 +13,16 @@ The SFZ Generator is a utility that automatically creates SFZ instrument definit
 - Configurable starting MIDI key (default: 36 = C1)
 - Optional group ID for SFZ regions
 - Support for custom file extensions
-- Cross-platform path handling
+- Generates sampler-compatible SFZ files
+
+### Important File Structure Notes
+
+For best compatibility with samplers (like TAL Sampler, Logic EXS24, etc.):
+
+1. **Place the output SFZ file in the ROOT DIRECTORY of your sample collection**
+2. The generator preserves the directory structure in the SFZ file
+3. Works with both flat directories and nested sample libraries
+4. For maximum compatibility, avoid spaces and special characters in filenames
 
 ### Usage
 
@@ -21,14 +30,20 @@ The SFZ Generator is a utility that automatically creates SFZ instrument definit
 
 ```bash
 # Basic usage
-python -m python.utils.sfz.generate_sfz -i /path/to/samples -o output.sfz
+python -m python.utils.sfz.generate_sfz -i /path/to/samples -o /path/to/samples/output.sfz
 
 # Specify starting key
-python -m python.utils.sfz.generate_sfz -i /path/to/samples -o output.sfz --start-key 48
+python -m python.utils.sfz.generate_sfz -i /path/to/samples -o /path/to/samples/output.sfz --start-key 48
 
 # Multiple file extensions
-python -m python.utils.sfz.generate_sfz -i /path/to/samples -o output.sfz --extensions wav aif mp3
+python -m python.utils.sfz.generate_sfz -i /path/to/samples -o /path/to/samples/output.sfz --extensions wav aif mp3
 ```
+
+### Recommended Workflow
+
+1. **Prepare your samples**: Place all samples in a dedicated directory
+2. **Generate the SFZ file**: Run the generator and output the SFZ file to the same directory
+3. **Load in your sampler**: Load the SFZ file in your sampler of choice
 
 #### From Python Code
 
