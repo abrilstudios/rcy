@@ -4,6 +4,23 @@ This directory contains convenient command-line utilities and wrappers for RCY f
 
 ## Available Scripts
 
+### RCY Application
+
+`rcy` - Launches the main RCY (Recycling) audio application.
+
+Usage:
+```
+./bin/rcy [audio_file]
+```
+
+Parameters:
+- `audio_file`: Optional path to an audio file to load on startup
+
+Example:
+```
+./bin/rcy audio/amen.wav
+```
+
 ### SFZ Generator
 
 `sfz-generator` - Creates SFZ instrument definitions from directories of audio files.

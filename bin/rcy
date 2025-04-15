@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# rcy - Launcher script for RCY (Recycling) audio application
+# Usage: rcy [audio_file]
+
+# Ensure we're in the project root
+SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
+PROJECT_ROOT=$(dirname "$SCRIPT_DIR")
+
+# Set PYTHONPATH to include src directory
+export PYTHONPATH="$PROJECT_ROOT/src:$PYTHONPATH"
+
+# Run the RCY application
+python "$PROJECT_ROOT/src/python/main.py" "$@"
