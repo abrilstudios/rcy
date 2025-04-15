@@ -64,3 +64,11 @@ RCY uses a modular directory layout with absolute imports and explicit runtime c
 - Use pull requests for code review
 - Ensure tests pass before merging
 - Update documentation when changing functionality
+
+## 📝 Issue Management
+
+- When working on issues, always update the issue with your progress
+- After resolving an issue, add a detailed comment explaining the solution
+- Link to relevant commits in your issue comments
+- Update the issue description if needed to reflect the actual problem and solution
+- **Important**: You do not get credit for your work if you don't update the issue!
