@@ -114,7 +114,7 @@ def generate_sfz(audio_files: List[str], start_key: int = 36,
 def main():
     """Main entry point for the SFZ generator tool."""
     parser = argparse.ArgumentParser(description="Generate SFZ from directory of audio files")
-    parser.add_argument("-i", "--input", required=True, 
+    parser.add_argument("-i", "--input", 
                         help="Input root directory to scan for audio files")
     parser.add_argument("-o", "--output", default="output.sfz", 
                         help="Output SFZ file name (default: output.sfz)")
@@ -128,6 +128,18 @@ def main():
                         help="Enable verbose output")
 
     args = parser.parse_args()
+    
+    # If no input directory is provided, show help and exit
+    if not args.input:
+        parser.print_help()
+        print("\nExamples:")
+        print("  Generate SFZ from a directory of WAV files:")
+        print("    generate_sfz.py -i /path/to/samples -o output.sfz")
+        print("\n  Use custom starting key (middle C):")
+        print("    generate_sfz.py -i /path/to/samples -o output.sfz --start-key 60")
+        print("\n  Include multiple audio formats:")
+        print("    generate_sfz.py -i /path/to/samples -o output.sfz --extensions wav aif mp3")
+        return 0
 
     # Configure logging level
     if args.verbose:
@@ -140,6 +152,10 @@ def main():
     extensions = args.extensions
 
     # Validate input directory
+    if not os.path.exists(input_dir):
+        logger.error(f"Input path '{input_dir}' does not exist.")
+        return 1
+    
     if not os.path.isdir(input_dir):
         logger.error(f"Input path '{input_dir}' is not a directory.")
         return 1

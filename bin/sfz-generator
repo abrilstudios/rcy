@@ -10,5 +10,10 @@ PROJECT_ROOT=$(dirname "$SCRIPT_DIR")
 # Set PYTHONPATH to include src directory
 export PYTHONPATH="$PROJECT_ROOT/src:$PYTHONPATH"
 
+# Display descriptive header
+echo "RCY SFZ Generator - Create SFZ instrument definitions from audio files"
+echo "=================================================================="
+echo ""
+
 # Run the script directly to avoid module import warning
 python "$PROJECT_ROOT/src/python/utils/sfz/generate_sfz.py" "$@"

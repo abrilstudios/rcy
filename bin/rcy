@@ -10,5 +10,9 @@ PROJECT_ROOT=$(dirname "$SCRIPT_DIR")
 # Set PYTHONPATH to include src directory
 export PYTHONPATH="$PROJECT_ROOT/src:$PYTHONPATH"
 
+# Display simple welcome message
+echo "Starting RCY (Recycling) Audio Application..."
+echo ""
+
 # Run the RCY application
 python "$PROJECT_ROOT/src/python/main.py" "$@"
