@@ -3,7 +3,7 @@ Tests for audio_preview module - downsampling functionality
 """
 import pytest
 import numpy as np
-from src.python.utils.audio_preview import (
+from utils.audio_preview import (
     downsample_waveform,
     downsample_waveform_max_min,
     get_downsampled_data
