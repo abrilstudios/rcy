@@ -70,7 +70,8 @@ def collect_audio_files(root_dir: str, extensions: List[str] = None) -> List[str
 
 def generate_sfz(audio_files: List[str], start_key: int = 36, 
                 group_id: Optional[int] = None, 
-                additional_params: Optional[Dict[str, Any]] = None) -> str:
+                additional_params: Optional[Dict[str, Any]] = None,
+                input_dir: Optional[str] = None) -> str:
     """
     Generate SFZ content from a list of audio files.
     
@@ -79,6 +80,7 @@ def generate_sfz(audio_files: List[str], start_key: int = 36,
         start_key: Starting MIDI key (default: 36 = C1)
         group_id: Optional group ID for SFZ regions
         additional_params: Additional parameters to add to each region
+        input_dir: Input directory path for setting up the default_path control
     
     Returns:
         str: SFZ content as a string
@@ -91,11 +93,28 @@ def generate_sfz(audio_files: List[str], start_key: int = 36,
     lines.append(f"// {len(audio_files)} samples mapped from key {start_key}")
     lines.append("")
     
+    # Add default_path control using absolute path for better compatibility
+    if input_dir:
+        abs_path = os.path.abspath(input_dir)
+        if not abs_path.endswith('/'):
+            abs_path += '/'
+        
+        lines.append("<control>")
+        lines.append(f"default_path={abs_path}")
+        lines.append("</control>")
+        lines.append("")
+    
     for i, audio_path in enumerate(audio_files):
         key = start_key + i
         
+        # Extract just the filename part for use with default_path
+        if input_dir:
+            sample_path = os.path.basename(audio_path)
+        else:
+            sample_path = audio_path
+        
         # Build the region line
-        region = [f"<region> sample={audio_path} key={key}"]
+        region = [f"<region> sample={sample_path} key={key}"]
         
         # Add optional group ID if provided
         if group_id is not None:
@@ -170,8 +189,13 @@ def main():
 
     logger.info(f"Found {len(audio_files)} audio files")
     
-    # Generate SFZ content
-    sfz_content = generate_sfz(audio_files, start_key=start_key, group_id=group_id)
+    # Generate SFZ content using the default_path approach
+    sfz_content = generate_sfz(
+        audio_files, 
+        start_key=start_key, 
+        group_id=group_id,
+        input_dir=input_dir
+    )
     
     # Create output directory if it doesn't exist
     output_dir = os.path.dirname(output_path)
