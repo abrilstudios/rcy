@@ -24,6 +24,7 @@ class BaseWaveformView(QWidget):
         self.current_slices = []
         self.total_time = 0
         self.snap_threshold = config.get_ui_setting("markerSnapping", "snapThreshold", 0.025)
+        # TODO: Unify handling of config - do not allow get_value_from_json
         self.stereo_display = config.get_value_from_json_file("audio.json", "stereoDisplay", True)
     
     def update_plot(self, time, data_left, data_right=None):
@@ -67,6 +68,10 @@ class PyQtGraphWaveformView(BaseWaveformView):
         self.time_data = None
         self.active_segment_items = []
         self.marker_handles = {}  # Store handles for markers
+        
+        # Initialize properties for marker handles
+        # Required for consistent visual presentation
+        self.handle_y_min = -1.0  # Used to place markers at bottom of view
         
         # Create layout
         self.layout = QVBoxLayout(self)
@@ -209,8 +214,22 @@ class PyQtGraphWaveformView(BaseWaveformView):
             plot.getViewBox().menu = None
     
     def _update_marker_handle(self, marker_type):
-        """Create or update marker handle triangle"""
-        # Get marker position
+        """Create or update rectangular marker handle with a fixed pixel size"""
+        # Make sure we have valid time data
+        if self.time_data is None:
+            print(f"DEBUG: Cannot update {marker_type} marker handle - time_data is None")
+            return
+            
+        # Fix for TypeError: object of type 'NoneType' has no len()
+        try:
+            if len(self.time_data) == 0:
+                print(f"DEBUG: Cannot update {marker_type} marker handle - time_data is empty")
+                return
+        except TypeError:
+            print(f"DEBUG: TypeError in _update_marker_handle - time_data has no len()")
+            return
+        
+        # Get marker reference
         if marker_type == 'start':
             marker = self.start_marker
             color = config.get_qt_color('startMarker')
@@ -218,46 +237,114 @@ class PyQtGraphWaveformView(BaseWaveformView):
             marker = self.end_marker
             color = config.get_qt_color('endMarker')
             
-        position = marker.value()
+        # Ensure marker exists
+        if marker is None:
+            print(f"DEBUG: Cannot update {marker_type} marker handle - marker is None")
+            return
+            
+        try:
+            position = marker.value()
+            if position is None:
+                print(f"DEBUG: Cannot update {marker_type} marker handle - position is None")
+                return
+        except Exception as e:
+            print(f"DEBUG: Error getting marker position: {e}")
+            return
+        
+        # Get valid data range
+        min_pos = self.time_data[0]
+        max_pos = self.time_data[-1]
+        
+        # Guard clause: Don't draw handles for markers outside data range
+        if position < min_pos or position > max_pos:
+            print(f"DEBUG: Not drawing {marker_type} marker handle - position {position} is outside valid range [{min_pos}, {max_pos}]")
+            
+            # Remove existing handle if there is one
+            handle_key = f"{marker_type}_handle"
+            if hasattr(self, 'marker_handles') and handle_key in self.marker_handles:
+                handle = self.marker_handles[handle_key]
+                if handle is not None and self.active_plot is not None and handle in self.active_plot.items:
+                    self.active_plot.removeItem(handle)
+                    self.marker_handles[handle_key] = None
+            return
+        
+        # Ensure active plot exists
+        if self.active_plot is None:
+            print(f"DEBUG: Cannot update {marker_type} marker handle - active_plot is None")
+            return
+            
+        # Ensure marker_handles dictionary exists
+        if not hasattr(self, 'marker_handles'):
+            self.marker_handles = {}
         
         # Remove old handle if exists
         handle_key = f"{marker_type}_handle"
         if handle_key in self.marker_handles:
             handle = self.marker_handles[handle_key]
-            if handle in self.active_plot.items:
+            if handle is not None and handle in self.active_plot.items:
                 self.active_plot.removeItem(handle)
-                
-        # Calculate triangle size based on total time
-        triangle_height = self.total_time * 0.02  # 2% of total time
-        triangle_width = self.total_time * 0.01   # 1% of total time
         
-        # Get the plot Y range to position triangles at the bottom
-        y_min, y_max = self.active_plot.getViewBox().viewRange()[1]
+        # Get the view box for coordinate transformations
+        view_box = self.active_plot.getViewBox()
+        if view_box is None:
+            print(f"DEBUG: Cannot update {marker_type} marker handle - viewBox is None")
+            return
         
-        # Create points for triangle anchored to the bottom edge
-        if marker_type == 'start':
-            # Right-pointing triangle
-            triangle = [
-                (position, y_min),                      # Bottom point
-                (position + triangle_width, y_min),     # Bottom right point
-                (position, y_min + triangle_height)     # Top point
-            ]
-        else:
-            # Left-pointing triangle
-            triangle = [
-                (position, y_min),                      # Bottom point
-                (position - triangle_width, y_min),     # Bottom left point
-                (position, y_min + triangle_height)     # Top point
-            ]
+        # Get UI configuration for marker size in pixels
+        marker_width_px = config.get_ui_setting("markerHandles", "width", 8)
+        marker_height_px = config.get_ui_setting("markerHandles", "height", 14)
+        
+        # Get current view range and calculate the scale
+        try:
+            x_range = view_box.viewRange()[0]
+            y_range = view_box.viewRange()[1]
+            x_min, x_max = x_range
+            y_min, y_max = y_range
+        except Exception as e:
+            print(f"DEBUG: Error getting view range: {e}")
+            return
+        
+        # Calculate size in data units based on view range
+        view_width = view_box.width()  # Width of the view box in pixels
+        view_height = view_box.height()  # Height of the view box in pixels
+        
+        # Defensive check for zero values
+        if view_width <= 0 or view_height <= 0:
+            print(f"DEBUG: Invalid view dimensions: width={view_width}, height={view_height}")
+            return
             
-        # Create polygon item
+        # Calculate the data units per pixel
+        x_scale = (x_max - x_min) / view_width  # data units per pixel horizontally
+        y_scale = (y_max - y_min) / view_height  # data units per pixel vertically
+        
+        # Convert our desired pixel size to data units
+        width_in_data = x_scale * marker_width_px
+        height_in_data = y_scale * marker_height_px
+        
+        # Create a rectangle ROI that's properly positioned and sized
+        # For both markers, center the rectangle on the marker position
+        rect_pos = (position - (width_in_data / 2), y_min)
+        
+        # Create a simple rectangle with PlotDataItem
+        # Create points for a rectangle
+        x_points = [
+            rect_pos[0], rect_pos[0] + width_in_data, 
+            rect_pos[0] + width_in_data, rect_pos[0], rect_pos[0]
+        ]
+        y_points = [
+            rect_pos[1], rect_pos[1], 
+            rect_pos[1] + height_in_data, rect_pos[1] + height_in_data, rect_pos[1]
+        ]
+        
+        # Create a filled rectangle using PlotDataItem
         handle = pg.PlotDataItem(
-            x=[p[0] for p in triangle],
-            y=[p[1] for p in triangle],
-            fillLevel=0,
+            x=x_points, y=y_points,
+            fillLevel=y_min,
             fillBrush=QColor(color),
-            pen=pg.mkPen(color=QColor(color), width=2)
+            pen=pg.mkPen(None)  # No border
         )
+        
+        print(f"DEBUG: Created {marker_type} marker handle at position {position}")
         
         # Add to plot and store reference
         self.active_plot.addItem(handle)
@@ -389,14 +476,56 @@ class PyQtGraphWaveformView(BaseWaveformView):
     
     def update_plot(self, time, data_left, data_right=None):
         """Update the plot with new audio data"""
+        print(f"\n==== WAVEFORM_VIEW UPDATE_PLOT ====")
+        
+        # Get detailed information about the current state
+        old_start_pos = self.start_marker.value() if self.start_marker else None
+        old_end_pos = self.end_marker.value() if self.end_marker else None
+        try:
+            old_max_pos = self.time_data[-1] if self.time_data is not None and len(self.time_data) > 0 else None
+        except TypeError:
+            print(f"DEBUG: TypeError in update_plot when accessing old_max_pos")
+            old_max_pos = None
+        old_total_time = getattr(self, 'total_time', None)
+        
+        # Check for existing handles
+        if hasattr(self, 'marker_handles'):
+            old_start_handle = self.marker_handles.get('start_handle')
+            old_end_handle = self.marker_handles.get('end_handle')
+            print(f"DEBUG: update_plot - Old handles: start_handle={'exists' if old_start_handle is not None else 'none'}, end_handle={'exists' if old_end_handle is not None else 'none'}")
+        
         # Save reference to time data
+        try:
+            if time is not None and len(time) > 0:
+                print(f"DEBUG: update_plot - Time data update: input time_range=[{time[0]}, {time[-1]}], length={len(time)}")
+                new_max_pos = time[-1]
+            else:
+                print(f"DEBUG: update_plot - Time data is empty or None")
+                new_max_pos = None
+        except TypeError:
+            print(f"DEBUG: TypeError in update_plot - time has no len()")
+            new_max_pos = None
+            
         self.time_data = time
         
+        # Detail all current properties
+        print(f"DEBUG: update_plot - State summary:")
+        print(f"DEBUG:   - Old time_data max={old_max_pos}, New time_data max={new_max_pos}")
+        print(f"DEBUG:   - Marker positions before update: start={old_start_pos}, end={old_end_pos}")
+        print(f"DEBUG:   - Old total_time={old_total_time}")
+        
+        # Precheck - would end marker need clamping?
+        if old_end_pos is not None and new_max_pos is not None and old_end_pos > new_max_pos:
+            print(f"DEBUG: update_plot - ⚠️ End marker ({old_end_pos}) will need clamping to new max ({new_max_pos})")
+        
         # Update left channel
+        print(f"DEBUG: update_plot - Updating waveform_left with time_range=[{time[0]}, {time[-1]}]")
         self.waveform_left.setData(time, data_left)
         
         # Set view ranges for left channel
-        self.plot_left.setXRange(time[0], time[-1], padding=0)
+        # Add padding to ensure markers are visible at the edges
+        padding_value = 0.08  # 8% padding on each side
+        self.plot_left.setXRange(time[0], time[-1], padding=padding_value)
         y_max_left = max(abs(data_left.min()), abs(data_left.max()))
         self.plot_left.setYRange(-y_max_left, y_max_left, padding=0.1)
         
@@ -404,31 +533,104 @@ class PyQtGraphWaveformView(BaseWaveformView):
         if self.stereo_display and data_right is not None and self.waveform_right is not None:
             self.waveform_right.setData(time, data_right)
             
-            # Set view ranges for right channel
-            self.plot_right.setXRange(time[0], time[-1], padding=0)
+            # Set view ranges for right channel with padding
+            self.plot_right.setXRange(time[0], time[-1], padding=padding_value)
             y_max_right = max(abs(data_right.min()), abs(data_right.max()))
             self.plot_right.setYRange(-y_max_right, y_max_right, padding=0.1)
-            
+        
+        # Get marker positions immediately after data update but before clamping
+        current_start_pos = self.start_marker.value()
+        current_end_pos = self.end_marker.value()
+        print(f"DEBUG: update_plot - Marker positions before clamping: start={current_start_pos}, end={current_end_pos}")
+        
+        if current_end_pos > new_max_pos:
+            print(f"DEBUG: update_plot - ⚠️ End marker position ({current_end_pos}) exceeds time_data max ({new_max_pos})")
+        
+        # Check marker handle positions before clamping
+        if hasattr(self, 'marker_handles'):
+            curr_start_handle = self.marker_handles.get('start_handle')
+            curr_end_handle = self.marker_handles.get('end_handle')
+            print(f"DEBUG: update_plot - Current handles before clamping: start_handle={'exists' if curr_start_handle is not None else 'none'}, end_handle={'exists' if curr_end_handle is not None else 'none'}")
+                
+        # Clamp marker positions to valid range after waveform change
+        print(f"DEBUG: update_plot - About to call _clamp_markers_to_data_bounds()")
+        self._clamp_markers_to_data_bounds()
+        
+        # Get marker positions after clamping
+        new_start_pos = self.start_marker.value()
+        new_end_pos = self.end_marker.value()
+        print(f"DEBUG: update_plot - Marker positions after clamping: start={new_start_pos}, end={new_end_pos}")
+        
+        # Verify clamping worked correctly
+        if new_max_pos is not None and new_end_pos > new_max_pos:
+            print(f"DEBUG: update_plot - ⚠️⚠️ CLAMPING FAILED: End marker ({new_end_pos}) still exceeds time_data max ({new_max_pos})")
+        else:
+            print(f"DEBUG: update_plot - Clamping successful - end marker is within time_data range")
+        
+        # Check marker handles after clamping
+        if hasattr(self, 'marker_handles'):
+            post_start_handle = self.marker_handles.get('start_handle')
+            post_end_handle = self.marker_handles.get('end_handle')
+            print(f"DEBUG: update_plot - Current handles after clamping: start_handle={'exists' if post_start_handle is not None else 'none'}, end_handle={'exists' if post_end_handle is not None else 'none'}")
+                
         # Update marker handles
+        print(f"DEBUG: update_plot - About to update marker handles")
         self._update_marker_handle('start')
         self._update_marker_handle('end')
+        
+        # Final check on handles
+        if hasattr(self, 'marker_handles'):
+            final_start_handle = self.marker_handles.get('start_handle')
+            final_end_handle = self.marker_handles.get('end_handle')
+            print(f"DEBUG: update_plot - Final handles: start_handle={'exists' if final_start_handle is not None else 'none'}, end_handle={'exists' if final_end_handle is not None else 'none'}")
+        
+        # Print final marker locations
+        final_start_pos = self.start_marker.value()
+        final_end_pos = self.end_marker.value()
+        print(f"DEBUG: update_plot - Final marker positions: start={final_start_pos}, end={final_end_pos}")
+        print(f"==== END WAVEFORM_VIEW UPDATE_PLOT ====\n")
     
     def update_slices(self, slices, total_time=None):
         """Update the segment slices displayed on the waveform"""
+        # Record marker positions before update
+        pre_start_pos = self.start_marker.value()
+        pre_end_pos = self.end_marker.value()
+        
         if total_time is not None:
+            old_total_time = getattr(self, 'total_time', None)
             self.total_time = total_time
+            print(f"DEBUG: Total time updated from {old_total_time} to {self.total_time}")
         
         # Save current slices
         self.current_slices = slices
         
-        # Get current marker positions
-        start_pos = self.start_marker.value()
-        end_pos = self.end_marker.value()
+        # Get data boundaries with TypeError protection
+        data_max = None
+        try:
+            if self.time_data is not None and len(self.time_data) > 0:
+                data_max = self.time_data[-1]
+        except TypeError:
+            print("DEBUG: TypeError in update_slices when accessing time_data length")
+        print(f"DEBUG: update_slices - Data max={data_max}, Total time={self.total_time}")
+        print(f"DEBUG: update_slices - Marker positions before clamping: start={pre_start_pos}, end={pre_end_pos}")
+        
+        # Ensure markers are within valid bounds
+        try:
+            if self.time_data is not None and len(self.time_data) > 0:
+                self._clamp_markers_to_data_bounds()
+        except TypeError:
+            print("DEBUG: TypeError in update_slices when checking time_data before clamping")
+        
+        # Get positions after clamping
+        post_start_pos = self.start_marker.value()
+        post_end_pos = self.end_marker.value()
+        print(f"DEBUG: update_slices - Marker positions after clamping: start={post_start_pos}, end={post_end_pos}")
         
         # Ensure start and end markers are sufficiently separated
-        if abs(end_pos - start_pos) < 0.1:
-            end_pos = self.total_time
-            self.set_end_marker(end_pos)
+        if abs(post_end_pos - post_start_pos) < 0.1:
+            new_end_pos = self.total_time
+            print(f"DEBUG: update_slices - Markers too close together, setting end marker to {new_end_pos}")
+            self.set_end_marker(new_end_pos)
         
         # Clear existing slice markers
         self._clear_segment_markers()
@@ -447,6 +649,11 @@ class PyQtGraphWaveformView(BaseWaveformView):
                     pen=self._create_pen('sliceActive', width=1)
                 )
                 plot.addItem(line)
+        
+        # Get final marker positions after all updates
+        final_start_pos = self.start_marker.value()
+        final_end_pos = self.end_marker.value()
+        print(f"DEBUG: update_slices - Final marker positions: start={final_start_pos}, end={final_end_pos}")
         
         # Update marker handles for both markers
         self._update_marker_handle('start')
@@ -472,50 +679,141 @@ class PyQtGraphWaveformView(BaseWaveformView):
     
     def set_start_marker(self, position):
         """Set the position of the start marker"""
-        # Ensure position is within valid range (never less than 0)
-        position = max(0.0, position)
+        # Always print the initial request for debugging
+        print(f"DEBUG: set_start_marker - Called with position={position}")
+        
+        # Get valid data range from time_data
+        if self.time_data is not None and len(self.time_data) > 0:
+            data_min = self.time_data[0]
+            data_max = self.time_data[-1]
+            print(f"DEBUG: set_start_marker - Current data range: [{data_min}, {data_max}]")
+            
+            # Ensure position is within valid range
+            if position < data_min:
+                print(f"DEBUG: set_start_marker - CLAMPING position from {position} to data_min: {data_min}")
+                position = data_min
+                
+            if position > data_max:
+                # Start marker shouldn't be beyond the end of the data
+                new_pos = max(data_min, data_max - 0.01)
+                print(f"DEBUG: set_start_marker - CLAMPING position from {position} to below data_max: {new_pos}")
+                position = new_pos
+        else:
+            # If we don't have time data, this is probably initialization
+            # Just record the intended position and return
+            print(f"DEBUG: set_start_marker - No time data available, setting to {position}")
+            # Still verify not negative
+            position = max(0.0, position)
+            self.start_marker.setValue(position)
+            
+            # Update stereo view if needed
+            if self.stereo_display and self.start_marker_right is not None:
+                self.start_marker_right.setValue(position)
+                
+            return
         
         # Apply snapping if close to the start
         if position < self.snap_threshold:
             position = 0.0
+            print(f"DEBUG: set_start_marker - Snapping to start: {position}")
         
         # Ensure start marker doesn't go beyond end marker
-        end_pos = self.end_marker.value()
-        position = min(position, end_pos - 0.01)
+        if self.end_marker is not None:
+            end_pos = self.end_marker.value()
+            minimum_gap = 0.01  # Minimum 10ms gap between markers
+            if position > end_pos - minimum_gap:
+                position = max(0.0, end_pos - minimum_gap)
+                print(f"DEBUG: set_start_marker - Enforcing minimum gap from end marker: {position}")
         
-        # Update markers
+        # Block signals to prevent recursive callbacks
+        old_block_state = self.start_marker.blockSignals(True)
+        
+        # Update marker with final position
         self.start_marker.setValue(position)
+        
+        # Restore signal state
+        self.start_marker.blockSignals(old_block_state)
         
         # Update stereo view if needed
         if self.stereo_display and self.start_marker_right is not None:
+            old_block_state = self.start_marker_right.blockSignals(True)
             self.start_marker_right.setValue(position)
-            
-        # Update triangle marker handle
+            self.start_marker_right.blockSignals(old_block_state)
+        
+        print(f"DEBUG: set_start_marker - Final position: {position}")
+        
+        # Remove old handle if it exists
+        if 'start_handle' in self.marker_handles and self.marker_handles['start_handle'] is not None:
+            self.active_plot.removeItem(self.marker_handles['start_handle'])
+            self.marker_handles['start_handle'] = None
+        
+        # Always update the marker handle to reflect the new position
         self._update_marker_handle('start')
     
     def set_end_marker(self, position):
         """Set the position of the end marker"""
-        # Ensure position is within valid range (never less than 0 or greater than total_time)
-        position = max(0.0, position)
-        if self.total_time > 0:
-            position = min(position, self.total_time)
+        # Always print the initial request for debugging
+        print(f"DEBUG: set_end_marker - Called with position={position}")
+        
+        # Get valid data range from time_data
+        if self.time_data is not None and len(self.time_data) > 0:
+            data_min = self.time_data[0]
+            data_max = self.time_data[-1]
+            print(f"DEBUG: set_end_marker - Current data range: [{data_min}, {data_max}]")
             
-        # Apply snapping if close to the end
-        if self.total_time > 0 and (self.total_time - position) < self.snap_threshold:
-            position = self.total_time
+            # CRITICAL FIX: ALWAYS enforce data bounds
+            # This ensures the end marker is never beyond the available data
+            if position > data_max:
+                print(f"DEBUG: set_end_marker - CLAMPING position from {position} to data_max: {data_max}")
+                position = data_max
+        else:
+            # If we don't have time data, this is probably initialization
+            # Just record the intended position and return
+            print(f"DEBUG: set_end_marker - No time data available, setting to {position}")
+            # Still verify not negative
+            position = max(0.0, position)
+            self.end_marker.setValue(position)
+            
+            # Update stereo view if needed
+            if self.stereo_display and self.end_marker_right is not None:
+                self.end_marker_right.setValue(position)
+                
+            return
+        
+        # Apply basic validation - never less than data_min (usually 0)
+        position = max(data_min, position)
         
         # Ensure end marker doesn't go before start marker
-        start_pos = self.start_marker.value()
-        position = max(position, start_pos + 0.01)
+        if self.start_marker is not None:
+            start_pos = self.start_marker.value()
+            minimum_gap = 0.01  # Minimum 10ms gap between markers
+            if position < start_pos + minimum_gap:
+                position = start_pos + minimum_gap
+                print(f"DEBUG: set_end_marker - Enforcing minimum gap from start marker: {position}")
         
-        # Update markers
+        # Block signals to prevent recursive callbacks
+        old_block_state = self.end_marker.blockSignals(True)
+        
+        # Update marker with final position
         self.end_marker.setValue(position)
+        
+        # Restore signal state
+        self.end_marker.blockSignals(old_block_state)
         
         # Update stereo view if needed
         if self.stereo_display and self.end_marker_right is not None:
+            old_block_state = self.end_marker_right.blockSignals(True)
             self.end_marker_right.setValue(position)
-            
-        # Update triangle marker handle
+            self.end_marker_right.blockSignals(old_block_state)
+        
+        print(f"DEBUG: set_end_marker - Final position: {position}")
+        
+        # Remove old handle if it exists
+        if 'end_handle' in self.marker_handles and self.marker_handles['end_handle'] is not None:
+            self.active_plot.removeItem(self.marker_handles['end_handle'])
+            self.marker_handles['end_handle'] = None
+        
+        # Always update the marker handle to reflect the new position
         self._update_marker_handle('end')
     
     def get_marker_positions(self):
@@ -565,6 +863,67 @@ class PyQtGraphWaveformView(BaseWaveformView):
         # Clear the list
         self.active_segment_items = []
     
+    def _clamp_markers_to_data_bounds(self):
+        """Ensure markers stay within valid data boundaries
+        
+        Called after waveform updates to prevent markers from going outside the valid range,
+        which would make their handles invisible or misplaced.
+        """
+        # Simple version focusing on the core issue: end marker goes beyond data bounds
+        try:
+            # Make sure we have the essential components and valid data
+            if not hasattr(self, 'time_data') or self.time_data is None:
+                print("Can't clamp markers: No time data")
+                return
+                
+            # Fix for TypeError: object of type 'NoneType' has no len()
+            try:
+                if len(self.time_data) == 0:
+                    print("Can't clamp markers: Time data is empty")
+                    return
+            except TypeError:
+                print("Can't clamp markers: time_data is not iterable")
+                return
+                
+            if not hasattr(self, 'end_marker') or self.end_marker is None:
+                print("Can't clamp markers: No end marker")
+                return
+                
+            # Get the max position from time_data
+            max_pos = self.time_data[-1]
+            
+            # Get the end marker position 
+            end_pos = self.end_marker.value()
+            
+            # CRITICAL FIX: Force end marker to max_pos if beyond bounds
+            if end_pos > max_pos:
+                print(f"Fixing end marker: {end_pos} -> {max_pos}")
+                # Block signals during update to prevent recursion
+                old_state = self.end_marker.blockSignals(True)
+                self.end_marker.setValue(max_pos)
+                self.end_marker.blockSignals(old_state)
+                
+                # Also update stereo marker if present
+                if hasattr(self, 'stereo_display') and self.stereo_display:
+                    if hasattr(self, 'end_marker_right') and self.end_marker_right is not None:
+                        old_state = self.end_marker_right.blockSignals(True)
+                        self.end_marker_right.setValue(max_pos)
+                        self.end_marker_right.blockSignals(old_state)
+                
+                # Update the marker handle
+                if hasattr(self, 'marker_handles'):
+                    if 'end_handle' in self.marker_handles and self.marker_handles['end_handle'] is not None:
+                        if hasattr(self, 'active_plot') and self.active_plot is not None:
+                            try:
+                                self.active_plot.removeItem(self.marker_handles['end_handle'])
+                            except:
+                                pass
+                    self._update_marker_handle('end')
+        except Exception as e:
+            print(f"Error in _clamp_markers_to_data_bounds: {e}")
+            # No matter what happens, don't crash - just return
+            return
+            
     def get_view_center(self):
         """Get the center position of the current view"""
         if self.active_plot is None:

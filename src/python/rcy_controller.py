@@ -171,11 +171,36 @@ class RcyController:
         return config.get_preset_list()
 
     def update_view(self):
+        print(f"\n==== CONTROLLER UPDATE_VIEW ====")
+        
+        # Get data window
         start_time = self.view.get_scroll_position() * (self.model.total_time - self.visible_time) / 100
         end_time = start_time + self.visible_time
+        print(f"DEBUG: View window: start_time={start_time:.6f}, end_time={end_time:.6f}, visible_time={self.visible_time}")
+        print(f"DEBUG: Model total_time: {self.model.total_time}")
+        
+        # Track marker positions before update
+        if hasattr(self.view, 'waveform_view'):
+            pre_markers = self.view.waveform_view.get_marker_positions()
+            print(f"DEBUG: Pre-update marker positions: start={pre_markers[0]}, end={pre_markers[1]}")
+            
+            # Check data bounds
+            try:
+                if hasattr(self.view.waveform_view, 'time_data') and self.view.waveform_view.time_data is not None and len(self.view.waveform_view.time_data) > 0:
+                    pre_data_max = self.view.waveform_view.time_data[-1]
+                    print(f"DEBUG: Pre-update data bounds: max={pre_data_max}")
+            except TypeError:
+                print("DEBUG: TypeError in controller update_view when accessing time_data length")
         
         # Get raw data with left and right channels if stereo
         time, data_left, data_right = self.model.get_data(start_time, end_time)
+        try:
+            if time is not None and len(time) > 0:
+                print(f"DEBUG: Got data: time_length={len(time)}, time_range=[{time[0]}, {time[-1]}]")
+            else:
+                print("DEBUG: Got data: time is None or empty")
+        except TypeError:
+            print("DEBUG: TypeError in update_view when accessing time length")
         
         # Get downsampling configuration from config file
         ds_config = config.get_value_from_json_file("audio.json", "downsampling", {})
@@ -196,18 +221,79 @@ class RcyController:
             width = self.view.width() if hasattr(self.view, 'width') else 800
             target_length = min(max(width * 2, min_length), max_length)
             
+            print(f"DEBUG: Downsampling settings: enabled={ds_config.get('enabled')}, method={method}, target_length={target_length}")
+            
             # Apply downsampling if configured to always apply or if we have enough data to benefit
-            if always_apply or len(time) > target_length:
-                # Use get_downsampled_data imported at the top of the file
-                time, data_left, data_right = get_downsampled_data(
-                    time, data_left, data_right, target_length, method=ds_method
-                )
+            try:
+                if always_apply or (time is not None and len(time) > target_length):
+                    print(f"DEBUG: Applying downsampling - original length={len(time)}")
+                    # Use get_downsampled_data imported at the top of the file
+                    time, data_left, data_right = get_downsampled_data(
+                        time, data_left, data_right, target_length, method=ds_method
+                    )
+                if time is not None and len(time) > 0:
+                    print(f"DEBUG: After downsampling - length={len(time)}, time_range=[{time[0]}, {time[-1]}]")
+                else:
+                    print("DEBUG: After downsampling - time data is None or empty")
+            except TypeError:
+                print("DEBUG: TypeError in downsampling check when accessing time length")
         
+        # Pre-update check - see if markers would fall outside bounds
+        try:
+            if (hasattr(self.view, 'waveform_view') and pre_markers[0] is not None and pre_markers[1] is not None 
+                and time is not None and len(time) > 0):
+                if pre_markers[1] > time[-1]:
+                    print(f"DEBUG: ⚠️ End marker ({pre_markers[1]}) will be outside new time bounds ([{time[0]}, {time[-1]}])")
+        except TypeError:
+            print("DEBUG: TypeError in pre-update bounds check when accessing time data")
+        
+        try:
+            if time is not None and len(time) > 0:
+                print(f"DEBUG: About to call view.update_plot with time_range=[{time[0]}, {time[-1]}]")
+            else:
+                print("DEBUG: About to call view.update_plot with empty or None time data")
+        except TypeError:
+            print("DEBUG: TypeError when trying to log time data range for update_plot")
         # Update the plot with data (downsampled or raw)
         self.view.update_plot(time, data_left, data_right)
         
         slices = self.model.get_segments()
+        try:
+            if slices is not None:
+                print(f"DEBUG: About to call view.update_slices with {len(slices)} segments")
+            else:
+                print("DEBUG: About to call view.update_slices with None slices")
+        except TypeError:
+            print("DEBUG: TypeError when trying to access segments length")
         self.view.update_slices(slices)
+        
+        # Post-update check
+        if hasattr(self.view, 'waveform_view'):
+            post_markers = self.view.waveform_view.get_marker_positions()
+            print(f"DEBUG: Post-update marker positions: start={post_markers[0]}, end={post_markers[1]}")
+            
+            # Check data bounds
+            try:
+                if hasattr(self.view.waveform_view, 'time_data') and self.view.waveform_view.time_data is not None and len(self.view.waveform_view.time_data) > 0:
+                    post_data_max = self.view.waveform_view.time_data[-1]
+                    print(f"DEBUG: Post-update data bounds: max={post_data_max}")
+            except TypeError:
+                print("DEBUG: TypeError in post-update check when accessing time_data length")
+                
+                # Check if end marker is beyond data bounds
+                if post_markers[1] is not None and post_markers[1] > post_data_max:
+                    print(f"DEBUG: ⚠️ End marker ({post_markers[1]}) is still beyond data bounds ({post_data_max})")
+                    
+                    # Current handle positions
+                    if hasattr(self.view.waveform_view, 'marker_handles'):
+                        end_handle_key = 'end_handle'
+                        if end_handle_key in self.view.waveform_view.marker_handles:
+                            if self.view.waveform_view.marker_handles[end_handle_key] is None:
+                                print(f"DEBUG: End marker handle is None")
+                            else:
+                                print(f"DEBUG: End marker handle exists in plot")
+        
+        print(f"==== END CONTROLLER UPDATE_VIEW ====\n")
 
     def zoom_in(self):
         self.visible_time *= 0.97
@@ -409,29 +495,98 @@ class RcyController:
     
     def cut_audio(self, start_time, end_time):
         """Trim the audio to the selected region"""
-        print(f"Cutting audio between {start_time:.2f}s and {end_time:.2f}s")
+        print(f"\n==== CONTROLLER CUT OPERATION ====")
+        print(f"Cutting audio between {start_time:.6f}s and {end_time:.6f}s")
+        
+        # Get marker positions before cut for tracking
+        if hasattr(self.view, 'waveform_view'):
+            pre_markers = self.view.waveform_view.get_marker_positions()
+            print(f"DEBUG: Pre-cut marker positions: start={pre_markers[0]}, end={pre_markers[1]}")
+        
+        # Get current model state before cut
+        pre_total_time = self.model.total_time
+        try:
+            pre_time_max = self.model.time[-1] if hasattr(self.model, 'time') and self.model.time is not None and len(self.model.time) > 0 else None
+        except TypeError:
+            print("DEBUG: TypeError in cut_audio when accessing model.time length")
+            pre_time_max = None
+        print(f"DEBUG: Pre-cut model state: total_time={pre_total_time}, time_max={pre_time_max}")
         
         # Convert time positions to sample positions
         start_sample = self.model.get_sample_at_time(start_time)
         end_sample = self.model.get_sample_at_time(end_time)
+        print(f"DEBUG: Converting to samples: start_sample={start_sample}, end_sample={end_sample}")
         
         # Perform the cut operation in the model
         success = self.model.cut_audio(start_sample, end_sample)
         
-        if success:
-            # Reset tempo to initial values
-            self.tempo = self.model.get_tempo(self.num_measures)  # Fixed variable name (was num_bars)
-            self.view.update_tempo(self.tempo)
-            
-            # Clear segments
-            self.model.segments = []
-            
-            # Update the view with the new trimmed audio
-            self.update_view()
-            self.view.update_scroll_bar(self.visible_time, self.model.total_time)
-            print("Audio successfully trimmed")
-        else:
+        if not success:
             print("Failed to trim audio")
+            return
+        
+        # Get model state after cut
+        post_total_time = self.model.total_time
+        try:
+            post_time_max = self.model.time[-1] if hasattr(self.model, 'time') and self.model.time is not None and len(self.model.time) > 0 else None
+        except TypeError:
+            print("DEBUG: TypeError in cut_audio when accessing post-cut model.time length")
+            post_time_max = None
+        print(f"DEBUG: Post-cut model state: total_time={post_total_time}, time_max={post_time_max}")
+        
+        # Reset tempo to initial values
+        old_tempo = self.tempo
+        self.tempo = self.model.get_tempo(self.num_measures)
+        self.view.update_tempo(self.tempo)
+        print(f"DEBUG: Tempo updated from {old_tempo} to {self.tempo}")
+        
+        # Clear segments
+        self.model.segments = []
+        
+        print("DEBUG: About to call update_view()")
+        # Update the view with the new trimmed audio
+        self.update_view()
+        print("DEBUG: About to call update_scroll_bar()")
+        self.view.update_scroll_bar(self.visible_time, self.model.total_time)
+        
+        # Get marker positions after update
+        if hasattr(self.view, 'waveform_view'):
+            post_markers = self.view.waveform_view.get_marker_positions()
+            print(f"DEBUG: Post-update marker positions: start={post_markers[0]}, end={post_markers[1]}")
+            
+            # Check if end marker is still beyond data bounds
+            try:
+                if hasattr(self.view.waveform_view, 'time_data') and self.view.waveform_view.time_data is not None and len(self.view.waveform_view.time_data) > 0:
+                    data_max = self.view.waveform_view.time_data[-1]
+                    print(f"DEBUG: Data bounds check: end_marker={post_markers[1]}, data_max={data_max}")
+                    if post_markers[1] > data_max:
+                        print(f"DEBUG: **** END MARKER IS STILL BEYOND DATA BOUNDS ****")
+                        # Force a final bounds check
+                        print(f"DEBUG: Forcing a final bounds check on waveform_view")
+                        try:
+                            # First try clamping
+                            self.view.waveform_view._clamp_markers_to_data_bounds()
+                            check_markers = self.view.waveform_view.get_marker_positions()
+                            print(f"DEBUG: Marker positions after clamping: start={check_markers[0]}, end={check_markers[1]}")
+                            
+                            # If still beyond bounds, try direct set_end_marker call
+                            if check_markers[1] is not None and check_markers[1] > data_max:
+                                print(f"DEBUG: Direct end marker correction needed")
+                                # Call set_end_marker directly with the max value
+                                self.view.waveform_view.set_end_marker(data_max)
+                                
+                                # Verify the correction
+                                final_markers = self.view.waveform_view.get_marker_positions()
+                                print(f"DEBUG: Final marker positions after direct correction: start={final_markers[0]}, end={final_markers[1]}")
+                            else:
+                                print(f"DEBUG: Clamping successful, no direct correction needed")
+                        except Exception as e:
+                            print(f"DEBUG: Exception during marker correction: {e}")
+            except TypeError:
+                print("DEBUG: TypeError in cut_audio when checking time_data bounds")
+        
+        print("DEBUG: Audio cut operation completed - markers should now be correct")
+        print(f"==== END CONTROLLER CUT OPERATION ====\n")
+        print("Audio successfully trimmed")
     
     def handle_plot_click(self, click_time):
         print(f"### Handle plot click with time: {click_time}")

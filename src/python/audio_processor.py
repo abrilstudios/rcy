@@ -721,14 +721,40 @@ class WavAudioProcessor:
     def cut_audio(self, start_sample, end_sample):
         """Trim audio to the region between start_sample and end_sample"""
         try:
-            # Ensure valid range
-            data_length = len(self.data_left)
-            if start_sample < 0:
-                start_sample = 0
-            if end_sample > data_length:
-                end_sample = data_length
-            if start_sample >= end_sample:
+            # DEBUG: Print detailed information about the cut operation
+            if not hasattr(self, 'data_left') or self.data_left is None:
+                print("ERROR: data_left is None or doesn't exist")
                 return False
+                
+            try:
+                old_length = len(self.data_left)
+                old_time_length = len(self.time) if hasattr(self, 'time') and self.time is not None else 0
+                old_total_time = self.total_time if hasattr(self, 'total_time') else 0
+            except TypeError:
+                print("ERROR: TypeError when accessing data length in cut_audio")
+                return False
+            
+            print(f"\n==== AUDIO PROCESSOR CUT OPERATION ====")
+            print(f"Cut request: start_sample={start_sample}, end_sample={end_sample}")
+            print(f"Current data state: samples={old_length}, time_length={old_time_length}, total_time={old_total_time}")
+            
+            # Ensure valid range
+            try:
+                data_length = len(self.data_left)
+                if start_sample < 0:
+                    print(f"DEBUG: Clamping start_sample from {start_sample} to 0")
+                    start_sample = 0
+                if end_sample > data_length:
+                    print(f"DEBUG: Clamping end_sample from {end_sample} to {data_length}")
+                    end_sample = data_length
+            except TypeError:
+                print("ERROR: TypeError when ensuring valid range in cut_audio")
+                return False
+            if start_sample >= end_sample:
+                print(f"DEBUG: Invalid cut range: start_sample({start_sample}) >= end_sample({end_sample})")
+                return False
+            
+            print(f"DEBUG: Final cut range: start_sample={start_sample}, end_sample={end_sample}, new_length={end_sample-start_sample}")
                 
             # Extract the selected portion of both channels
             trimmed_left = self.data_left[start_sample:end_sample]
@@ -739,15 +765,60 @@ class WavAudioProcessor:
             self.data_right = trimmed_right
             
             # Update total time based on new length
-            self.total_time = len(self.data_left) / self.sample_rate
-            
-            # Update time array
-            self.time = np.linspace(0, self.total_time, len(self.data_left))
+            old_total_time = self.total_time
+            try:
+                if self.data_left is not None:
+                    self.total_time = len(self.data_left) / self.sample_rate
+                else:
+                    print("ERROR: data_left is None when updating total_time")
+                    return False
+                
+                # Update time array
+                try:
+                    old_time_max = self.time[-1] if hasattr(self, 'time') and self.time is not None and len(self.time) > 0 else None
+                except TypeError:
+                    print("WARNING: TypeError when accessing old_time_max in cut_audio")
+                    old_time_max = None
+                    
+                self.time = np.linspace(0, self.total_time, len(self.data_left))
+                
+                try:
+                    new_time_max = self.time[-1] if self.time is not None and len(self.time) > 0 else None
+                except TypeError:
+                    print("WARNING: TypeError when accessing new_time_max in cut_audio")
+                    new_time_max = None
+            except TypeError:
+                print("ERROR: TypeError when updating time data in cut_audio")
+                return False
             
             # Clear segments since they're now invalid
             self.segments = []
             
+            # DEBUG: Print detailed information about the result
+            print(f"DEBUG: Cut operation result:")
+            print(f"DEBUG:   - Old total_time: {old_total_time}, New total_time: {self.total_time}")
+            print(f"DEBUG:   - Old time_max: {old_time_max}, New time_max: {new_time_max}")
+            try:
+                if self.data_left is not None:
+                    print(f"DEBUG:   - New data length: {len(self.data_left)}")
+                else:
+                    print("DEBUG:   - New data_left is None")
+                    
+                if self.time is not None:
+                    print(f"DEBUG:   - New time array length: {len(self.time)}")
+                    if len(self.time) > 0:
+                        print(f"DEBUG:   - New time range: [{self.time[0]}, {self.time[-1]}]")
+                    else:
+                        print("DEBUG:   - New time array is empty")
+                else:
+                    print("DEBUG:   - New time is None")
+            except TypeError:
+                print("WARNING: TypeError when printing debug info in cut_audio")
+            print(f"==== END AUDIO PROCESSOR CUT OPERATION ====\n")
+            
             return True
         except Exception as e:
             print(f"Error in cut_audio: {e}")
+            import traceback
+            traceback.print_exc()
             return False
