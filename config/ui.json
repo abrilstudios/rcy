@@ -1,9 +1,9 @@
 {
   "markerHandles": {
-    "type": "rightTriangle",
-    "width": 30,
-    "height": 18,
-    "offsetY": 4
+    "type": "rectangle",
+    "width": 8,
+    "height": 14,
+    "offsetY": 0
   },
   "markerSnapping": {
     "snapThreshold": 0.05
