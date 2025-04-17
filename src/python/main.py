@@ -1,15 +1,23 @@
 import sys
-from PyQt6.QtWidgets import QApplication, QMessageBox
+import logging
+from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QIcon
 from audio_processor import WavAudioProcessor
 from rcy_controller import RcyController
 from rcy_view import RcyView
 from config_manager import config
+from error_handler import ErrorHandler, install_global_exception_hook
 
 # Import but don't use yet until we're ready
 from waveform_view import create_waveform_view
+
+# Configure logger for main module
+logger = logging.getLogger(__name__)
   
 def main():
+    # Install global exception hook
+    install_global_exception_hook()
+    
     # Set application name using string resources
     QApplication.setApplicationName(config.get_string("ui", "applicationName"))
     QApplication.setApplicationDisplayName(config.get_string("ui", "applicationName"))
@@ -24,7 +32,7 @@ def main():
         # Get preset info to initialize controller with correct measure count
         preset_info = config.get_preset_info('amen_classic')
         initial_measures = preset_info.get('measures', 1) if preset_info else 1
-        print(f"Initializing with preset amen_classic, measures={initial_measures}")
+        logger.info(f"Initializing with preset amen_classic, measures={initial_measures}")
         
         # Create controller with correct initial measures
         controller = RcyController(model)
@@ -43,7 +51,7 @@ def main():
         # Ensure tempo is calculated and displayed with correct measure count
         controller.tempo = controller.model.get_tempo(controller.num_measures)
         view.update_tempo(controller.tempo)
-        print(f"Initial tempo: {controller.tempo:.2f} BPM based on {controller.num_measures} measures")
+        logger.info(f"Initial tempo: {controller.tempo:.2f} BPM based on {controller.num_measures} measures")
         
         # Check for audio file in command line arguments
         if len(sys.argv) > 1:
@@ -55,7 +63,8 @@ def main():
         return app.exec()
         
     except Exception as e:
-        QMessageBox.critical(None, "Error", f"Failed to initialize application: {e}")
+        ErrorHandler.handle_exception(e, context="Application initialization", 
+                                     title="Startup Error")
         sys.exit(1)
 
 if __name__ == "__main__":
