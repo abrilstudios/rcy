@@ -16,16 +16,16 @@ class RcyController:
         self.tempo = 120
         
         # Get transient detection parameters from config
-        td_config = config.get_value_from_json_file("audio.json", "transientDetection", {})
+        td_config = config.get_setting("audio", "transientDetection", {})
         self.threshold = td_config.get("threshold", 0.20)
         
         # Get playback tempo parameters from config
-        pt_config = config.get_value_from_json_file("audio.json", "playbackTempo", {})
+        pt_config = config.get_setting("audio", "playbackTempo", {})
         self.playback_tempo_enabled = pt_config.get("enabled", False)
         self.target_bpm = pt_config.get("targetBpm", 120)
         
         # Get playback mode from config
-        playback_config = config.get_value_from_json_file("audio.json", "playback", {})
+        playback_config = config.get_setting("audio", "playback", {})
         self.playback_mode = playback_config.get("mode", "one-shot")
         
         # Validate playback mode
@@ -203,7 +203,7 @@ class RcyController:
             print("DEBUG: TypeError in update_view when accessing time length")
         
         # Get downsampling configuration from config file
-        ds_config = config.get_value_from_json_file("audio.json", "downsampling", {})
+        ds_config = config.get_setting("audio", "downsampling", {})
         
         # Check if downsampling is enabled
         if ds_config.get("enabled", False):

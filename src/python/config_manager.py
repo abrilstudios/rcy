@@ -16,122 +16,38 @@ class ConfigManager:
         self.load_config()
     
     def load_config(self):
-        """Load configuration from files"""
+        """Load master configuration from 'config/config.json' and exit on failure."""
+        base = pathlib.Path(__file__).parent.parent.parent
+        cfg_file = base / "config" / "config.json"
+        presets_file = base / "presets" / "presets.json"
+        # Load master config
         try:
-            # Get the path to the config directory
-            current_file = pathlib.Path(__file__)
-            project_root = current_file.parent.parent.parent
-            config_dir = os.path.join(project_root, "config")
-            presets_dir = os.path.join(project_root, "presets")
-            
-            colors_path = os.path.join(config_dir, "colors.json")
-            strings_path = os.path.join(config_dir, "strings.json")
-            ui_path = os.path.join(config_dir, "ui.json")
-            presets_path = os.path.join(presets_dir, "presets.json")
-            
-            # Load colors from JSON file
-            if os.path.exists(colors_path):
-                with open(colors_path, 'r') as f:
-                    config = json.load(f)
-                    self.colors = config.get('palette', {})
-                    self.fonts = config.get('fonts', {})
-                print(f"Loaded color palette from {colors_path}")
-            else:
-                print(f"Colors config file not found: {colors_path}, using defaults")
-                self._set_color_defaults()
-                
-            # Load strings from JSON file
-            if os.path.exists(strings_path):
-                with open(strings_path, 'r') as f:
-                    self.strings = json.load(f)
-                print(f"Loaded string resources from {strings_path}")
-            else:
-                print(f"Strings config file not found: {strings_path}, using defaults")
-                self._set_string_defaults()
-                
-            # Load UI configuration from JSON file
-            if os.path.exists(ui_path):
-                with open(ui_path, 'r') as f:
-                    self.ui = json.load(f)
-                print(f"Loaded UI configuration from {ui_path}")
-            else:
-                print(f"UI config file not found: {ui_path}, using defaults")
-                self._set_ui_defaults()
-                
-            # Load presets from JSON file
-            if os.path.exists(presets_path):
-                with open(presets_path, 'r') as f:
-                    self.presets = json.load(f)
-                print(f"Loaded preset catalog from {presets_path}")
-            else:
-                print(f"ERROR: Presets file not found: {presets_path}")
-                sys.exit(1)  # Exit with error code
+            with open(cfg_file, 'r') as f:
+                self._cfg = json.load(f)
         except Exception as e:
-            print(f"Error loading config: {e}")
-            self._set_color_defaults()
-            self._set_string_defaults()
-            self._set_ui_defaults()
+            print(f"Critical error loading configuration '{cfg_file}': {e}", file=sys.stderr)
+            sys.exit(1)
+        # Validate and assign
+        # Validate and assign sections
+        try:
+            c = self._cfg["colors"]
+            self.colors = c["palette"]
+            self.fonts = c["fonts"]
+            self.strings = self._cfg["strings"]
+            self.ui = self._cfg["ui"]
+            self.audio = self._cfg["audio"]
+        except KeyError as e:
+            print(f"Configuration missing key: {e}", file=sys.stderr)
+            sys.exit(1)
+        # Load presets
+        try:
+            with open(presets_file, 'r') as f:
+                self.presets = json.load(f)
+        except Exception as e:
+            print(f"Critical error loading presets '{presets_file}': {e}", file=sys.stderr)
+            sys.exit(1)
     
-    def _set_color_defaults(self):
-        """Set default colors and fonts if config can't be loaded"""
-        self.colors = {
-            "background": "#cbe9f3",
-            "waveform": "#0a2239",
-            "startMarker": "#007fa3",
-            "endMarker": "#007fa3",
-            "sliceActive": "#7f8fa6",
-            "sliceHover": "#a6b5bd",
-            "gridLines": "#7f8fa6",
-            "selectionHighlight": "#ff3366",
-            "cutButton": "#000000"
-        }
-        self.fonts = {
-            "primary": "Futura PT Book"
-        }
-        
-    def _set_string_defaults(self):
-        """Set default strings if config can't be loaded"""
-        self.strings = {
-            "ui": {
-                "windowTitle": "Recycle View",
-                "applicationName": "RCY",
-                "organizationName": "Abril Audio Labs",
-                "organizationDomain": "abrilaudio.com"
-            },
-            "menus": {
-                "file": "File",
-                "help": "Help",
-                "open": "Open",
-                "export": "Export", 
-                "saveAs": "Save As",
-                "keyboardShortcuts": "Keyboard Shortcuts",
-                "about": "About"
-            },
-            "buttons": {
-                "zoomIn": "Zoom In",
-                "zoomOut": "Zoom Out",
-                "cut": "Cut Selection",
-                "splitBars": "Split by Bars",
-                "splitTransients": "Split by Transients",
-                "close": "Close"
-            },
-            "labels": {
-                "numBars": "Number of bars:",
-                "tempo": "Tempo:",
-                "onsetThreshold": "Onset Threshold:",
-                "barResolutions": ["4th notes", "8th notes", "16th notes"]
-            }
-        }
-    
-    def _set_ui_defaults(self):
-        """Set default UI configuration if ui.json can't be loaded"""
-        self.ui = {
-            "markerHandles": {
-                "width": 16,
-                "height": 10,
-                "offsetY": 0
-            }
-        }
+    # Default-setting methods removed: loading now always requires valid config.json
     
     def get_color(self, key, default=None):
         """Get a color from the palette by key"""
@@ -195,38 +111,14 @@ class ConfigManager:
             name = preset_data.get('name', preset_id)
             preset_list.append((preset_id, name))
         return preset_list
-        
-    def get_value_from_json_file(self, filename, key, default=None):
-        """Get a value from a JSON configuration file by key
-        
-        Args:
-            filename: The JSON file name in the config directory
-            key: The top-level key to look for
-            default: The default value to return if key is not found
-            
-        Returns:
-            The value associated with the key, or the default if not found
-        """
+    
+    def get_setting(self, section: str, key: str, default=None):  # noqa: C901
+        """Get a generic setting from the master config"""
         try:
-            # Get the path to the config directory
-            current_file = pathlib.Path(__file__)
-            project_root = current_file.parent.parent.parent
-            config_path = os.path.join(project_root, "config", filename)
-            
-            # Check if file exists
-            if not os.path.exists(config_path):
-                print(f"Config file not found: {config_path}")
-                return default
-                
-            # Load and parse the JSON file
-            with open(config_path, 'r') as f:
-                config_data = json.load(f)
-                
-            # Return the requested value or default
-            return config_data.get(key, default)
-        except Exception as e:
-            print(f"Error reading config file {filename}: {e}")
+            return self._cfg.get(section, {}).get(key, default)
+        except Exception:
             return default
+        
 
 # Create a singleton instance
 config = ConfigManager()

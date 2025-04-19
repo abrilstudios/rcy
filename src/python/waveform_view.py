@@ -25,7 +25,7 @@ class BaseWaveformView(QWidget):
         self.total_time = 0
         self.snap_threshold = config.get_ui_setting("markerSnapping", "snapThreshold", 0.025)
         # TODO: Unify handling of config - do not allow get_value_from_json
-        self.stereo_display = config.get_value_from_json_file("audio.json", "stereoDisplay", True)
+        self.stereo_display = config.get_setting("audio", "stereoDisplay", True)
     
     def update_plot(self, time, data_left, data_right=None):
         """Update the plot with new audio data"""
