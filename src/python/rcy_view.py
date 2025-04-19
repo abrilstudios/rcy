@@ -3,6 +3,7 @@ from PyQt6.QtGui import QAction, QActionGroup, QValidator, QIntValidator, QFont
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from config_manager import config
 from waveform_view import create_waveform_view
+from error_handler import ErrorHandler
 import numpy as np
 
 class RcyView(QMainWindow):
@@ -387,7 +388,7 @@ class RcyView(QMainWindow):
         threshold_layout.addWidget(threshold_label)
 
         # Get default threshold from config
-        td_config = config.get_value_from_json_file("audio.json", "transientDetection", {})
+        td_config = config.get_setting("audio", "transientDetection", {})
         default_threshold = td_config.get("threshold", 0.2)
         
         # Convert the threshold to slider value (multiply by 100)
@@ -424,7 +425,7 @@ class RcyView(QMainWindow):
         self.waveform_widget = self.waveform_view
         
         # Flag for stereo display settings (still used in other parts of the app)
-        self.stereo_display = self._get_audio_config("stereoDisplay", True)
+        self.stereo_display = config.get_setting("audio", "stereoDisplay", True)
         
         # Add the waveform widget to the layout
         main_layout.addWidget(self.waveform_widget)
@@ -453,12 +454,6 @@ class RcyView(QMainWindow):
         button_layout.addWidget(self.cut_button)
         main_layout.addLayout(button_layout)
         
-    def _get_audio_config(self, key, default_value):
-        """Helper method to get audio configuration from config manager"""
-        try:
-            return config.get_value_from_json_file("audio.json", key, default_value)
-        except:
-            return default_value
 
     def on_plot_click(self, event):
         print("on_plot_click")
@@ -1046,9 +1041,11 @@ class RcyView(QMainWindow):
         """Load the selected preset"""
         success = self.controller.load_preset(preset_id)
         if not success:
-            QMessageBox.critical(self,
-                                config.get_string("dialogs", "errorTitle"),
-                                f"Failed to load preset: {preset_id}")
+            ErrorHandler.show_error(
+                f"Failed to load preset: {preset_id}",
+                config.get_string("dialogs", "errorTitle"),
+                self
+            )
                                 
     def update_playback_mode_menu(self, mode):
         """Update the playback mode menu to reflect the current mode
@@ -1082,7 +1079,7 @@ class RcyView(QMainWindow):
         try:
             self.add_segment.emit(position)
         except Exception as e:
-            print(f"ERROR in on_add_segment: {e}")
+            ErrorHandler.handle_exception(e, context="Adding segment", parent=self)
             
     def on_remove_segment(self, position):
         """Handle remove_segment signal from waveform view"""
@@ -1090,7 +1087,7 @@ class RcyView(QMainWindow):
         try:
             self.remove_segment.emit(position)
         except Exception as e:
-            print(f"ERROR in on_remove_segment: {e}")
+            ErrorHandler.handle_exception(e, context="Removing segment", parent=self)
     
     def load_session_file(self):
         """Load an existing RCY session file"""
@@ -1110,9 +1107,11 @@ class RcyView(QMainWindow):
         if filename:
             self.controller.load_audio_file(filename)
         else:
-            QMessageBox.critical(self,
-                                config.get_string("dialogs", "errorTitle"),
-                                config.get_string("dialogs", "errorLoadingFile"))
+            ErrorHandler.show_error(
+                config.get_string("dialogs", "errorLoadingFile"),
+                config.get_string("dialogs", "errorTitle"),
+                self
+            )
                                 
     # Keep for backward compatibility with any code that might call it
     def load_audio_file(self):

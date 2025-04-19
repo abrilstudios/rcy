@@ -299,7 +299,7 @@ class WavAudioProcessor:
     def _init_playback_tempo(self):
         """Initialize playback tempo settings from config"""
         # Get playback tempo config with defaults
-        pt_config = config.get_value_from_json_file("audio.json", "playbackTempo", {})
+        pt_config = config.get_setting("audio", "playbackTempo", {})
         
         # Read settings with defaults
         self.playback_tempo_enabled = pt_config.get("enabled", False)
@@ -430,7 +430,7 @@ class WavAudioProcessor:
 
     def split_by_transients(self, threshold=None):
         # Get transient detection parameters from config
-        td_config = config.get_value_from_json_file("audio.json", "transientDetection", {})
+        td_config = config.get_setting("audio", "transientDetection", {})
         
         # Use provided threshold or fallback to config value or default
         if threshold is None:
@@ -545,7 +545,7 @@ class WavAudioProcessor:
         
         try:
             # Get tail fade settings from config
-            tail_fade_config = config.get_value_from_json_file("audio.json", "tailFade", {})
+            tail_fade_config = config.get_setting("audio", "tailFade", {})
             tail_fade_enabled = tail_fade_config.get("enabled", False)
             fade_duration_ms = tail_fade_config.get("durationMs", 10)
             fade_curve = tail_fade_config.get("curve", "exponential")

@@ -34,8 +34,13 @@ class TestConfigurableTransientDetection:
     @pytest.fixture
     def mock_config_manager(self, mock_audio_config):
         """Create a mock config manager that returns our test config"""
-        with patch('config_manager.ConfigManager.get_value_from_json_file') as mock_get_value:
-            mock_get_value.return_value = mock_audio_config.get("transientDetection", {})
+        # Patch get_setting to return the transientDetection config section
+        with patch('config_manager.ConfigManager.get_setting') as mock_get_setting:
+            def setting_side_effect(section, key, default=None):
+                if section == 'audio' and key == 'transientDetection':
+                    return mock_audio_config['transientDetection']
+                return default
+            mock_get_setting.side_effect = setting_side_effect
             yield
     
     def test_transient_detection_parameters_from_config(self, mock_config_manager):

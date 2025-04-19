@@ -46,7 +46,7 @@ class ExportUtils:
         target_bpm = model.target_bpm
         
         # Get tail fade settings from config
-        tail_fade_config = config.get_value_from_json_file("audio.json", "tailFade", {})
+        tail_fade_config = config.get_setting("audio", "tailFade", {})
         tail_fade_enabled = tail_fade_config.get("enabled", False)
         fade_duration_ms = tail_fade_config.get("durationMs", 10)
         fade_curve = tail_fade_config.get("curve", "exponential")
