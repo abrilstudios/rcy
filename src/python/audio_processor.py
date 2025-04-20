@@ -7,6 +7,7 @@ import pathlib
 import sys
 import threading
 from config_manager import config
+from error_handler import ErrorHandler
 
 # Audio Processing Pipeline Functions
 
@@ -463,36 +464,27 @@ class WavAudioProcessor:
         return self.segments
 
     def remove_segment(self, click_time):
-        print(f"AudioProcessor.remove_segment({click_time})")
-        print(f"Current segments: {self.segments}")
-        if not self.segments:
-            print("No segments to remove")
-            return
+        """Remove the segment closest to click_time."""
         try:
+            if not self.segments:
+                raise ValueError("No segments to remove")
             click_sample = int(click_time * self.sample_rate)
-            print(f"Looking for segment near sample {click_sample}")
             closest_index = min(range(len(self.segments)),
                                 key=lambda i: abs(self.segments[i] - click_sample))
-            print(f"Found closest segment at index {closest_index}, value {self.segments[closest_index]}")
             del self.segments[closest_index]
-            print(f"Successfully removed segment. Remaining segments: {self.segments}")
         except Exception as e:
-            print(f"ERROR in remove_segment: {e}")
-            import traceback
-            traceback.print_exc()
+            ErrorHandler.log_exception(e, context="WavAudioProcessor.remove_segment")
+            return
 
     def add_segment(self, click_time):
-        print(f"AudioProcessor.add_segment({click_time})")
+        """Add a new segment at click_time."""
         try:
             new_segment = int(click_time * self.sample_rate)
-            print(f"Adding segment at sample {new_segment}")
             self.segments.append(new_segment)
             self.segments.sort()
-            print(f"Successfully added segment. Current segments: {self.segments}")
         except Exception as e:
-            print(f"ERROR in add_segment: {e}")
-            import traceback
-            traceback.print_exc()
+            ErrorHandler.log_exception(e, context="WavAudioProcessor.add_segment")
+            return
 
     def get_segments(self):
         return self.segments
@@ -589,9 +581,7 @@ class WavAudioProcessor:
                     sd.wait()  # This blocks until playback is complete
                     print("### Playback complete")
                 except Exception as e:
-                    print(f"### ERROR during playback: {e}")
-                    import traceback
-                    traceback.print_exc()
+                    ErrorHandler.log_exception(e, context="WavAudioProcessor.play_segment_thread")
                 finally:
                     self.is_playing = False
                     # Set a flag to indicate playback has ended
@@ -607,9 +597,7 @@ class WavAudioProcessor:
             return True  # Indicate that we started playback
             
         except Exception as e:
-            print(f"### ERROR preparing segment for playback: {e}")
-            import traceback
-            traceback.print_exc()
+            ErrorHandler.log_exception(e, context="WavAudioProcessor.play_segment")
             return False
         
     def stop_playback(self):
@@ -818,7 +806,5 @@ class WavAudioProcessor:
             
             return True
         except Exception as e:
-            print(f"Error in cut_audio: {e}")
-            import traceback
-            traceback.print_exc()
+            ErrorHandler.log_exception(e, context="WavAudioProcessor.cut_audio")
             return False
