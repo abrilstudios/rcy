@@ -261,7 +261,7 @@ class PyQtGraphWaveformView(BaseWaveformView):
             
             # Remove existing handle if there is one
             handle_key = f"{marker_type}_handle"
-            if hasattr(self, 'marker_handles') and handle_key in self.marker_handles:
+            if handle_key in self.marker_handles:
                 handle = self.marker_handles[handle_key]
                 if handle is not None and self.active_plot is not None and handle in self.active_plot.items:
                     self.active_plot.removeItem(handle)
@@ -273,9 +273,6 @@ class PyQtGraphWaveformView(BaseWaveformView):
             print(f"DEBUG: Cannot update {marker_type} marker handle - active_plot is None")
             return
             
-        # Ensure marker_handles dictionary exists
-        if not hasattr(self, 'marker_handles'):
-            self.marker_handles = {}
         
         # Remove old handle if exists
         handle_key = f"{marker_type}_handle"
@@ -489,10 +486,9 @@ class PyQtGraphWaveformView(BaseWaveformView):
         old_total_time = getattr(self, 'total_time', None)
         
         # Check for existing handles
-        if hasattr(self, 'marker_handles'):
-            old_start_handle = self.marker_handles.get('start_handle')
-            old_end_handle = self.marker_handles.get('end_handle')
-            print(f"DEBUG: update_plot - Old handles: start_handle={'exists' if old_start_handle is not None else 'none'}, end_handle={'exists' if old_end_handle is not None else 'none'}")
+        old_start_handle = self.marker_handles.get('start_handle')
+        old_end_handle = self.marker_handles.get('end_handle')
+        print(f"DEBUG: update_plot - Old handles: start_handle={'exists' if old_start_handle is not None else 'none'}, end_handle={'exists' if old_end_handle is not None else 'none'}")
         
         # Save reference to time data
         try:
@@ -547,10 +543,9 @@ class PyQtGraphWaveformView(BaseWaveformView):
             print(f"DEBUG: update_plot - ⚠️ End marker position ({current_end_pos}) exceeds time_data max ({new_max_pos})")
         
         # Check marker handle positions before clamping
-        if hasattr(self, 'marker_handles'):
-            curr_start_handle = self.marker_handles.get('start_handle')
-            curr_end_handle = self.marker_handles.get('end_handle')
-            print(f"DEBUG: update_plot - Current handles before clamping: start_handle={'exists' if curr_start_handle is not None else 'none'}, end_handle={'exists' if curr_end_handle is not None else 'none'}")
+        curr_start_handle = self.marker_handles.get('start_handle')
+        curr_end_handle = self.marker_handles.get('end_handle')
+        print(f"DEBUG: update_plot - Current handles before clamping: start_handle={'exists' if curr_start_handle is not None else 'none'}, end_handle={'exists' if curr_end_handle is not None else 'none'}")
                 
         # Clamp marker positions to valid range after waveform change
         print(f"DEBUG: update_plot - About to call _clamp_markers_to_data_bounds()")
@@ -568,10 +563,9 @@ class PyQtGraphWaveformView(BaseWaveformView):
             print(f"DEBUG: update_plot - Clamping successful - end marker is within time_data range")
         
         # Check marker handles after clamping
-        if hasattr(self, 'marker_handles'):
-            post_start_handle = self.marker_handles.get('start_handle')
-            post_end_handle = self.marker_handles.get('end_handle')
-            print(f"DEBUG: update_plot - Current handles after clamping: start_handle={'exists' if post_start_handle is not None else 'none'}, end_handle={'exists' if post_end_handle is not None else 'none'}")
+        post_start_handle = self.marker_handles.get('start_handle')
+        post_end_handle = self.marker_handles.get('end_handle')
+        print(f"DEBUG: update_plot - Current handles after clamping: start_handle={'exists' if post_start_handle is not None else 'none'}, end_handle={'exists' if post_end_handle is not None else 'none'}")
                 
         # Update marker handles
         print(f"DEBUG: update_plot - About to update marker handles")
@@ -579,10 +573,9 @@ class PyQtGraphWaveformView(BaseWaveformView):
         self._update_marker_handle('end')
         
         # Final check on handles
-        if hasattr(self, 'marker_handles'):
-            final_start_handle = self.marker_handles.get('start_handle')
-            final_end_handle = self.marker_handles.get('end_handle')
-            print(f"DEBUG: update_plot - Final handles: start_handle={'exists' if final_start_handle is not None else 'none'}, end_handle={'exists' if final_end_handle is not None else 'none'}")
+        final_start_handle = self.marker_handles.get('start_handle')
+        final_end_handle = self.marker_handles.get('end_handle')
+        print(f"DEBUG: update_plot - Final handles: start_handle={'exists' if final_start_handle is not None else 'none'}, end_handle={'exists' if final_end_handle is not None else 'none'}")
         
         # Print final marker locations
         final_start_pos = self.start_marker.value()
@@ -872,7 +865,7 @@ class PyQtGraphWaveformView(BaseWaveformView):
         # Simple version focusing on the core issue: end marker goes beyond data bounds
         try:
             # Make sure we have the essential components and valid data
-            if not hasattr(self, 'time_data') or self.time_data is None:
+            if self.time_data is None:
                 print("Can't clamp markers: No time data")
                 return
                 
@@ -885,7 +878,7 @@ class PyQtGraphWaveformView(BaseWaveformView):
                 print("Can't clamp markers: time_data is not iterable")
                 return
                 
-            if not hasattr(self, 'end_marker') or self.end_marker is None:
+            if self.end_marker is None:
                 print("Can't clamp markers: No end marker")
                 return
                 
@@ -904,21 +897,20 @@ class PyQtGraphWaveformView(BaseWaveformView):
                 self.end_marker.blockSignals(old_state)
                 
                 # Also update stereo marker if present
-                if hasattr(self, 'stereo_display') and self.stereo_display:
-                    if hasattr(self, 'end_marker_right') and self.end_marker_right is not None:
+                if self.stereo_display:
+                    if self.end_marker_right is not None:
                         old_state = self.end_marker_right.blockSignals(True)
                         self.end_marker_right.setValue(max_pos)
                         self.end_marker_right.blockSignals(old_state)
                 
                 # Update the marker handle
-                if hasattr(self, 'marker_handles'):
-                    if 'end_handle' in self.marker_handles and self.marker_handles['end_handle'] is not None:
-                        if hasattr(self, 'active_plot') and self.active_plot is not None:
-                            try:
-                                self.active_plot.removeItem(self.marker_handles['end_handle'])
-                            except:
-                                pass
-                    self._update_marker_handle('end')
+                if 'end_handle' in self.marker_handles and self.marker_handles['end_handle'] is not None:
+                    if self.active_plot is not None:
+                        try:
+                            self.active_plot.removeItem(self.marker_handles['end_handle'])
+                        except:
+                            pass
+                self._update_marker_handle('end')
         except Exception as e:
             print(f"Error in _clamp_markers_to_data_bounds: {e}")
             # No matter what happens, don't crash - just return

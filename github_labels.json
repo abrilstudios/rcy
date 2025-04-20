@@ -1,0 +1,17 @@
+[
+  {
+    "name": "L1",
+    "color": "E99695",
+    "description": "Tasks appropriate for Claude Jr. (simple, well-defined)"
+  },
+  {
+    "name": "L2",
+    "color": "FBCA04",
+    "description": "Tasks requiring Claude's expertise (complex, design decisions)"
+  },
+  {
+    "name": "review-needed",
+    "color": "D93F0B",
+    "description": "Work completed by L1 that needs L2 review"
+  }
+]
