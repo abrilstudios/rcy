@@ -631,7 +631,7 @@ class WavAudioProcessor:
         Formula: Source BPM = (60 × beats) / duration
         Where beats = measures × 4 (assuming 4/4 time signature)
         """
-        if not hasattr(self, 'total_time') or self.total_time <= 0:
+        if self.total_time <= 0:
             print("Warning: Cannot calculate source BPM, invalid duration")
             return 120.0  # Default fallback
             
@@ -669,7 +669,7 @@ class WavAudioProcessor:
         if not self.playback_tempo_enabled:
             return 1.0  # No adjustment
             
-        if not hasattr(self, 'source_bpm') or self.source_bpm <= 0:
+        if self.source_bpm <= 0:
             # Recalculate if needed
             self.calculate_source_bpm()
             
@@ -709,7 +709,7 @@ class WavAudioProcessor:
             self.target_bpm = int(target_bpm)
             
         # Ensure source BPM is calculated
-        if not hasattr(self, 'source_bpm') or self.source_bpm <= 0:
+        if self.source_bpm <= 0:
             self.calculate_source_bpm()
             
         print(f"Playback tempo updated: {self.playback_tempo_enabled}, "
@@ -722,14 +722,14 @@ class WavAudioProcessor:
         """Trim audio to the region between start_sample and end_sample"""
         try:
             # DEBUG: Print detailed information about the cut operation
-            if not hasattr(self, 'data_left') or self.data_left is None:
+            if self.data_left is None:
                 print("ERROR: data_left is None or doesn't exist")
                 return False
                 
             try:
                 old_length = len(self.data_left)
-                old_time_length = len(self.time) if hasattr(self, 'time') and self.time is not None else 0
-                old_total_time = self.total_time if hasattr(self, 'total_time') else 0
+                old_time_length = len(self.time) if self.time is not None else 0
+                old_total_time = self.total_time
             except TypeError:
                 print("ERROR: TypeError when accessing data length in cut_audio")
                 return False
@@ -775,7 +775,7 @@ class WavAudioProcessor:
                 
                 # Update time array
                 try:
-                    old_time_max = self.time[-1] if hasattr(self, 'time') and self.time is not None and len(self.time) > 0 else None
+                    old_time_max = self.time[-1] if (self.time is not None and len(self.time) > 0) else None
                 except TypeError:
                     print("WARNING: TypeError when accessing old_time_max in cut_audio")
                     old_time_max = None
