@@ -98,9 +98,15 @@ Common Tasks Guide
 
 Feature Branch Workflow
 
-1. Create a descriptive branch:
+⚠️ **CRITICAL: NEVER WORK DIRECTLY ON THE MAIN BRANCH** ⚠️
+
+1. Always create a descriptive branch before making any changes:
    ```bash
    git checkout -b feature/your-feature-name
+   # OR
+   git checkout -b fix/issue-name
+   # OR 
+   git checkout -b enhancement/feature-name
    ```
 2. Implement changes and write tests
 3. Stage and commit:
@@ -112,6 +118,11 @@ Feature Branch Workflow
 - Reference issue #XYZ
 "```
 4. Push and open a pull request
+
+When prompting Codex, always include creation of a feature branch as the first step for any code changes. Example:
+```
+First, create a feature branch named 'fix/issue-description', then proceed with the following changes...
+```
 
 Running Specific Hooks
 
@@ -142,14 +153,16 @@ Session Logs (when enabled)
 Best Practices for AI-Agent Prompting
 -------------------------------------
 
+- Always start by instructing Codex to create a feature branch
 - Be explicit about file paths and functions to modify
 - Provide clear examples or snippets for context
 - Scope requests narrowly to avoid unintended changes
 - Use the patch format when asking Codex to modify code
+- Include the issue number in your prompt (e.g., "Working on issue #110 to...")
 
 Example prompt:
 ```text
-Apply a patch to src/python/rcy_controller.py to simplify bounds checking:
+First, create a feature branch named 'fix/simplify-bounds-checking' for issue #123, then apply a patch to src/python/rcy_controller.py to simplify bounds checking:
 
 apply_patch: {"cmd": ["apply_patch", "
 *** Begin Patch

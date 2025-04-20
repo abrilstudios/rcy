@@ -65,15 +65,9 @@ class RcyController:
         
         # Initialize playback tempo UI
         if hasattr(self.view, 'update_playback_tempo_display'):
-            # Get source BPM from model if available
-            source_bpm = 120.0
-            if hasattr(self.model, 'source_bpm'):
-                source_bpm = self.model.source_bpm
-                
-            # Update the view with initial values
+            # Update the view with initial playback tempo settings
             self.view.update_playback_tempo_display(
                 self.playback_tempo_enabled,
-                source_bpm,
                 self.target_bpm,
                 1.0  # Initial ratio
             )
@@ -156,7 +150,6 @@ class RcyController:
             # Update playback tempo display
             self.view.update_playback_tempo_display(
                 self.playback_tempo_enabled,
-                self.model.source_bpm,
                 self.target_bpm,
                 self.model.get_playback_ratio() if hasattr(self.model, 'get_playback_ratio') else 1.0
             )
@@ -699,10 +692,9 @@ class RcyController:
         
         # Update view if available
         if self.view and hasattr(self.view, 'update_playback_tempo_display'):
-            source_bpm = getattr(self.model, 'source_bpm', 120.0)
+            # Update view with new playback tempo settings
             self.view.update_playback_tempo_display(
                 enabled,
-                source_bpm,
                 self.target_bpm,
                 playback_ratio
             )

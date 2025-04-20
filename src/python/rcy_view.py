@@ -131,12 +131,11 @@ class RcyView(QMainWindow):
         if hasattr(self.controller, 'set_playback_tempo'):
             self.controller.set_playback_tempo(enabled, bpm)
     
-    def update_playback_tempo_display(self, enabled, source_bpm, target_bpm, ratio):
+    def update_playback_tempo_display(self, enabled, target_bpm, ratio):
         """Update the playback tempo UI display
         
         Args:
             enabled (bool): Whether playback tempo adjustment is enabled
-            source_bpm (float): Source tempo in BPM
             target_bpm (int): Target tempo in BPM
             ratio (float): The playback ratio
         """
@@ -144,9 +143,6 @@ class RcyView(QMainWindow):
         if hasattr(self, 'playback_tempo_checkbox'):
             self.playback_tempo_checkbox.setChecked(enabled)
         
-        # Update source BPM display
-        if hasattr(self, 'source_bpm_display'):
-            self.source_bpm_display.setText(f"{source_bpm:.1f}")
         
         # Update dropdown to show the target BPM
         if hasattr(self, 'playback_tempo_combo'):
@@ -335,13 +331,6 @@ class RcyView(QMainWindow):
         self.playback_tempo_combo.currentIndexChanged.connect(self.on_playback_tempo_changed)
         playback_tempo_layout.addWidget(self.playback_tempo_combo)
         
-        # Source BPM display
-        self.source_bpm_label = QLabel("Source:")
-        self.source_bpm_display = QLineEdit("0.0")
-        self.source_bpm_display.setReadOnly(True)
-        self.source_bpm_display.setFixedWidth(60)
-        playback_tempo_layout.addWidget(self.source_bpm_label)
-        playback_tempo_layout.addWidget(self.source_bpm_display)
         
         # Add the playback tempo layout to the info layout
         info_layout.addLayout(playback_tempo_layout)
