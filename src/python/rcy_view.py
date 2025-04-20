@@ -67,24 +67,20 @@ class RcyView(QMainWindow):
         """
         print(f"Toggling playback tempo adjustment: {enabled}")
         
-        # Update menu action if it exists
-        if hasattr(self, 'playback_tempo_action'):
-            self.playback_tempo_action.setChecked(enabled)
-        
-        # Update checkbox if it exists
-        if hasattr(self, 'playback_tempo_checkbox'):
-            self.playback_tempo_checkbox.setChecked(enabled)
-        
+        # Update menu action
+        self.playback_tempo_action.setChecked(enabled)
+
+        # Update checkbox
+        self.playback_tempo_checkbox.setChecked(enabled)
+
         # Get the current target BPM from the dropdown
         target_bpm = None
-        if hasattr(self, 'playback_tempo_combo'):
-            current_index = self.playback_tempo_combo.currentIndex()
-            if current_index >= 0:
-                target_bpm = self.playback_tempo_combo.itemData(current_index)
-        
+        current_index = self.playback_tempo_combo.currentIndex()
+        if current_index >= 0:
+            target_bpm = self.playback_tempo_combo.itemData(current_index)
+
         # Update controller
-        if hasattr(self.controller, 'set_playback_tempo'):
-            self.controller.set_playback_tempo(enabled, target_bpm)
+        self.controller.set_playback_tempo(enabled, target_bpm)
     
     def set_target_bpm(self, bpm):
         """Set the target BPM for playback tempo adjustment
@@ -94,22 +90,17 @@ class RcyView(QMainWindow):
         """
         print(f"Setting target BPM to {bpm}")
         
-        # Update dropdown if it exists
-        if hasattr(self, 'playback_tempo_combo'):
-            # Find the index for this BPM
-            for i in range(self.playback_tempo_combo.count()):
-                if self.playback_tempo_combo.itemData(i) == bpm:
-                    self.playback_tempo_combo.setCurrentIndex(i)
-                    break
+        # Update dropdown
+        for i in range(self.playback_tempo_combo.count()):
+            if self.playback_tempo_combo.itemData(i) == bpm:
+                self.playback_tempo_combo.setCurrentIndex(i)
+                break
         
         # Get current enabled state from checkbox
-        enabled = False
-        if hasattr(self, 'playback_tempo_checkbox'):
-            enabled = self.playback_tempo_checkbox.isChecked()
+        enabled = self.playback_tempo_checkbox.isChecked()
         
         # Update controller
-        if hasattr(self.controller, 'set_playback_tempo'):
-            self.controller.set_playback_tempo(enabled, bpm)
+        self.controller.set_playback_tempo(enabled, bpm)
     
     def on_playback_tempo_changed(self, index):
         """Handle changes to the playback tempo dropdown
@@ -128,8 +119,7 @@ class RcyView(QMainWindow):
         enabled = self.playback_tempo_checkbox.isChecked()
         
         # Update controller
-        if hasattr(self.controller, 'set_playback_tempo'):
-            self.controller.set_playback_tempo(enabled, bpm)
+        self.controller.set_playback_tempo(enabled, bpm)
     
     def update_playback_tempo_display(self, enabled, target_bpm, ratio):
         """Update the playback tempo UI display
@@ -140,20 +130,17 @@ class RcyView(QMainWindow):
             ratio (float): The playback ratio
         """
         # Update checkbox
-        if hasattr(self, 'playback_tempo_checkbox'):
-            self.playback_tempo_checkbox.setChecked(enabled)
+        self.playback_tempo_checkbox.setChecked(enabled)
         
         
         # Update dropdown to show the target BPM
-        if hasattr(self, 'playback_tempo_combo'):
-            for i in range(self.playback_tempo_combo.count()):
-                if self.playback_tempo_combo.itemData(i) == target_bpm:
-                    self.playback_tempo_combo.setCurrentIndex(i)
-                    break
+        for i in range(self.playback_tempo_combo.count()):
+            if self.playback_tempo_combo.itemData(i) == target_bpm:
+                self.playback_tempo_combo.setCurrentIndex(i)
+                break
         
         # Update menu action
-        if hasattr(self, 'playback_tempo_action'):
-            self.playback_tempo_action.setChecked(enabled)
+        self.playback_tempo_action.setChecked(enabled)
 
     def create_menu_bar(self):
         menubar = self.menuBar()
@@ -464,7 +451,8 @@ class RcyView(QMainWindow):
             # Get the view limits
             x_min, x_max = event.inaxes.get_xlim()
             # Determine if we're in first or last segment area
-            if hasattr(self.controller, 'current_slices') and self.controller.current_slices:
+            # 'current_slices' may not exist until update_slices is called
+            if getattr(self.controller, 'current_slices', None):
                 first_slice = self.controller.current_slices[0]
                 last_slice = self.controller.current_slices[-1]
                 total_time = self.controller.model.total_time
@@ -608,10 +596,8 @@ class RcyView(QMainWindow):
         self.waveform_view.update_slices(slice_times, total_time)
         
         # Update controller with marker positions
-        if hasattr(self.controller, 'on_start_marker_changed'):
-            self.controller.on_start_marker_changed(start_pos)
-        if hasattr(self.controller, 'on_end_marker_changed'):
-            self.controller.on_end_marker_changed(end_pos)
+        self.controller.on_start_marker_changed(start_pos)
+        self.controller.on_end_marker_changed(end_pos)
         
         # Store the current slices in the controller
         self.controller.current_slices = slice_times
@@ -717,8 +703,7 @@ class RcyView(QMainWindow):
                 print(f"Toggle: Playing from markers {start_pos} to {end_pos} with mode: {self.controller.get_playback_mode()}")
                 
                 # Highlight the active segment in the view
-                if hasattr(self, 'highlight_active_segment'):
-                    self.highlight_active_segment(start_pos, end_pos)
+                self.highlight_active_segment(start_pos, end_pos)
                 
                 # Store the current segment in the controller for looping
                 self.controller.current_segment = (start_pos, end_pos)
@@ -927,23 +912,18 @@ class RcyView(QMainWindow):
     
     def clear_markers(self):
         """Reset markers to file boundaries instead of hiding them"""
-        # Get file duration
-        if hasattr(self.controller.model, 'total_time'):
-            total_time = self.controller.model.total_time
-            
-            # Use the waveform view component to reset markers
-            self.waveform_view.set_start_marker(0.0)
-            self.waveform_view.set_end_marker(total_time)
-            
-            # Let controller know about the reset
-            if hasattr(self.controller, 'on_start_marker_changed'):
-                self.controller.on_start_marker_changed(0.0)
-            if hasattr(self.controller, 'on_end_marker_changed'):
-                self.controller.on_end_marker_changed(total_time)
-                
-            print(f"Reset markers to file boundaries (0.0s to {total_time:.2f}s)")
-        else:
-            print("Cannot reset markers: file duration unknown")
+        # Reset markers to file boundaries
+        total_time = self.controller.model.total_time
+
+        # Use the waveform view component to reset markers
+        self.waveform_view.set_start_marker(0.0)
+        self.waveform_view.set_end_marker(total_time)
+
+        # Let controller know about the reset
+        self.controller.on_start_marker_changed(0.0)
+        self.controller.on_end_marker_changed(total_time)
+
+        print(f"Reset markers to file boundaries (0.0s to {total_time:.2f}s)")
     
     def update_plot(self, time, data_left, data_right=None):
         """Update the plot with time and audio data.
@@ -974,8 +954,8 @@ class RcyView(QMainWindow):
             end_marker.set_visible(True)
             
         # Debug marker positions
-        start_pos = start_marker.get_xdata()[0] if hasattr(start_marker, 'get_xdata') else "unknown"
-        end_pos = end_marker.get_xdata()[0] if hasattr(end_marker, 'get_xdata') else "unknown"
+        start_pos = start_marker.get_xdata()[0]
+        end_pos = end_marker.get_xdata()[0]
         print(f"Marker positions - start: {start_pos}, end: {end_pos}")
         
         # Force update triangle handles regardless of view
