@@ -1,0 +1,19 @@
+#!/bin/bash
+
+# midi-analyzer - Wrapper script for MIDI analyzer utility
+# Usage: midi-analyzer -i /path/to/sequence.mid [options]
+
+# Ensure we're in the project root
+SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
+PROJECT_ROOT=$(dirname "$SCRIPT_DIR")
+
+# Set PYTHONPATH to include src directory
+export PYTHONPATH="$PROJECT_ROOT/src:$PYTHONPATH"
+
+# Display descriptive header
+echo "RCY MIDI Analyzer - Extract tempo and bar information from MIDI files"
+echo "================================================================="
+echo ""
+
+# Run the script directly to avoid module import warning
+python "$PROJECT_ROOT/src/python/utils/midi_analyzer.py" "$@"

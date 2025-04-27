@@ -424,9 +424,33 @@ class WavAudioProcessor:
         return tempo
 
     def split_by_measures(self, num_measures, measure_resolution):
-        samples_per_measure = len(self.data_left) // num_measures
-        samples_per_slice = samples_per_measure // measure_resolution
-        self.segments = [i * samples_per_slice for i in range(1, num_measures * measure_resolution)]
+        """Split audio into equal divisions based on musical measures
+        
+        Args:
+            num_measures: Number of musical measures in the audio
+            measure_resolution: Number of divisions per measure
+        
+        Returns:
+            List of sample positions for the segments
+        
+        For example, with 2 measures and resolution 4:
+        - We should create 8 segments (2 measures × 4 divisions)
+        - This requires 9 slice points (to define the 8 segments)
+        """
+        # Get total samples and calculate division sizes
+        total_samples = len(self.data_left)
+        total_divisions = num_measures * measure_resolution
+        samples_per_division = total_samples / total_divisions
+        
+        # Create segment points including start and end
+        # This gives num_measures * measure_resolution + 1 points
+        # For 2 measures with resolution 4, this gives 9 points (0, 1/8, 2/8, ..., 8/8)
+        self.segments = [int(i * samples_per_division) for i in range(total_divisions + 1)]
+        
+        # Ensure last point is exactly at the end of the audio
+        if self.segments[-1] != total_samples:
+            self.segments[-1] = total_samples
+            
         return self.segments
 
     def split_by_transients(self, threshold=None):

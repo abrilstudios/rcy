@@ -19,7 +19,9 @@ class MIDIFileWithMetadata(MIDIFile):
         super().addTempo(track, time, tempo)
 
     def addTimeSignature(self, track, time, numerator, denominator, clocks_per_tick, notes_per_quarter=8):
-        self.time_signature = (numerator, denominator)
+        # Store as (numerator, denominator_value) for debugging
+        # Where denominator_value is 2^denominator (the actual denominator in the time signature)
+        self.time_signature = (numerator, 2**denominator)
         super().addTimeSignature(track, time, numerator, denominator, clocks_per_tick, notes_per_quarter)
 
     def addNote(self, track, channel, pitch, time, duration, volume, annotation=None):
@@ -63,7 +65,10 @@ class ExportUtils:
         sfz_content = []
         midi = MIDIFileWithMetadata(1)  # One track
         midi.addTempo(0, 0, tempo)
-        midi.addTimeSignature(0, 0, 4, 4, 24, 8)  # Assuming 4/4 time signature
+        # In the MIDI specification, the time signature denominator is encoded as a power of 2.
+        # The parameter represents the exponent rather than the actual denominator value.
+        # For 4/4 time signature: numerator=4, denominator=2 (where 2^2 = 4)
+        midi.addTimeSignature(0, 0, 4, 2, 24, 8)  # 4/4 time signature (denominator=2 for quarter notes)
 
         # Check if we have markers set but no segments
         if (not segments) and start_marker_pos is not None and end_marker_pos is not None:
