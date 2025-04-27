@@ -1,0 +1,59 @@
+#!/bin/bash
+
+# mp3extract: Extract a portion of an MP3 file to WAV format
+# Usage: mp3extract input.mp3 start_time end_time --outfile=output.wav [--samplerate=44100]
+
+set -e
+
+# Default values
+SAMPLERATE=44100
+FORMAT="wav"
+OUTFILE=""
+
+# Check if at least 3 arguments are provided
+if [ $# -lt 3 ]; then
+    echo "Usage: mp3extract input.mp3 start_time end_time --outfile=output.wav [--samplerate=44100]"
+    echo "  start_time and end_time format: HH:MM:SS or MM:SS or SS"
+    exit 1
+fi
+
+# Store input file and time parameters
+INPUT_FILE="$1"
+START_TIME="$2"
+END_TIME="$3"
+shift 3
+
+# Process remaining parameters
+for param in "$@"; do
+    if [[ $param == --outfile=* ]]; then
+        OUTFILE="${param#--outfile=}"
+    elif [[ $param == --samplerate=* ]]; then
+        SAMPLERATE="${param#--samplerate=}"
+    fi
+done
+
+# Validate input file exists
+if [ ! -f "$INPUT_FILE" ]; then
+    echo "Error: Input file '$INPUT_FILE' does not exist"
+    exit 1
+fi
+
+# Ensure outfile is specified
+if [ -z "$OUTFILE" ]; then
+    echo "Error: Output file must be specified with --outfile"
+    exit 1
+fi
+
+# Calculate duration
+if command -v ffprobe &> /dev/null; then
+    # Use ffprobe to verify the start and end times are within the file's duration
+    DURATION=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$INPUT_FILE")
+    echo "Input file duration: $DURATION seconds"
+fi
+
+echo "Extracting from $INPUT_FILE ($START_TIME to $END_TIME) to $OUTFILE at ${SAMPLERATE}Hz"
+
+# Extract audio using ffmpeg
+ffmpeg -i "$INPUT_FILE" -ss "$START_TIME" -to "$END_TIME" -ar "$SAMPLERATE" -f "$FORMAT" "$OUTFILE"
+
+echo "Extraction complete: $OUTFILE"

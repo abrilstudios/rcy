@@ -21,6 +21,27 @@ Example:
 ./bin/rcy audio/amen.wav
 ```
 
+### MP3 Extract
+
+`mp3extract` - Extracts a portion of an MP3 file to WAV format.
+
+Usage:
+```
+./bin/mp3extract input.mp3 start_time end_time --outfile=output.wav [--samplerate=44100]
+```
+
+Parameters:
+- `input.mp3`: Path to the MP3 file to extract from (required)
+- `start_time`: Start time for extraction (format: HH:MM:SS, MM:SS, or SS) (required)
+- `end_time`: End time for extraction (format: HH:MM:SS, MM:SS, or SS) (required)
+- `--outfile`: Path to output WAV file (required)
+- `--samplerate`: Sample rate of output file in Hz (default: 44100)
+
+Example:
+```
+./bin/mp3extract mp3/pulp_fiction_paul_hardcastle.mp3 0:23 0:26 --outfile=wav/pulp_fiction_snippet.wav
+```
+
 ### SFZ Generator
 
 `sfz-generator` - Creates SFZ instrument definitions from directories of audio files.
