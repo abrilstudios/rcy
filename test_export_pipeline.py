@@ -48,7 +48,7 @@ def main():
         # Turn on tail fade (just for display - the actual value is read from the config file)
         td_config = {"enabled": True, "durationMs": 30, "curve": "exponential"}
         # We'll manually read the current config for display
-        current_config = config.get_value_from_json_file("audio.json", "tailFade", {})
+        current_config = config.get_setting("audio", "tailFade", {})
         print(f"Tail fade config: enabled={current_config.get('enabled', False)}, " 
               f"duration={current_config.get('durationMs', 10)}ms, "
               f"curve={current_config.get('curve', 'linear')}")
