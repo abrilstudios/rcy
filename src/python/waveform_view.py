@@ -491,6 +491,7 @@ class PyQtGraphWaveformView(BaseWaveformView):
         
         # Precheck - would end marker need clamping?
         if old_end_pos is not None and new_max_pos is not None and old_end_pos > new_max_pos:
+            print(f"End marker ({old_end_pos}) is beyond new max ({new_max_pos}) - will need clamping")
         
         # Update left channel
         self.waveform_left.setData(time, data_left)
@@ -516,6 +517,7 @@ class PyQtGraphWaveformView(BaseWaveformView):
         current_end_pos = self.end_marker.value()
         
         if current_end_pos > new_max_pos:
+            print(f"Detected end marker ({current_end_pos}) beyond data bounds ({new_max_pos})")
         
         # Check marker handle positions before clamping
         curr_start_handle = self.marker_handles.get('start_handle')
@@ -530,7 +532,9 @@ class PyQtGraphWaveformView(BaseWaveformView):
         
         # Verify clamping worked correctly
         if new_max_pos is not None and new_end_pos > new_max_pos:
+            print(f"WARNING: End marker ({new_end_pos}) still beyond max ({new_max_pos}) after clamping!")
         else:
+            print(f"End marker position after clamping: {new_end_pos}")
         
         # Check marker handles after clamping
         post_start_handle = self.marker_handles.get('start_handle')
@@ -568,12 +572,14 @@ class PyQtGraphWaveformView(BaseWaveformView):
             if self.time_data is not None and len(self.time_data) > 0:
                 data_max = self.time_data[-1]
         except TypeError:
+            print("TypeError when getting data_max")
         
         # Ensure markers are within valid bounds
         try:
             if self.time_data is not None and len(self.time_data) > 0:
                 self._clamp_markers_to_data_bounds()
         except TypeError:
+            print("TypeError when clamping markers")
         
         # Get positions after clamping
         post_start_pos = self.start_marker.value()
