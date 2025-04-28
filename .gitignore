@@ -35,6 +35,7 @@ tal/
 
 # Tutorial sample directories
 mp3/
+wav/
 tutorials/pulp_fiction/apache-split-160/
 tutorials/pulp_fiction/apache-test/
 tutorials/pulp_fiction/hardcastle/
