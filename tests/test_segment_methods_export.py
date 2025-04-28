@@ -298,6 +298,127 @@ class TestSegmentBoundaryConsistency:
             result = analyze_midi(midi_path)
             assert result['note_count'] == 3, "Expected 3 MIDI notes matching segment count"
     
+    def test_midi_timing_modes(self):
+        """Test that different MIDI timing modes produce expected results"""
+        # Use the apache_break preset for a real-world test case
+        processor = WavAudioProcessor(preset_id='apache_break')
+        
+        # Add several segment markers (not evenly spaced to test gap handling)
+        processor.segments = []
+        total_samples = len(processor.data_left)
+        segment_positions = [
+            int(total_samples * 0.1),   # 10% into file
+            int(total_samples * 0.3),   # 30% into file
+            int(total_samples * 0.6),   # 60% into file
+            int(total_samples * 0.8),   # 80% into file
+        ]
+        processor.segments = segment_positions
+        
+        # Calculate the source BPM for proper timing
+        processor.calculate_source_bpm(measures=2)
+        tempo = processor.get_tempo(2)
+        
+        # Create two temporary directories
+        temp_dir_original = tempfile.mkdtemp()
+        temp_dir_continuous = tempfile.mkdtemp()
+        
+        try:
+            # Export with original timing
+            export_stats_original = ExportUtils.export_segments(
+                processor, tempo, 2, temp_dir_original, midi_timing_mode="original"
+            )
+            
+            # Verify MIDI note count
+            midi_path_original = export_stats_original['midi_path']
+            result_original = analyze_midi(midi_path_original)
+            
+            # There should be 5 segments (including implicit start/end)
+            assert result_original['note_count'] == 5, "Expected 5 MIDI notes with original timing"
+            
+            # Check number of WAV files with original timing
+            wav_files_original = [f for f in os.listdir(temp_dir_original) if f.endswith('.wav')]
+            assert len(wav_files_original) == 5, "Expected 5 WAV files with original timing"
+            
+            # Export with continuous timing
+            export_stats_continuous = ExportUtils.export_segments(
+                processor, tempo, 2, temp_dir_continuous, midi_timing_mode="continuous"
+            )
+            
+            # Verify MIDI note count
+            midi_path_continuous = export_stats_continuous['midi_path']
+            result_continuous = analyze_midi(midi_path_continuous)
+            
+            # Should have same number of notes as original mode
+            assert result_continuous['note_count'] == 5, "Expected 5 MIDI notes with continuous timing"
+            
+            # Check number of WAV files with continuous timing
+            wav_files_continuous = [f for f in os.listdir(temp_dir_continuous) if f.endswith('.wav')]
+            assert len(wav_files_continuous) == 5, "Expected 5 WAV files with continuous timing"
+            
+            # Both should have the same number of segments
+            assert len(wav_files_original) == len(wav_files_continuous), "Both timing modes should export the same number of segments"
+            
+            # Both should have the same tempo
+            assert abs(result_original['tempo'] - result_continuous['tempo']) < 0.1, "Both should have the same tempo"
+            
+            # VALIDATE NO GAPS: Use mido to verify there are no gaps in the continuous mode
+            # Step 1: Read the MIDI file with mido
+            import mido
+            mid = mido.MidiFile(midi_path_continuous)
+            
+            # Step 2: Extract all note events
+            note_events = []
+            for track in mid.tracks:
+                cumulative_ticks = 0
+                for msg in track:
+                    cumulative_ticks += msg.time
+                    if msg.type == 'note_on' and msg.velocity > 0:
+                        note_events.append({
+                            'type': 'on',
+                            'note': msg.note,
+                            'tick': cumulative_ticks
+                        })
+                    elif msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0):
+                        note_events.append({
+                            'type': 'off',
+                            'note': msg.note,
+                            'tick': cumulative_ticks
+                        })
+            
+            # Step 3: Find note start and end ticks
+            notes = []
+            active_notes = {}
+            
+            for event in sorted(note_events, key=lambda x: x['tick']):
+                if event['type'] == 'on':
+                    active_notes[event['note']] = event['tick']
+                elif event['type'] == 'off' and event['note'] in active_notes:
+                    notes.append({
+                        'note': event['note'],
+                        'start': active_notes[event['note']],
+                        'end': event['tick']
+                    })
+                    del active_notes[event['note']]
+            
+            # Step 4: Sort notes by start time
+            notes.sort(key=lambda x: x['start'])
+            
+            # Step 5: Verify there are no gaps between consecutive notes
+            for i in range(1, len(notes)):
+                # The start of the current note should be exactly at the end of the previous note
+                prev_end = notes[i-1]['end']
+                current_start = notes[i]['start']
+                
+                # Check for a gap (allowing for extremely small floating-point differences)
+                gap = current_start - prev_end
+                assert gap == 0, f"Gap detected between notes {i} and {i+1}: {gap} ticks"
+            
+        finally:
+            # Clean up temp directories
+            import shutil
+            shutil.rmtree(temp_dir_original, ignore_errors=True)
+            shutil.rmtree(temp_dir_continuous, ignore_errors=True)
+    
     def test_zero_length_segment_handling(self):
         """Test that zero-length segments are properly skipped in export"""
         # Create a mock processor with a duplicate segment marker
