@@ -1,6 +1,7 @@
 from PyQt6.QtWidgets import QApplication, QLabel, QLineEdit, QComboBox, QMessageBox, QMainWindow, QFileDialog, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QScrollBar, QSlider, QDialog, QTextBrowser, QInputDialog, QCheckBox
-from PyQt6.QtGui import QAction, QActionGroup, QValidator, QIntValidator, QFont
-from PyQt6.QtCore import Qt, pyqtSignal, QSize
+from PyQt6.QtGui import QAction, QActionGroup, QValidator, QIntValidator, QFont, QDesktopServices
+from PyQt6.QtCore import Qt, pyqtSignal, QSize, QUrl
+import os
 from config_manager import config
 from waveform_view import create_waveform_view
 from error_handler import ErrorHandler
@@ -243,11 +244,59 @@ class RcyView(QMainWindow):
         about_action.triggered.connect(self.show_about_dialog)
         help_menu.addAction(about_action)
 
+    def show_export_completion_dialog(self, export_stats):
+        """Show a dialog with export completion information
+        
+        Args:
+            export_stats: Dictionary with export statistics
+        """
+        if not export_stats:
+            return
+            
+        # Format time signature for display
+        time_sig = f"{export_stats['time_signature'][0]}/{export_stats['time_signature'][1]}" if export_stats['time_signature'] else "4/4"
+        
+        # Create completion dialog with export statistics
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Export Complete")
+        msg_box.setIcon(QMessageBox.Icon.Information)
+        
+        # Build the message text
+        message = f"Successfully exported {export_stats['segment_count']} segments.\n\n"
+        message += f"SFZ Instrument: {os.path.basename(export_stats['sfz_path'])}\n"
+        message += f"MIDI Sequence: {os.path.basename(export_stats['midi_path'])}\n\n"
+        message += f"Time Signature: {time_sig}\n"
+        message += f"Tempo: {export_stats['tempo']:.1f} BPM\n"
+        message += f"Duration: {export_stats['duration']:.2f} seconds\n"
+        message += f"\nFiles saved to:\n{export_stats['directory']}"
+        
+        msg_box.setText(message)
+        
+        # Add a button to open the export directory
+        open_dir_button = msg_box.addButton("Open Folder", QMessageBox.ButtonRole.ActionRole)
+        close_button = msg_box.addButton(QMessageBox.StandardButton.Close)
+        
+        # Show the dialog
+        msg_box.exec()
+        
+        # Check if the user clicked "Open Folder"
+        if msg_box.clickedButton() == open_dir_button:
+            # Open the directory using the platform's file manager
+            QDesktopServices.openUrl(QUrl.fromLocalFile(export_stats['directory']))
+            
     def export_segments(self):
+        """Export segments to the selected directory"""
         directory = QFileDialog.getExistingDirectory(self,
                                                      config.get_string("dialogs", "exportDirectoryTitle"))
         if directory:
-            self.controller.export_segments(directory)
+            # Export segments and get the export statistics
+            export_stats = self.controller.export_segments(directory)
+            
+            # Show completion dialog
+            self.show_export_completion_dialog(export_stats)
+        else:
+            # User canceled the export
+            print("Export canceled by user")
 
     def save_as(self):
         # Implement save as functionality

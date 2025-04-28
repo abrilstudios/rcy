@@ -41,12 +41,38 @@ class MIDIFileWithMetadata(MIDIFile):
 class ExportUtils:
     @staticmethod
     def export_segments(model, tempo, num_measures, directory, start_marker_pos=None, end_marker_pos=None):
+        """Export segments to WAV files with SFZ instrument and MIDI sequence
+        
+        Args:
+            model: Audio model with segment data
+            tempo: Tempo in BPM
+            num_measures: Number of measures
+            directory: Directory to export to
+            start_marker_pos: Optional start marker position (seconds)
+            end_marker_pos: Optional end marker position (seconds)
+            
+        Returns:
+            dict: Export statistics including:
+                - segment_count: Number of segments exported
+                - sfz_path: Path to the SFZ file
+                - midi_path: Path to the MIDI file
+                - tempo: Tempo used for the export
+                - time_signature: Time signature used
+                - directory: Export directory
+                - duration: Total duration of the audio
+        """
         segments = model.get_segments()
         # Get left and right channel data
         data_left = model.data_left
         data_right = model.data_right
         is_stereo = model.is_stereo
         sample_rate = model.sample_rate
+        
+        # Get the directory name to use for file naming
+        dir_name = os.path.basename(os.path.normpath(directory))
+        # Default to "instrument"/"sequence" if directory name is empty or just a path separator
+        if not dir_name or dir_name == os.path.sep:
+            dir_name = "instrument"
         
         # Debug segments info
         print("\n==== EXPORT SEGMENTS DEBUG ====")
@@ -188,7 +214,7 @@ class ExportUtils:
             print(f"Debug: Exporting segment with sample rate: {export_sample_rate} Hz")
             sf.write(segment_path, segment_data, export_sample_rate)
 
-            # Add to SFZ content
+            # Add to SFZ content - reference the WAV file using the segment_filename
             sfz_content.append(f"""
 <region>
 sample={segment_filename}
@@ -252,14 +278,32 @@ hikey={60 + segment_count - 1}
         print(f"Segments array (samples): {segments}")
         print(f"Segments durations (seconds): {[(end-start)/sample_rate for start, end in zip(segments[:-1], segments[1:])]}")
 
-        # Write SFZ file
-        sfz_path = os.path.join(directory, "instrument.sfz")
+        # Write SFZ file with directory name
+        sfz_filename = f"{dir_name}.sfz"
+        sfz_path = os.path.join(directory, sfz_filename)
         with open(sfz_path, 'w') as sfz_file:
             sfz_file.write("\n".join(sfz_content))
 
-        # Write MIDI file
-        midi_path = os.path.join(directory, "sequence.mid")
+        # Write MIDI file with directory name
+        midi_filename = f"{dir_name}.mid"
+        midi_path = os.path.join(directory, midi_filename)
         with open(midi_path, "wb") as midi_file:
             midi.writeFile(midi_file)
 
-        print(f"Exported {len(segments) - 1} segments, SFZ file, and MIDI file to {directory}")
+        print(f"Exported {segment_count} segments, SFZ file, and MIDI file to {directory}")
+        
+        # Prepare export statistics to return
+        export_stats = {
+            'segment_count': segment_count,
+            'sfz_path': sfz_path,
+            'midi_path': midi_path,
+            'tempo': midi.tempo,
+            'time_signature': midi.time_signature,
+            'directory': directory,
+            'duration': total_duration,
+            'wav_files': segment_count,
+            'start_time': 0,
+            'end_time': total_duration
+        }
+        
+        return export_stats
