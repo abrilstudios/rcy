@@ -5,6 +5,12 @@ This test file verifies that MIDI exports are correct regardless of how segments
 1. By measures (split_by_measures)
 2. By transients (split_by_transients)
 3. By user-added markers/segments (add_segment)
+4. By start/end markers only
+
+Additionally, it tests segment boundary consistency to ensure:
+- Implicit boundaries (start and end of file) are correctly included
+- Zero-length segments are properly skipped
+- MIDI notes consistently match the exported WAV segments
 """
 import os
 import tempfile
@@ -223,6 +229,184 @@ class TestSegmentMethodsExport:
             # 3. From end marker to end of file
             wav_files = [f for f in os.listdir(temp_dir) if f.endswith('.wav')]
             assert len(wav_files) == 3, f"Expected 3 WAV files, got {len(wav_files)}"
+
+
+class TestSegmentBoundaryConsistency:
+    """Tests specifically for segment boundary consistency issues"""
+    
+    class MockAudioProcessor:
+        """Simple audio processor mock for testing segment boundary consistency"""
+        
+        def __init__(self, segments=None, duration=1.0, sample_rate=44100):
+            """Initialize with optional segments, duration, and sample rate"""
+            self.segments = segments or []
+            self.sample_rate = sample_rate
+            self.is_stereo = True
+            self.playback_tempo_enabled = False
+            self.source_bpm = 120.0
+            self.target_bpm = 120.0
+            
+            # Create simple test data
+            total_samples = int(duration * sample_rate)
+            self.data_left = np.ones(total_samples)
+            self.data_right = np.ones(total_samples)
+            self.total_time = duration
+            
+        def get_segments(self):
+            """Return the segments"""
+            return self.segments
+            
+        def get_tempo(self, num_measures):
+            """Return a fixed tempo for testing"""
+            return 120.0
+    
+    def test_segment_boundary_inclusion(self):
+        """Test that start/end boundaries are included in export even when not in segments"""
+        # Create a mock processor with 2 user-added segments at 1/3 and 2/3 of the file
+        # This should create 3 total segments when exported
+        duration = 3.0  # seconds
+        sample_rate = 44100
+        total_samples = int(duration * sample_rate)
+        
+        # Create a model with segments at 1/3 and 2/3 of the file
+        model = self.MockAudioProcessor(
+            segments=[
+                total_samples // 3,      # At 1 second
+                (total_samples * 2) // 3  # At 2 seconds
+            ],
+            duration=duration,
+            sample_rate=sample_rate
+        )
+        
+        # Verify initial segments don't include file boundaries
+        segments = model.get_segments()
+        assert len(segments) == 2, "Should start with 2 segment markers"
+        assert 0 not in segments, "Start boundary should not be in initial segments"
+        assert total_samples not in segments, "End boundary should not be in initial segments"
+        
+        # Export to a temporary directory
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ExportUtils.export_segments(model, 120.0, 4, temp_dir)
+            
+            # Check the exported WAV files - should be 3 segments
+            wav_files = [f for f in os.listdir(temp_dir) if f.endswith('.wav')]
+            assert len(wav_files) == 3, "Expected 3 segments including implicit boundaries"
+            
+            # Check MIDI note count
+            midi_path = os.path.join(temp_dir, "sequence.mid")
+            result = analyze_midi(midi_path)
+            assert result['note_count'] == 3, "Expected 3 MIDI notes matching segment count"
+    
+    def test_zero_length_segment_handling(self):
+        """Test that zero-length segments are properly skipped in export"""
+        # Create a mock processor with a duplicate segment marker
+        # This creates a zero-length segment that should be skipped
+        duration = 2.0  # seconds
+        sample_rate = 44100
+        total_samples = int(duration * sample_rate)
+        
+        # Create segments with a duplicate (zero-length segment)
+        model = self.MockAudioProcessor(
+            segments=[
+                total_samples // 4,         # At 0.5 seconds
+                total_samples // 4,         # Same position - creates zero-length segment
+                total_samples // 2,         # At 1 second
+                (total_samples * 3) // 4    # At 1.5 seconds
+            ],
+            duration=duration,
+            sample_rate=sample_rate
+        )
+        
+        # Verify initial segments include a duplicate
+        segments = model.get_segments()
+        assert len(segments) == 4, "Should start with 4 segment markers"
+        assert segments[0] == segments[1], "Should have a duplicate segment marker"
+        
+        # Export to a temporary directory
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ExportUtils.export_segments(model, 120.0, 4, temp_dir)
+            
+            # Should have 4 segments (5 boundaries including implicit start/end, minus 1 for zero-length)
+            wav_files = [f for f in os.listdir(temp_dir) if f.endswith('.wav')]
+            assert len(wav_files) == 4, "Expected 4 segments after skipping zero-length segment"
+            
+            # Check MIDI note count
+            midi_path = os.path.join(temp_dir, "sequence.mid")
+            result = analyze_midi(midi_path)
+            assert result['note_count'] == 4, "Expected 4 MIDI notes matching segment count"
+            
+            # Check SFZ file consistency
+            sfz_path = os.path.join(temp_dir, "instrument.sfz")
+            with open(sfz_path, 'r') as f:
+                sfz_content = f.read()
+                assert sfz_content.count("<region>") == 4, "Expected 4 regions in SFZ file"
+    
+    def test_missing_start_boundary(self):
+        """Test that file start boundary is added when missing"""
+        # Create a mock processor with segments that don't include the start
+        duration = 2.0  # seconds
+        sample_rate = 44100
+        total_samples = int(duration * sample_rate)
+        
+        # Create segments starting at 0.5s (not including file start)
+        model = self.MockAudioProcessor(
+            segments=[
+                total_samples // 4,         # At 0.5 seconds
+                total_samples // 2,         # At 1 second
+                (total_samples * 3) // 4    # At 1.5 seconds
+            ],
+            duration=duration,
+            sample_rate=sample_rate
+        )
+        
+        # Export to a temporary directory
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ExportUtils.export_segments(model, 120.0, 4, temp_dir)
+            
+            # We should have 4 segments (5 boundaries including implicit start/end)
+            wav_files = [f for f in os.listdir(temp_dir) if f.endswith('.wav')]
+            
+            # Verify WAV file count
+            assert len(wav_files) == 4, "Expected 4 WAV segments including implicit start segment"
+            
+            # Check MIDI note count
+            midi_path = os.path.join(temp_dir, "sequence.mid")
+            result = analyze_midi(midi_path)
+            assert result['note_count'] == 4, "Expected 4 MIDI notes matching segment count"
+    
+    def test_missing_end_boundary(self):
+        """Test that file end boundary is added when missing"""
+        # Create a mock processor with segments that don't include the end
+        duration = 2.0  # seconds
+        sample_rate = 44100
+        total_samples = int(duration * sample_rate)
+        
+        # Create segments up to 1.5s (not including file end)
+        model = self.MockAudioProcessor(
+            segments=[
+                0,                         # At start
+                total_samples // 4,         # At 0.5 seconds
+                total_samples // 2,         # At 1 second
+                (total_samples * 3) // 4    # At 1.5 seconds
+            ],
+            duration=duration,
+            sample_rate=sample_rate
+        )
+        
+        # Export to a temporary directory
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ExportUtils.export_segments(model, 120.0, 4, temp_dir)
+            
+            # We should have 4 segments (5 boundaries including implicit end)
+            wav_files = [f for f in os.listdir(temp_dir) if f.endswith('.wav')]
+            
+            # Verify WAV file count
+            assert len(wav_files) == 4, "Expected 4 WAV segments including implicit end segment"
+            
+            # Check MIDI note count
+            midi_path = os.path.join(temp_dir, "sequence.mid")
+            result = analyze_midi(midi_path)
+            assert result['note_count'] == 4, "Expected 4 MIDI notes matching segment count"
 
 
 if __name__ == "__main__":
