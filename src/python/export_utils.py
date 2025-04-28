@@ -13,6 +13,7 @@ class MIDIFileWithMetadata(MIDIFile):
         self.tempo = None
         self.time_signature = None
         self.total_time = 0
+        self.notes = []
 
     def addTempo(self, track, time, tempo):
         self.tempo = tempo
@@ -26,6 +27,15 @@ class MIDIFileWithMetadata(MIDIFile):
 
     def addNote(self, track, channel, pitch, time, duration, volume, annotation=None):
         self.total_time = max(self.total_time, time + duration)
+        # Track each note for debugging
+        self.notes.append({
+            'track': track,
+            'channel': channel,
+            'pitch': pitch,
+            'time': time,
+            'duration': duration,
+            'volume': volume
+        })
         super().addNote(track, channel, pitch, time, duration, volume, annotation)
 
 class ExportUtils:
@@ -37,6 +47,13 @@ class ExportUtils:
         data_right = model.data_right
         is_stereo = model.is_stereo
         sample_rate = model.sample_rate
+        
+        # Debug segments info
+        print("\n==== EXPORT SEGMENTS DEBUG ====")
+        print(f"Debug: Segments from model: {segments}")
+        print(f"Debug: Number of segments from model: {len(segments)}")
+        print(f"Debug: Segment boundary points (in samples): {segments}")
+        print(f"Debug: Segment boundary points (in seconds): {[s/sample_rate for s in segments]}")
         
         # Use left channel for calculations (both channels have same length)
         total_duration = len(data_left) / sample_rate
@@ -82,26 +99,66 @@ class ExportUtils:
             
         # If still no segments, use the entire file
         if not segments:
-            print(f"No segments or markers. Exporting the entire file.")
+            print(f"Debug: No segments or markers. Exporting the entire file.")
             segments = [0, len(data_left)]
+        else:
+            # Always ensure we have the file start and end in the segments
+            print(f"Debug: Original segments from model: {segments}")
             
-        # Ensure the first segment starts at 0 and the last ends at the audio length
-        elif segments[0] != 0 and (start_marker_pos is None or start_marker_pos > 0):
-            segments.insert(0, 0)
+            # Add file start (0) if not present
+            if 0 not in segments:
+                print(f"Debug: Adding file start (0) to segments array")
+                segments.insert(0, 0)
             
-        if segments[-1] != len(data_left) and (end_marker_pos is None or end_marker_pos < total_duration):
-            segments.append(len(data_left))
+            # Add file end if not present
+            if len(data_left) not in segments:
+                print(f"Debug: Adding file end ({len(data_left)}) to segments array")
+                segments.append(len(data_left))
+                
+            # Sort to ensure proper order
+            segments.sort()
+            print(f"Debug: Final segments with boundaries: {segments}")
 
         # Calculate beats per second
         beats_per_second = tempo / 60
-
+        
+        # Pre-count valid segments and generate debug info
+        valid_segments = []
+        for i, (start, end) in enumerate(zip(segments[:-1], segments[1:])):
+            if start == end:
+                print(f"Debug: Will skip zero-length segment at position {start}")
+                continue
+            valid_segments.append((i, start, end))
+        
+        print(f"Debug: Found {len(valid_segments)} valid segments out of {len(segments)-1} total segments")
+        
+        # Detailed segment-to-MIDI mapping report
+        print("\n==== SEGMENT TO MIDI MAPPING ====")
+        print(f"Debug: Tempo: {tempo} BPM, beats per second: {beats_per_second}")
+        for idx, (i, start, end) in enumerate(valid_segments):
+            start_time = start / sample_rate
+            duration = (end - start) / sample_rate
+            start_beat = start_time * beats_per_second
+            duration_beats = duration * beats_per_second
+            
+            print(f"Debug: Segment {idx+1} (original {i+1}):")
+            print(f"  - Samples: {start} to {end}")
+            print(f"  - Time: {start_time:.3f}s to {start_time+duration:.3f}s (duration: {duration:.3f}s)")
+            print(f"  - MIDI: start beat {start_beat:.3f}, duration {duration_beats:.3f} beats, MIDI note {60+idx}")
+        
+        print("\n==== GENERATING SEGMENTS ====")
+        # Counter for actual exported segments (used for MIDI notes)
+        segment_count = 0
+        
         for i, (start, end) in enumerate(zip(segments[:-1], segments[1:])):
             # Skip segments of zero length
             if start == end:
                 print(f"Debug: Skipping zero-length segment at position {start}")
                 continue
                 
-            print(f"Debug: Processing segment {i+1}: {start} to {end}")
+            # Increment segment counter for valid segments
+            segment_count += 1
+            print(f"Debug: Processing segment {segment_count} (original index {i+1}): {start} to {end}")
             
             # Process the segment through our pipeline with resampling for export
             segment_data, export_sample_rate = process_segment_for_output(
@@ -125,7 +182,7 @@ class ExportUtils:
             # The returned export_sample_rate will be the original sample rate
             # if resampling was performed, or the adjusted rate if not
             
-            segment_filename = f"segment_{i+1}.wav"
+            segment_filename = f"segment_{segment_count}.wav"
             segment_path = os.path.join(directory, segment_filename)
             
             print(f"Debug: Exporting segment with sample rate: {export_sample_rate} Hz")
@@ -135,9 +192,9 @@ class ExportUtils:
             sfz_content.append(f"""
 <region>
 sample={segment_filename}
-pitch_keycenter={60 + i}
-lokey={60 + i}
-hikey={60 + i}
+pitch_keycenter={60 + segment_count - 1}
+lokey={60 + segment_count - 1}
+hikey={60 + segment_count - 1}
 """)
 
             # Calculate beat positions based on source tempo
@@ -153,17 +210,47 @@ hikey={60 + i}
             else:
                 duration_beats = (end - start) / sample_rate * beats_per_second
             
-            midi.addNote(0, 0, 60 + i, start_beat, duration_beats, 100)
+            # Use segment_count instead of i to align with WAV files
+            midi_note = 60 + segment_count - 1
+            midi.addNote(0, 0, midi_note, start_beat, duration_beats, 100)
 
-            print(f"Debug: Segment {i+1}: start={start/sample_rate:.2f}s, duration={(end-start)/sample_rate:.2f}s, start_beat={start_beat:.2f}, duration_beats={duration_beats:.2f}")
+            print(f"Debug: Segment {segment_count} (original index {i+1}): start={start/sample_rate:.2f}s, duration={(end-start)/sample_rate:.2f}s, note={midi_note}, start_beat={start_beat:.2f}, duration_beats={duration_beats:.2f}")
 
         # MIDI file debug information
-        print("\nMIDI File Debug Information:")
+        print("\n==== MIDI EXPORT SUMMARY ====")
         print(f"Tempo: {midi.tempo} BPM")
         print(f"Time Signature: {midi.time_signature[0]}/{midi.time_signature[1]}")
         print(f"Total MIDI duration (beats): {midi.total_time:.2f}")
         print(f"Total MIDI duration (seconds): {midi.total_time / beats_per_second:.2f}")
-        print(f"Total number of segments: {len(segments) - 1}")
+        
+        # Segment counts
+        total_segments = len(segments) - 1
+        non_zero_segments = sum(1 for start, end in zip(segments[:-1], segments[1:]) if start != end)
+        zero_segments = total_segments - non_zero_segments
+        
+        print(f"\n==== SEGMENT STATISTICS ====")
+        print(f"Total boundary points: {len(segments)}")
+        print(f"Total segments: {total_segments} (distinct slice pairs)")
+        print(f"Non-zero segments: {non_zero_segments}")
+        print(f"Zero-length segments: {zero_segments}")
+        print(f"Exported WAV files: {segment_count}")
+        print(f"MIDI notes count: {len(midi.notes)}")
+        
+        # Sanity checks
+        if segment_count != len(midi.notes):
+            print("\n⚠️ WARNING: WAV segment count and MIDI note count don't match!")
+            print(f"  - WAV segments: {segment_count}")
+            print(f"  - MIDI notes: {len(midi.notes)}")
+        else:
+            print("\n✅ VALIDATION: WAV segment count and MIDI note count match correctly.")
+        
+        print(f"\n==== MIDI NOTES DETAIL ====")
+        for i, note in enumerate(midi.notes):
+            print(f"  Note {i+1}: pitch={note['pitch']} start={note['time']:.2f} duration={note['duration']:.2f}")
+        
+        print(f"\n==== SEGMENT BOUNDARIES ====")
+        print(f"Segments array (samples): {segments}")
+        print(f"Segments durations (seconds): {[(end-start)/sample_rate for start, end in zip(segments[:-1], segments[1:])]}")
 
         # Write SFZ file
         sfz_path = os.path.join(directory, "instrument.sfz")
