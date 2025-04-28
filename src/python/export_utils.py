@@ -40,7 +40,8 @@ class MIDIFileWithMetadata(MIDIFile):
 
 class ExportUtils:
     @staticmethod
-    def export_segments(model, tempo, num_measures, directory, start_marker_pos=None, end_marker_pos=None):
+    def export_segments(model, tempo, num_measures, directory, start_marker_pos=None, end_marker_pos=None, 
+                        midi_timing_mode="continuous"):
         """Export segments to WAV files with SFZ instrument and MIDI sequence
         
         Args:
@@ -50,6 +51,9 @@ class ExportUtils:
             directory: Directory to export to
             start_marker_pos: Optional start marker position (seconds)
             end_marker_pos: Optional end marker position (seconds)
+            midi_timing_mode: Mode for calculating MIDI note timing:
+                - "original": Use original timing with potential gaps
+                - "continuous": Ensure notes are continuous with no gaps (default)
             
         Returns:
             dict: Export statistics including:
@@ -154,43 +158,126 @@ class ExportUtils:
         beats_per_second = midi_tempo / 60 
         print(f"Debug: Beats per second for MIDI calculation: {beats_per_second:.2f}")
         
-        # Pre-count valid segments and generate debug info
-        valid_segments = []
-        for i, (start, end) in enumerate(zip(segments[:-1], segments[1:])):
-            if start == end:
-                print(f"Debug: Will skip zero-length segment at position {start}")
-                continue
-            valid_segments.append((i, start, end))
+        # Helper functions for MIDI timing strategies
+        def _preprocess_segments(segments_list, sample_rate, playback_tempo_enabled, source_bpm, target_bpm, beats_per_second):
+            """Pre-process segments to calculate timing information for all valid segments"""
+            processed_segments = []
+            
+            # Extract valid segments (skip zero-length segments)
+            for i, (start, end) in enumerate(zip(segments_list[:-1], segments_list[1:])):
+                if start == end:
+                    print(f"Debug: Will skip zero-length segment at position {start}")
+                    continue
+                
+                # Calculate timing info
+                start_time = start / sample_rate
+                duration_seconds = (end - start) / sample_rate
+                
+                # Calculate MIDI beat positions and durations
+                start_beat = start_time * beats_per_second
+                
+                # If tempo adjustment is applied, adjust duration
+                if playback_tempo_enabled and source_bpm > 0 and target_bpm > 0:
+                    # Scale duration based on tempo change
+                    adjusted_duration = duration_seconds * (source_bpm / target_bpm)
+                    duration_beats = adjusted_duration * beats_per_second
+                else:
+                    duration_beats = duration_seconds * beats_per_second
+                
+                # Store all information about this segment
+                processed_segments.append({
+                    'index': i,
+                    'start_sample': start,
+                    'end_sample': end,
+                    'start_time': start_time,
+                    'duration_seconds': duration_seconds,
+                    'start_beat': start_beat,
+                    'duration_beats': duration_beats,
+                    'segment_number': len(processed_segments) + 1,  # 1-based
+                    'midi_note': 60 + len(processed_segments)  # MIDI note starts at 60
+                })
+            
+            return processed_segments
         
-        print(f"Debug: Found {len(valid_segments)} valid segments out of {len(segments)-1} total segments")
+        def _apply_original_note_timing(midi, segment_info_list):
+            """Apply original timing strategy with potential gaps"""
+            print(f"\nDebug: Using ORIGINAL timing strategy (may have gaps)")
+            
+            for segment in segment_info_list:
+                # Use original timing calculations
+                start_beat = segment['start_beat']
+                duration_beats = segment['duration_beats']
+                midi_note = segment['midi_note']
+                
+                # Add note to MIDI file
+                midi.addNote(0, 0, midi_note, start_beat, duration_beats, 100)
+                
+                # Debug output
+                print(f"Debug: Note {segment['segment_number']} (MIDI {midi_note}): " 
+                      f"start_beat={start_beat:.4f}, duration={duration_beats:.4f} beats")
+        
+        def _apply_continuous_note_timing(midi, segment_info_list):
+            """Apply continuous timing strategy with no gaps between notes"""
+            print(f"\nDebug: Using CONTINUOUS timing strategy (no gaps)")
+            
+            # Keep track of the next available beat position
+            next_beat_position = 0.0
+            
+            for segment in segment_info_list:
+                # Use continuous timing (each note starts right after the previous one)
+                start_beat = next_beat_position
+                duration_beats = segment['duration_beats']
+                midi_note = segment['midi_note']
+                
+                # Add note to MIDI file with continuous timing
+                midi.addNote(0, 0, midi_note, start_beat, duration_beats, 100)
+                
+                # Update next available position
+                next_beat_position = start_beat + duration_beats
+                
+                # Debug output
+                print(f"Debug: Note {segment['segment_number']} (MIDI {midi_note}): " 
+                      f"start_beat={start_beat:.4f}, duration={duration_beats:.4f} beats")
+                
+                # Show original vs. continuous timing for comparison
+                original_start = segment['start_beat']
+                if abs(start_beat - original_start) > 0.001:  # Only show if meaningful difference
+                    print(f"       (Original timing would be: start_beat={original_start:.4f})")
+        
+        # Pre-process all segments to calculate timing information
+        print("\n==== PREPROCESSING SEGMENTS ====")
+        all_segment_info = _preprocess_segments(segments, sample_rate, playback_tempo_enabled, 
+                                               source_bpm, target_bpm, beats_per_second)
+        
+        print(f"Debug: Found {len(all_segment_info)} valid segments out of {len(segments)-1} total segments")
         
         # Detailed segment-to-MIDI mapping report
         print("\n==== SEGMENT TO MIDI MAPPING ====")
         print(f"Debug: Tempo: {tempo} BPM, beats per second: {beats_per_second}")
-        for idx, (i, start, end) in enumerate(valid_segments):
-            start_time = start / sample_rate
-            duration = (end - start) / sample_rate
-            start_beat = start_time * beats_per_second
-            duration_beats = duration * beats_per_second
-            
-            print(f"Debug: Segment {idx+1} (original {i+1}):")
-            print(f"  - Samples: {start} to {end}")
-            print(f"  - Time: {start_time:.3f}s to {start_time+duration:.3f}s (duration: {duration:.3f}s)")
-            print(f"  - MIDI: start beat {start_beat:.3f}, duration {duration_beats:.3f} beats, MIDI note {60+idx}")
+        print(f"Debug: MIDI timing mode: {midi_timing_mode}")
+        
+        for segment in all_segment_info:
+            print(f"Debug: Segment {segment['segment_number']} (original {segment['index']+1}):")
+            print(f"  - Samples: {segment['start_sample']} to {segment['end_sample']}")
+            print(f"  - Time: {segment['start_time']:.3f}s to {segment['start_time']+segment['duration_seconds']:.3f}s "
+                  f"(duration: {segment['duration_seconds']:.3f}s)")
+            print(f"  - MIDI: start beat {segment['start_beat']:.3f}, duration {segment['duration_beats']:.3f} beats, "
+                  f"MIDI note {segment['midi_note']}")
         
         print("\n==== GENERATING SEGMENTS ====")
-        # Counter for actual exported segments (used for MIDI notes)
+        # Counter for actual exported segments
         segment_count = 0
         
-        for i, (start, end) in enumerate(zip(segments[:-1], segments[1:])):
-            # Skip segments of zero length
-            if start == end:
-                print(f"Debug: Skipping zero-length segment at position {start}")
-                continue
-                
-            # Increment segment counter for valid segments
-            segment_count += 1
-            print(f"Debug: Processing segment {segment_count} (original index {i+1}): {start} to {end}")
+        # List to store segment information for WAV files
+        wavfile_segments = []
+        
+        for segment in all_segment_info:
+            # Get segment information
+            start = segment['start_sample']
+            end = segment['end_sample']
+            segment_count = segment['segment_number']
+            
+            print(f"Debug: Processing segment {segment_count} (original index {segment['index']+1}): {start} to {end}")
             
             # Process the segment through our pipeline with resampling for export
             segment_data, export_sample_rate = process_segment_for_output(
@@ -224,29 +311,28 @@ class ExportUtils:
             sfz_content.append(f"""
 <region>
 sample={segment_filename}
-pitch_keycenter={60 + segment_count - 1}
-lokey={60 + segment_count - 1}
-hikey={60 + segment_count - 1}
+pitch_keycenter={segment['midi_note']}
+lokey={segment['midi_note']}
+hikey={segment['midi_note']}
 """)
 
-            # Calculate beat positions based on source tempo
-            # This ensures MIDI sequence aligns with exported audio
-            start_beat = start / sample_rate * beats_per_second
+            # Store info for debug output
+            wavfile_segments.append({
+                'filename': segment_filename,
+                'path': segment_path,
+                'midi_note': segment['midi_note'],
+                'duration': segment['duration_seconds']
+            })
             
-            # If tempo adjustment is applied, the duration changes too
-            if playback_tempo_enabled and source_bpm > 0 and target_bpm > 0:
-                duration_seconds = (end - start) / sample_rate
-                # Scale duration based on tempo change
-                adjusted_duration = duration_seconds * (source_bpm / target_bpm)
-                duration_beats = adjusted_duration * beats_per_second
-            else:
-                duration_beats = (end - start) / sample_rate * beats_per_second
-            
-            # Use segment_count instead of i to align with WAV files
-            midi_note = 60 + segment_count - 1
-            midi.addNote(0, 0, midi_note, start_beat, duration_beats, 100)
-
-            print(f"Debug: Segment {segment_count} (original index {i+1}): start={start/sample_rate:.2f}s, duration={(end-start)/sample_rate:.2f}s, note={midi_note}, start_beat={start_beat:.2f}, duration_beats={duration_beats:.2f}")
+            print(f"Debug: Segment {segment_count} exported: " 
+                  f"start={segment['start_time']:.2f}s, duration={segment['duration_seconds']:.2f}s, "
+                  f"note={segment['midi_note']}")
+        
+        # Apply the selected MIDI timing strategy
+        if midi_timing_mode.lower() == "original":
+            _apply_original_note_timing(midi, all_segment_info)
+        else:  # Default to "continuous"
+            _apply_continuous_note_timing(midi, all_segment_info)
 
         # MIDI file debug information
         print("\n==== MIDI EXPORT SUMMARY ====")
