@@ -107,7 +107,12 @@ class ExportUtils:
 
         sfz_content = []
         midi = MIDIFileWithMetadata(1)  # One track
-        midi.addTempo(0, 0, tempo)
+        
+        # Use the target BPM for MIDI if playback tempo adjustment is enabled
+        midi_tempo = target_bpm if playback_tempo_enabled and target_bpm > 0 else tempo
+        print(f"Debug: Using tempo for MIDI export: {midi_tempo} BPM")
+        
+        midi.addTempo(0, 0, midi_tempo)
         # In the MIDI specification, the time signature denominator is encoded as a power of 2.
         # The parameter represents the exponent rather than the actual denominator value.
         # For 4/4 time signature: numerator=4, denominator=2 (where 2^2 = 4)
@@ -145,8 +150,9 @@ class ExportUtils:
             segments.sort()
             print(f"Debug: Final segments with boundaries: {segments}")
 
-        # Calculate beats per second
-        beats_per_second = tempo / 60
+        # Calculate beats per second based on the MIDI tempo we defined earlier
+        beats_per_second = midi_tempo / 60 
+        print(f"Debug: Beats per second for MIDI calculation: {beats_per_second:.2f}")
         
         # Pre-count valid segments and generate debug info
         valid_segments = []
@@ -303,7 +309,10 @@ hikey={60 + segment_count - 1}
             'duration': total_duration,
             'wav_files': segment_count,
             'start_time': 0,
-            'end_time': total_duration
+            'end_time': total_duration,
+            'playback_tempo_enabled': playback_tempo_enabled,
+            'source_bpm': source_bpm,
+            'target_bpm': target_bpm
         }
         
         return export_stats

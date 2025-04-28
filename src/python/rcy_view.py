@@ -266,7 +266,14 @@ class RcyView(QMainWindow):
         message += f"SFZ Instrument: {os.path.basename(export_stats['sfz_path'])}\n"
         message += f"MIDI Sequence: {os.path.basename(export_stats['midi_path'])}\n\n"
         message += f"Time Signature: {time_sig}\n"
-        message += f"Tempo: {export_stats['tempo']:.1f} BPM\n"
+        
+        # Show tempo information, accounting for tempo adjustment
+        if export_stats.get('playback_tempo_enabled', False):
+            message += f"Source Tempo: {export_stats['source_bpm']:.1f} BPM\n"
+            message += f"Adjusted Tempo (MIDI): {export_stats['tempo']:.1f} BPM\n"
+        else:
+            message += f"Tempo: {export_stats['tempo']:.1f} BPM\n"
+            
         message += f"Duration: {export_stats['duration']:.2f} seconds\n"
         message += f"\nFiles saved to:\n{export_stats['directory']}"
         
