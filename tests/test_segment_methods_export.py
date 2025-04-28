@@ -60,10 +60,10 @@ class TestSegmentMethodsExport:
         # Create a temporary directory for export
         with tempfile.TemporaryDirectory() as temp_dir:
             # Export segments
-            ExportUtils.export_segments(audio_processor, tempo, num_measures, temp_dir)
+            export_stats = ExportUtils.export_segments(audio_processor, tempo, num_measures, temp_dir)
             
-            # Check the exported MIDI file
-            midi_path = os.path.join(temp_dir, "sequence.mid")
+            # Check the exported MIDI file using the path from export_stats
+            midi_path = export_stats['midi_path']
             assert os.path.exists(midi_path), "MIDI file was not created"
             
             # Analyze the MIDI file
@@ -112,10 +112,10 @@ class TestSegmentMethodsExport:
         # Create a temporary directory for export
         with tempfile.TemporaryDirectory() as temp_dir:
             # Export segments
-            ExportUtils.export_segments(audio_processor, tempo, num_measures, temp_dir)
+            export_stats = ExportUtils.export_segments(audio_processor, tempo, num_measures, temp_dir)
             
             # Check the exported MIDI file
-            midi_path = os.path.join(temp_dir, "sequence.mid")
+            midi_path = export_stats['midi_path']
             assert os.path.exists(midi_path), "MIDI file was not created"
             
             # Analyze the MIDI file
@@ -164,10 +164,10 @@ class TestSegmentMethodsExport:
         # Create a temporary directory for export
         with tempfile.TemporaryDirectory() as temp_dir:
             # Export segments
-            ExportUtils.export_segments(audio_processor, tempo, num_measures, temp_dir)
+            export_stats = ExportUtils.export_segments(audio_processor, tempo, num_measures, temp_dir)
             
             # Check the exported MIDI file
-            midi_path = os.path.join(temp_dir, "sequence.mid")
+            midi_path = export_stats['midi_path']
             assert os.path.exists(midi_path), "MIDI file was not created"
             
             # Analyze the MIDI file
@@ -208,11 +208,11 @@ class TestSegmentMethodsExport:
         # Create a temporary directory for export
         with tempfile.TemporaryDirectory() as temp_dir:
             # Export using markers but no segments
-            ExportUtils.export_segments(audio_processor, tempo, num_measures, temp_dir, 
+            export_stats = ExportUtils.export_segments(audio_processor, tempo, num_measures, temp_dir, 
                                         start_marker_pos, end_marker_pos)
             
             # Check the exported MIDI file
-            midi_path = os.path.join(temp_dir, "sequence.mid")
+            midi_path = export_stats['midi_path'] 
             assert os.path.exists(midi_path), "MIDI file was not created"
             
             # Analyze the MIDI file
@@ -286,14 +286,15 @@ class TestSegmentBoundaryConsistency:
         
         # Export to a temporary directory
         with tempfile.TemporaryDirectory() as temp_dir:
-            ExportUtils.export_segments(model, 120.0, 4, temp_dir)
+            # Capture export_stats return value
+            export_stats = ExportUtils.export_segments(model, 120.0, 4, temp_dir)
             
             # Check the exported WAV files - should be 3 segments
             wav_files = [f for f in os.listdir(temp_dir) if f.endswith('.wav')]
             assert len(wav_files) == 3, "Expected 3 segments including implicit boundaries"
             
             # Check MIDI note count
-            midi_path = os.path.join(temp_dir, "sequence.mid")
+            midi_path = export_stats['midi_path']
             result = analyze_midi(midi_path)
             assert result['note_count'] == 3, "Expected 3 MIDI notes matching segment count"
     
@@ -324,19 +325,20 @@ class TestSegmentBoundaryConsistency:
         
         # Export to a temporary directory
         with tempfile.TemporaryDirectory() as temp_dir:
-            ExportUtils.export_segments(model, 120.0, 4, temp_dir)
+            # Capture export_stats return value
+            export_stats = ExportUtils.export_segments(model, 120.0, 4, temp_dir)
             
             # Should have 4 segments (5 boundaries including implicit start/end, minus 1 for zero-length)
             wav_files = [f for f in os.listdir(temp_dir) if f.endswith('.wav')]
             assert len(wav_files) == 4, "Expected 4 segments after skipping zero-length segment"
             
             # Check MIDI note count
-            midi_path = os.path.join(temp_dir, "sequence.mid")
+            midi_path = export_stats['midi_path']
             result = analyze_midi(midi_path)
             assert result['note_count'] == 4, "Expected 4 MIDI notes matching segment count"
             
             # Check SFZ file consistency
-            sfz_path = os.path.join(temp_dir, "instrument.sfz")
+            sfz_path = export_stats['sfz_path']
             with open(sfz_path, 'r') as f:
                 sfz_content = f.read()
                 assert sfz_content.count("<region>") == 4, "Expected 4 regions in SFZ file"
@@ -361,7 +363,8 @@ class TestSegmentBoundaryConsistency:
         
         # Export to a temporary directory
         with tempfile.TemporaryDirectory() as temp_dir:
-            ExportUtils.export_segments(model, 120.0, 4, temp_dir)
+            # Capture export_stats return value
+            export_stats = ExportUtils.export_segments(model, 120.0, 4, temp_dir)
             
             # We should have 4 segments (5 boundaries including implicit start/end)
             wav_files = [f for f in os.listdir(temp_dir) if f.endswith('.wav')]
@@ -370,7 +373,7 @@ class TestSegmentBoundaryConsistency:
             assert len(wav_files) == 4, "Expected 4 WAV segments including implicit start segment"
             
             # Check MIDI note count
-            midi_path = os.path.join(temp_dir, "sequence.mid")
+            midi_path = export_stats['midi_path']
             result = analyze_midi(midi_path)
             assert result['note_count'] == 4, "Expected 4 MIDI notes matching segment count"
     
@@ -395,7 +398,8 @@ class TestSegmentBoundaryConsistency:
         
         # Export to a temporary directory
         with tempfile.TemporaryDirectory() as temp_dir:
-            ExportUtils.export_segments(model, 120.0, 4, temp_dir)
+            # Capture export_stats return value
+            export_stats = ExportUtils.export_segments(model, 120.0, 4, temp_dir)
             
             # We should have 4 segments (5 boundaries including implicit end)
             wav_files = [f for f in os.listdir(temp_dir) if f.endswith('.wav')]
@@ -404,7 +408,7 @@ class TestSegmentBoundaryConsistency:
             assert len(wav_files) == 4, "Expected 4 WAV segments including implicit end segment"
             
             # Check MIDI note count
-            midi_path = os.path.join(temp_dir, "sequence.mid")
+            midi_path = export_stats['midi_path']
             result = analyze_midi(midi_path)
             assert result['note_count'] == 4, "Expected 4 MIDI notes matching segment count"
 
