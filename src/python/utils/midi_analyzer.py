@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 def analyze_midi(midi_path: str) -> Dict[str, Any]:
     """
-    Analyze a MIDI file and extract tempo and bar information.
+    Analyze a MIDI file and extract tempo, bar information, and notes.
     
     Args:
         midi_path: Path to the MIDI file
@@ -35,14 +35,17 @@ def analyze_midi(midi_path: str) -> Dict[str, Any]:
     tempo = None
     time_signature = None
     total_ticks = 0
+    notes = []
     
-    # Scan for tempo and time signature
+    # Scan for tempo, time signature, and notes
     for track in mid.tracks:
         for msg in track:
             if msg.type == 'set_tempo':
                 tempo = mido.tempo2bpm(msg.tempo)
             elif msg.type == 'time_signature':
                 time_signature = (msg.numerator, msg.denominator)
+            elif msg.type == 'note_on' and msg.velocity > 0:
+                notes.append(msg.note)
     
     # Calculate total length
     for track in mid.tracks:
@@ -68,7 +71,9 @@ def analyze_midi(midi_path: str) -> Dict[str, Any]:
         'time_signature': time_signature,
         'total_ticks': total_ticks,
         'total_beats': total_beats,
-        'total_bars': total_bars
+        'total_bars': total_bars,
+        'note_count': len(notes),
+        'note_pitches': sorted(notes)
     }
 
 
@@ -126,6 +131,10 @@ def main():
         print(f"Total ticks: {result['total_ticks']}")
         print(f"Total beats: {result['total_beats']:.2f}")
         print(f"Total bars: {result['total_bars']:.2f}")
+        print(f"Note count: {result['note_count']}")
+        
+        if args.verbose and result['note_count'] > 0:
+            print(f"Note pitches: {result['note_pitches']}")
         
         logger.info("Analysis complete")
         return 0
