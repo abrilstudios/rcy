@@ -76,14 +76,6 @@ Hit **Run** to preview slices live.
 
 ---
 
-## 7. Capture into Logic
-
-1. In Logic Pro, create a new **External MIDI** track and set its input from a **Loopback** or **IAC Bus** receiving from RCY’s virtual MIDI port.  
-2. Or record audio outputs directly from RCY into an audio track.  
-3. Record a 4‐bar loop while you tweak Orca patterns.
-
----
-
 ## 8. Test Case Snippet
 
 Sample pytest to validate OSC trigger:
@@ -112,12 +104,3 @@ def test_osc_trigger(monkeypatch):
 
 ---
 
-## 10. Next Steps
-
-- Embed this in your webpage with an Orca iframe.  
-- Share a short GIF on social channels to showcase live-coding.  
-- Extend RCY client to include GUI sliders for filter, pitch, and envelope.
-
----
-
-Enjoy prototyping breakbeat patterns in code, then bring them into Logic for the final polish!
