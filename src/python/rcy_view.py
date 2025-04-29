@@ -161,18 +161,51 @@ class RcyView(QMainWindow):
             target_bpm (int): Target tempo in BPM
             ratio (float): The playback ratio
         """
-        # Update checkbox
+        print(f"DEBUG: update_playback_tempo_display called with:")
+        print(f"DEBUG: - enabled={enabled}")
+        print(f"DEBUG: - target_bpm={target_bpm}")
+        print(f"DEBUG: - ratio={ratio}")
+        
+        # Ensure we have a valid target BPM
+        if target_bpm is None:
+            print("DEBUG: Warning - target_bpm is None, defaulting to 120")
+            target_bpm = 120
+        
+        # Update checkbox - IMPORTANT: Force the checkbox to match the 'enabled' parameter
+        print(f"DEBUG: Setting checkbox to {enabled}")
         self.playback_tempo_checkbox.setChecked(enabled)
         
-        # Update custom BPM input
-        if target_bpm is not None:
-            self.target_bpm_input.setText(str(target_bpm))
+        # Update custom BPM input - IMPORTANT: Always update this field
+        self.target_bpm_input.setText(str(target_bpm))
+        print(f"DEBUG: Updated target_bpm_input text to {target_bpm}")
             
         # Update dropdown to show the target BPM
+        # First try exact match
+        dropdown_updated = False
         for i in range(self.playback_tempo_combo.count()):
             if self.playback_tempo_combo.itemData(i) == target_bpm:
                 self.playback_tempo_combo.setCurrentIndex(i)
+                dropdown_updated = True
+                print(f"DEBUG: Found exact match in dropdown at index {i}")
                 break
+                
+        # If no exact match, find the closest value in the dropdown
+        if not dropdown_updated:
+            print(f"DEBUG: No exact match found in dropdown for BPM {target_bpm}")
+            
+            closest_index = 0
+            closest_diff = abs(self.playback_tempo_combo.itemData(0) - target_bpm)
+            
+            # Find the closest BPM value in the dropdown
+            for i in range(1, self.playback_tempo_combo.count()):
+                diff = abs(self.playback_tempo_combo.itemData(i) - target_bpm)
+                if diff < closest_diff:
+                    closest_diff = diff
+                    closest_index = i
+            
+            # Set to closest value
+            self.playback_tempo_combo.setCurrentIndex(closest_index)
+            print(f"DEBUG: Set dropdown to closest match at index {closest_index} (value: {self.playback_tempo_combo.itemData(closest_index)})")
         
         # Update menu action
         self.playback_tempo_action.setChecked(enabled)
@@ -718,7 +751,9 @@ class RcyView(QMainWindow):
             print(f"Invalid measure count, reset to {current_measures}")
 
     def update_tempo(self, tempo):
+        print(f"DEBUG: update_tempo called with tempo={tempo:.2f}")
         self.tempo_display.setText(f"{tempo:.2f} BPM")
+        print(f"DEBUG: tempo_display updated to '{tempo:.2f} BPM'")
 
     def on_button_release(self, event):
         """Handle button release event to stop dragging"""
