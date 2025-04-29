@@ -205,6 +205,10 @@ class PyQtGraphWaveformView(BaseWaveformView):
         self.start_marker.sigPositionChanged.connect(lambda: self._on_marker_dragged('start'))
         self.end_marker.sigPositionChanged.connect(lambda: self._on_marker_dragged('end'))
         
+        # Connect marker drag finished signals
+        self.start_marker.sigPositionChangeFinished.connect(lambda: self._on_marker_drag_finished('start'))
+        self.end_marker.sigPositionChangeFinished.connect(lambda: self._on_marker_drag_finished('end'))
+        
         # Connect plot click signals
         self.graphics_layout.scene().sigMouseClicked.connect(self._on_plot_clicked)
         
@@ -378,7 +382,26 @@ class PyQtGraphWaveformView(BaseWaveformView):
         self._update_marker_handle(marker_type)
         
         # Emit signal for controller
+        print(f"Marker {marker_type} dragged to {position}s")
         self.marker_dragged.emit(marker_type, position)
+        
+    def _on_marker_drag_finished(self, marker_type):
+        """Handle marker drag finished events"""
+        if marker_type == 'start':
+            position = self.start_marker.value()
+        else:  # 'end'
+            position = self.end_marker.value()
+            
+        # Apply final marker bounds check
+        self._clamp_markers_to_data_bounds()
+        
+        # Ensure both handles are updated
+        self._update_marker_handle('start')
+        self._update_marker_handle('end')
+        
+        # Emit signal for controller
+        print(f"Marker {marker_type} released at {position}s")
+        self.marker_released.emit(marker_type, position)
     
     def _on_plot_clicked(self, event):
         """Handle plot click events"""
