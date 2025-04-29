@@ -90,12 +90,24 @@ class RcyController:
     def load_audio_file(self, filename):
         """Load an audio file from filename"""
         self.model.set_filename(filename)
+        
+        # Calculate tempo based on current measure count
         self.tempo = self.model.get_tempo(self.num_measures)
+        
+        # Calculate source BPM for playback tempo adjustment
+        self.model.calculate_source_bpm(measures=self.num_measures)
         
         # Update view first to get everything initialized
         self.update_view()
         self.view.update_scroll_bar(self.visible_time, self.model.total_time)
         self.view.update_tempo(self.tempo)
+        
+        # Update playback tempo display
+        self.view.update_playback_tempo_display(
+            self.playback_tempo_enabled,
+            self.target_bpm,
+            self.model.get_playback_ratio()
+        )
         
         # Now reset markers after everything is updated
         self.view.clear_markers()
@@ -450,11 +462,39 @@ class RcyController:
         """Called when the start marker position changes"""
         self.start_marker_pos = position
         print(f"Start marker position updated: {position}")
+        
+        # Update tempo if both markers are set
+        if self.start_marker_pos is not None and self.end_marker_pos is not None:
+            self._update_tempo_from_markers()
     
     def on_end_marker_changed(self, position):
         """Called when the end marker position changes"""
         self.end_marker_pos = position
         print(f"End marker position updated: {position}")
+        
+        # Update tempo if both markers are set
+        if self.start_marker_pos is not None and self.end_marker_pos is not None:
+            self._update_tempo_from_markers()
+            
+    def _update_tempo_from_markers(self):
+        """Calculate tempo based on the current marker positions"""
+        # Skip if markers are invalid
+        if self.start_marker_pos >= self.end_marker_pos:
+            return
+            
+        # Calculate duration between markers
+        duration = self.end_marker_pos - self.start_marker_pos
+        
+        # Calculate tempo based on the selected duration
+        beats_per_measure = 4  # Assuming 4/4 time
+        total_beats = self.num_measures * beats_per_measure
+        total_time_minutes = duration / 60
+        
+        # Calculate tempo if time is valid
+        if total_time_minutes > 0:
+            self.tempo = total_beats / total_time_minutes
+            self.view.update_tempo(self.tempo)
+            print(f"Updated tempo to {self.tempo:.2f} BPM based on marker positions")
     
     def play_selected_region(self):
         """Play or stop the audio between start and end markers"""
