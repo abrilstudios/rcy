@@ -89,20 +89,64 @@ class RcyController:
 
     def load_audio_file(self, filename):
         """Load an audio file from filename"""
+        print(f"\n===== DETAILED AUDIO FILE LOADING AND TEMPO CALCULATION =====")
+        print(f"Loading file: {filename}")
+        print(f"Initial state:")
+        print(f"- Current measure count: {self.num_measures}")
+        print(f"- Initial target BPM: {self.target_bpm}")
+        print(f"- Initial playback tempo enabled: {self.playback_tempo_enabled}")
+        
+        # Set the filename in the model
+        print("Setting filename in model...")
         self.model.set_filename(filename)
         
+        # Get audio information
+        print(f"\nAudio file information:")
+        print(f"- Total duration: {self.model.total_time:.6f}s")
+        print(f"- Sample rate: {self.model.sample_rate} Hz")
+        print(f"- Channels: {self.model.channels}")
+        
         # Calculate tempo based on current measure count
+        print(f"\nCalculating tempo from model.get_tempo({self.num_measures})...")
+        old_tempo = getattr(self, 'tempo', None)
         self.tempo = self.model.get_tempo(self.num_measures)
+        print(f"model.get_tempo returned: {self.tempo:.2f} BPM")
+        if old_tempo is not None:
+            print(f"Tempo changed from {old_tempo:.2f} to {self.tempo:.2f} BPM")
         
         # Calculate source BPM for playback tempo adjustment
-        self.model.calculate_source_bpm(measures=self.num_measures)
+        print(f"\nCalculating source BPM from model.calculate_source_bpm(measures={self.num_measures})...")
+        source_bpm = self.model.calculate_source_bpm(measures=self.num_measures)
+        print(f"model.calculate_source_bpm returned: {source_bpm} BPM")
+        print(f"model.source_bpm is now: {self.model.source_bpm} BPM")
+        
+        # IMPORTANT FIX: Explicitly set target BPM to match the calculated tempo
+        old_target_bpm = self.target_bpm
+        self.target_bpm = int(round(self.tempo))
+        print(f"\nSetting target BPM: {old_target_bpm} → {self.target_bpm}")
+        
+        # IMPORTANT FIX: Enable playback tempo adjustment by default for imported files
+        old_enabled = self.playback_tempo_enabled
+        self.playback_tempo_enabled = True
+        print(f"Setting playback tempo enabled: {old_enabled} → {self.playback_tempo_enabled}")
+        
+        # Update the model's playback tempo settings
+        print(f"\nUpdating model's playback tempo settings...")
+        print(f"Calling model.set_playback_tempo({self.playback_tempo_enabled}, {self.target_bpm})")
+        ratio = self.model.set_playback_tempo(self.playback_tempo_enabled, self.target_bpm)
+        print(f"Playback ratio: {ratio:.4f}")
         
         # Update view first to get everything initialized
+        print(f"\nUpdating view...")
         self.update_view()
         self.view.update_scroll_bar(self.visible_time, self.model.total_time)
+        
+        # Update the main tempo display
+        print(f"Updating main tempo display to {self.tempo:.2f} BPM")
         self.view.update_tempo(self.tempo)
         
-        # Update playback tempo display
+        # Update the playback tempo UI elements to match
+        print(f"Updating playback tempo UI with enabled={self.playback_tempo_enabled}, target={self.target_bpm}")
         self.view.update_playback_tempo_display(
             self.playback_tempo_enabled,
             self.target_bpm,
@@ -110,8 +154,20 @@ class RcyController:
         )
         
         # Now reset markers after everything is updated
+        print(f"Resetting markers to file boundaries")
         self.view.clear_markers()
-            
+        
+        print(f"\nFINAL STATE:")
+        print(f"- Audio file: {filename}")
+        print(f"- Duration: {self.model.total_time:.6f}s")
+        print(f"- Measures: {self.num_measures}")
+        print(f"- Tempo: {self.tempo:.2f} BPM")
+        print(f"- Source BPM: {self.model.source_bpm:.2f} BPM")
+        print(f"- Target BPM: {self.target_bpm} BPM")
+        print(f"- Playback tempo enabled: {self.playback_tempo_enabled}")
+        print(f"- Playback ratio: {self.model.get_playback_ratio():.4f}")
+        print(f"===== END DETAILED AUDIO FILE LOADING AND TEMPO CALCULATION =====\n")
+        
         return True
         
     def load_preset(self, preset_id):
@@ -310,9 +366,60 @@ class RcyController:
         return self.tempo
 
     def on_measures_changed(self, num_measures):
+        print(f"\n===== DETAILED TEMPO UPDATE FROM MEASURES CHANGE =====")
+        
+        # Store old values for debugging
+        old_measures = self.num_measures
+        old_tempo = self.tempo
+        old_target_bpm = self.target_bpm
+        old_enabled = self.playback_tempo_enabled
+        
+        print(f"Measures changed from {old_measures} to {num_measures}")
+        print(f"Current audio file: {getattr(self.model, 'filename', 'None')}")
+        print(f"Current total_time: {self.model.total_time:.6f}s")
+        
+        # Update measures and recalculate tempo
         self.num_measures = num_measures
+        print(f"\nRecalculating tempo with new measures...")
+        print(f"Calling model.get_tempo({self.num_measures})...")
         self.tempo = self.model.get_tempo(self.num_measures)
+        print(f"Tempo changed from {old_tempo:.2f} to {self.tempo:.2f} BPM")
+        
+        # IMPORTANT FIX: Update target BPM to match the new tempo
+        self.target_bpm = int(round(self.tempo))
+        print(f"Target BPM updated from {old_target_bpm} to {self.target_bpm}")
+        
+        # IMPORTANT FIX: Always enable playback tempo when measures change
+        self.playback_tempo_enabled = True
+        print(f"Playback tempo enabled changed from {old_enabled} to {self.playback_tempo_enabled}")
+        
+        # IMPORTANT FIX: Update the model's playback tempo settings directly
+        print(f"\nUpdating model's playback tempo settings...")
+        print(f"Calling model.set_playback_tempo({self.playback_tempo_enabled}, {self.target_bpm})...")
+        ratio = self.model.set_playback_tempo(self.playback_tempo_enabled, self.target_bpm)
+        print(f"New playback ratio: {ratio:.4f}")
+        
+        # Update the main tempo display
+        print(f"\nUpdating UI...")
+        print(f"Setting tempo display to {self.tempo:.2f} BPM")
         self.view.update_tempo(self.tempo)
+        
+        # Update the playback tempo UI with the new settings
+        print(f"Updating playback tempo UI with enabled={self.playback_tempo_enabled}, target={self.target_bpm}")
+        self.view.update_playback_tempo_display(
+            self.playback_tempo_enabled,
+            self.target_bpm,
+            ratio
+        )
+        
+        print(f"\nFINAL STATE AFTER MEASURES CHANGE:")
+        print(f"- Measures: {self.num_measures}")
+        print(f"- Tempo: {self.tempo:.2f} BPM")
+        print(f"- Target BPM: {self.target_bpm}")
+        print(f"- Source BPM in model: {self.model.source_bpm:.2f} BPM")
+        print(f"- Playback tempo enabled: {self.playback_tempo_enabled}")
+        print(f"- Playback ratio: {ratio:.4f}")
+        print(f"===== END DETAILED TEMPO UPDATE FROM MEASURES CHANGE =====\n")
 
     def set_measure_resolution(self, resolution):
         """Set the measure resolution without automatically triggering a split"""
@@ -478,8 +585,11 @@ class RcyController:
             
     def _update_tempo_from_markers(self):
         """Calculate tempo based on the current marker positions"""
+        print(f"\n=== UPDATING TEMPO FROM MARKERS ===")
+        
         # Skip if markers are invalid
         if self.start_marker_pos >= self.end_marker_pos:
+            print("Markers invalid: start position >= end position")
             return
             
         # Calculate duration between markers
@@ -492,9 +602,51 @@ class RcyController:
         
         # Calculate tempo if time is valid
         if total_time_minutes > 0:
+            # Store the old values for debugging
+            old_tempo = self.tempo
+            old_target_bpm = self.target_bpm
+            old_enabled = self.playback_tempo_enabled
+            old_source_bpm = self.model.source_bpm if hasattr(self.model, 'source_bpm') else None
+            
+            # Calculate the new tempo
             self.tempo = total_beats / total_time_minutes
+            
+            # IMPORTANT FIX: Update target BPM to match the new tempo
+            self.target_bpm = int(round(self.tempo))
+            
+            # IMPORTANT FIX: Always enable playback tempo when markers change
+            self.playback_tempo_enabled = True
+            
+            # CRITICAL FIX: Also update the model's source BPM
+            # This ensures consistent playback when markers are moved
+            self.model.source_bpm = self.tempo
+            
+            print(f"DEBUG: Marker-based tempo calculation:")
+            print(f"DEBUG: - Duration between markers: {duration:.2f} seconds")
+            print(f"DEBUG: - Old tempo: {old_tempo:.2f} BPM")
+            print(f"DEBUG: - New tempo: {self.tempo:.2f} BPM")
+            print(f"DEBUG: - Old source BPM: {old_source_bpm}")
+            print(f"DEBUG: - New source BPM: {self.model.source_bpm}")
+            print(f"DEBUG: - Old target BPM: {old_target_bpm}")
+            print(f"DEBUG: - New target BPM: {self.target_bpm}")
+            print(f"DEBUG: - Old playback tempo enabled: {old_enabled}")
+            print(f"DEBUG: - New playback tempo enabled: {self.playback_tempo_enabled}")
+            
+            # IMPORTANT FIX: Update the model's playback tempo settings directly
+            self.model.set_playback_tempo(self.playback_tempo_enabled, self.target_bpm)
+            
+            # Update the main tempo display
             self.view.update_tempo(self.tempo)
-            print(f"Updated tempo to {self.tempo:.2f} BPM based on marker positions")
+            
+            # Update the playback tempo display with the new settings
+            ratio = self.model.get_playback_ratio()
+            self.view.update_playback_tempo_display(
+                self.playback_tempo_enabled,
+                self.target_bpm,
+                ratio
+            )
+            
+            print(f"=== TEMPO UPDATED: {self.tempo:.2f} BPM, Target={self.target_bpm}, Enabled={self.playback_tempo_enabled} ===\n")
     
     def play_selected_region(self):
         """Play or stop the audio between start and end markers"""
