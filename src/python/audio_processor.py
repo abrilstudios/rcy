@@ -418,9 +418,21 @@ class WavAudioProcessor:
 
     def get_tempo(self, num_measures: int,
                         beats_per_measure: int = 4) -> float:
+        print(f"\n----- DETAILED GET_TEMPO CALCULATION -----")
+        print(f"File: {self.filename}")
+        print(f"Input num_measures: {num_measures}")
+        print(f"Beats per measure: {beats_per_measure}")
+        print(f"Total time: {self.total_time:.6f}s = {self.total_time/60:.6f} minutes")
+        
         total_beats = num_measures * beats_per_measure
+        print(f"Total beats: {num_measures} × {beats_per_measure} = {total_beats}")
+        
         total_time_minutes = self.total_time / 60
         tempo = total_beats / total_time_minutes
+        
+        print(f"Tempo calculation: {total_beats} beats / {total_time_minutes:.6f} minutes = {tempo:.2f} BPM")
+        print(f"----- END GET_TEMPO CALCULATION -----\n")
+        
         return tempo
 
     def split_by_measures(self, num_measures, measure_resolution):
@@ -642,36 +654,71 @@ class WavAudioProcessor:
         
         Formula: Source BPM = (60 × beats) / duration
         Where beats = measures × 4 (assuming 4/4 time signature)
+        
+        Returns:
+            float: The calculated BPM value (self.source_bpm)
         """
+        print("\n===== DETAILED BPM CALCULATION DEBUGGING =====")
+        print(f"Input measures value: {measures}")
+        print(f"File: {self.filename}")
+        print(f"Total time: {self.total_time:.6f}s")
+        
         if self.total_time <= 0:
-            print("Warning: Cannot calculate source BPM, invalid duration")
-            return 120.0  # Default fallback
+            print("WARNING: Cannot calculate source BPM, invalid duration")
+            self.source_bpm = 120.0  # Default fallback
+            print(f"Using default BPM: {self.source_bpm}")
+            return self.source_bpm
             
         # Use provided measures or get from preset info
+        original_measures = measures
         if measures is None:
+            print("No measures provided to calculate_source_bpm, checking preset_info")
             if self.preset_info and 'measures' in self.preset_info:
                 measures = self.preset_info.get('measures', 4)
+                print(f"Using measures from preset_info: {measures}")
+                
+                # Print the entire preset_info for debugging
+                print(f"Complete preset_info: {self.preset_info}")
             else:
                 measures = 4  # Default if not specified
+                print(f"No measures in preset_info, using default: {measures}")
+        else:
+            print(f"Using provided measures: {measures}")
                 
         # Ensure positive value
         if measures <= 0:
+            print(f"Measures value {measures} is invalid, using default of 4")
             measures = 4
             
         # Get beats per measure from config (default to 4/4 time signature)
         beats_per_measure = 4  # Standard 4/4 time for breakbeats
+        print(f"Using beats_per_measure: {beats_per_measure}")
         
         # Calculate total beats in the audio file
         total_beats = measures * beats_per_measure
+        print(f"Total beats: {measures} × {beats_per_measure} = {total_beats}")
         
         # Calculate BPM based on total beats
-        source_bpm = (60.0 * total_beats) / self.total_time
+        old_source_bpm = getattr(self, 'source_bpm', None)
+        self.source_bpm = (60.0 * total_beats) / self.total_time
         
-        # Store the calculated value
-        self.source_bpm = source_bpm
+        print(f"CALCULATION: ({60.0} × {total_beats}) / {self.total_time} = {self.source_bpm:.2f} BPM")
+        if old_source_bpm is not None:
+            print(f"Changed from {old_source_bpm:.2f} to {self.source_bpm:.2f} BPM")
+            
+        # Additional analysis for diagnosis
+        if original_measures is None and self.preset_info and 'filepath' in self.preset_info:
+            preset_path = self.preset_info.get('filepath')
+            current_path = self.filename
+            print(f"Preset filepath: {preset_path}")
+            print(f"Current filepath: {current_path}")
+            if preset_path != current_path:
+                print("NOTE: Current file is different from preset filepath!")
+                
+        print(f"Final source BPM: {self.source_bpm:.2f} BPM")
+        print("===== END DETAILED BPM CALCULATION =====\n")
         
-        print(f"Calculated source BPM: {source_bpm:.2f} based on {measures} measures × {beats_per_measure} beats = {total_beats} beats over {self.total_time:.2f}s duration")
-        return source_bpm
+        return self.source_bpm
     
     def get_playback_ratio(self):
         """Calculate the playback ratio for tempo adjustment
