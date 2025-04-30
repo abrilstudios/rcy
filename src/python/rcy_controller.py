@@ -120,15 +120,17 @@ class RcyController:
         print(f"model.calculate_source_bpm returned: {source_bpm} BPM")
         print(f"model.source_bpm is now: {self.model.source_bpm} BPM")
         
+        # Ensure model's source BPM matches the calculated tempo
+        self.model.source_bpm = self.tempo
+        print(f"Ensuring model.source_bpm equals tempo: {self.model.source_bpm} BPM")
+        
         # IMPORTANT FIX: Explicitly set target BPM to match the calculated tempo
         old_target_bpm = self.target_bpm
         self.target_bpm = int(round(self.tempo))
         print(f"\nSetting target BPM: {old_target_bpm} → {self.target_bpm}")
         
-        # IMPORTANT FIX: Enable playback tempo adjustment by default for imported files
-        old_enabled = self.playback_tempo_enabled
-        self.playback_tempo_enabled = True
-        print(f"Setting playback tempo enabled: {old_enabled} → {self.playback_tempo_enabled}")
+        # Disable playback tempo adjustment by default for imported files
+        self.playback_tempo_enabled = False
         
         # Update the model's playback tempo settings
         print(f"\nUpdating model's playback tempo settings...")
@@ -145,12 +147,18 @@ class RcyController:
         print(f"Updating main tempo display to {self.tempo:.2f} BPM")
         self.view.update_tempo(self.tempo)
         
+        # Update the measures display in the UI without triggering the callback
+        print(f"Updating measures input to {self.num_measures}")
+        old_state = self.view.measures_input.blockSignals(True)
+        self.view.measures_input.setText(str(self.num_measures))
+        self.view.measures_input.blockSignals(old_state)
+        
         # Update the playback tempo UI elements to match
         print(f"Updating playback tempo UI with enabled={self.playback_tempo_enabled}, target={self.target_bpm}")
         self.view.update_playback_tempo_display(
             self.playback_tempo_enabled,
             self.target_bpm,
-            self.model.get_playback_ratio()
+            ratio
         )
         
         # Now reset markers after everything is updated
@@ -184,19 +192,15 @@ class RcyController:
             
             # Update number of measures if specified in the preset
             measures = preset_info.get('measures', 1)
-            if measures != self.num_measures:
-                # Only update if different to avoid unnecessary recalculations
-                self.num_measures = measures
-                print(f"Preset '{preset_id}' specifies {self.num_measures} measures")
-                
-                # Update the UI - only block signals if needed
-                # Temporarily block signals to avoid recursive updates
-                old_state = self.view.measures_input.blockSignals(True)
-                self.view.measures_input.setText(str(self.num_measures))
-                self.view.measures_input.blockSignals(old_state)
-                print(f"Updated measures input to {self.num_measures}")
-            else:
-                print(f"Preset '{preset_id}' has same measure count ({measures}), no update needed")
+            self.num_measures = measures
+            print(f"Preset '{preset_id}' specifies {self.num_measures} measures")
+            
+            # Update the UI - only block signals if needed
+            # Temporarily block signals to avoid recursive updates
+            old_state = self.view.measures_input.blockSignals(True)
+            self.view.measures_input.setText(str(self.num_measures))
+            self.view.measures_input.blockSignals(old_state)
+            print(f"Updated measures input to {self.num_measures}")
             
             # Update tempo - This will now be calculated with the correct measure count
             self.tempo = self.model.get_tempo(self.num_measures)
@@ -366,7 +370,7 @@ class RcyController:
         return self.tempo
 
     def on_measures_changed(self, num_measures):
-        print(f"\n===== DETAILED TEMPO UPDATE FROM MEASURES CHANGE =====")
+        print(f"\n===== (on_measures_changed) DETAILED TEMPO UPDATE FROM MEASURES CHANGE =====")
         
         # Store old values for debugging
         old_measures = self.num_measures
@@ -374,51 +378,45 @@ class RcyController:
         old_target_bpm = self.target_bpm
         old_enabled = self.playback_tempo_enabled
         
-        print(f"Measures changed from {old_measures} to {num_measures}")
-        print(f"Current audio file: {getattr(self.model, 'filename', 'None')}")
-        print(f"Current total_time: {self.model.total_time:.6f}s")
+        print(f"     Measures changed from {old_measures} to {num_measures}")
+        print(f"     Current audio file: {self.model.filename}")
+        print(f"     Current total_time: {self.model.total_time:.6f}s")
         
         # Update measures and recalculate tempo
         self.num_measures = num_measures
-        print(f"\nRecalculating tempo with new measures...")
-        print(f"Calling model.get_tempo({self.num_measures})...")
+        print(f"     Recalculating tempo with new measures...")
+        print(f"     Calling model.get_tempo({self.num_measures})...")
         self.tempo = self.model.get_tempo(self.num_measures)
-        print(f"Tempo changed from {old_tempo:.2f} to {self.tempo:.2f} BPM")
+        print(f"     After measure change, tempo changed from {old_tempo:.2f} to {self.tempo:.2f} BPM")
         
-        # IMPORTANT FIX: Update target BPM to match the new tempo
+        # Usability Choice: Update target BPM to match the new tempo
         self.target_bpm = int(round(self.tempo))
-        print(f"Target BPM updated from {old_target_bpm} to {self.target_bpm}")
+        print(f"     Target BPM updated from {old_target_bpm} to {self.target_bpm}")
         
-        # IMPORTANT FIX: Always enable playback tempo when measures change
-        # self.playback_tempo_enabled = True
-        # print(f"Playback tempo enabled changed from {old_enabled} to {self.playback_tempo_enabled}")
-        
-        # IMPORTANT FIX: Update the model's playback tempo settings directly
-        print(f"\nUpdating model's playback tempo settings...")
-        print(f"Calling model.set_playback_tempo({self.playback_tempo_enabled}, {self.target_bpm})...")
-        ratio = self.model.set_playback_tempo(self.playback_tempo_enabled, self.target_bpm)
-        print(f"New playback ratio: {ratio:.4f}")
+        # Update the model's playback tempo settings directly
+        print(f"     Not Updating model's playback tempo settings...")
+        print(f"     Not Calling model.set_playback_tempo({self.playback_tempo_enabled}, {self.target_bpm})...")
+        # ratio = selfel.set_playback_tempo(self.playback_tempo_enabled, self.target_bpm)
+        #print(f"     Did not set new playback ratio: {ratio:.4f}")
         
         # Update the main tempo display
-        print(f"\nUpdating UI...")
-        print(f"Setting tempo display to {self.tempo:.2f} BPM")
+        print(f"     Updating UI...")
+        print(f"     Setting tempo display to {self.tempo:.2f} BPM")
         self.view.update_tempo(self.tempo)
         
         # Update the playback tempo UI with the new settings
-        print(f"Updating playback tempo UI with enabled={self.playback_tempo_enabled}, target={self.target_bpm}")
-        self.view.update_playback_tempo_display(
-            self.playback_tempo_enabled,
-            self.target_bpm,
-            ratio
-        )
+        print(f"     Not Updating playback tempo UI with enabled={self.playback_tempo_enabled}, target={self.target_bpm}")
+        # self.view.update_playback_tempo_display( self.playback_tempo_enabled, self.target_bpm, ratio)
         
         print(f"\nFINAL STATE AFTER MEASURES CHANGE:")
         print(f"- Measures: {self.num_measures}")
         print(f"- Tempo: {self.tempo:.2f} BPM")
         print(f"- Target BPM: {self.target_bpm}")
+        # DJP Source BMP should be updated here.
         print(f"- Source BPM in model: {self.model.source_bpm:.2f} BPM")
         print(f"- Playback tempo enabled: {self.playback_tempo_enabled}")
-        print(f"- Playback ratio: {ratio:.4f}")
+        #print(f"- Playback ratio: {ratio:.4f}")
+        print(f"- Playback ratio ( not used)")
         print(f"===== END DETAILED TEMPO UPDATE FROM MEASURES CHANGE =====\n")
 
     def set_measure_resolution(self, resolution):

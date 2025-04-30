@@ -344,6 +344,9 @@ class WavAudioProcessor:
         return self.preset_info
         
     def set_filename(self, filename: str):
+        # DJP: refactor this chained function to break out for set_filename,
+        #      initialize_audio_buffer,
+        #      set_measures and calculate_source_bpm
         try:
             self.filename = filename
             with sf.SoundFile(filename) as sound_file:
@@ -354,21 +357,13 @@ class WavAudioProcessor:
                 
             self.data_left, self.data_right = self._generate_data()
             
-            # Ensure both left and right channels have the same length
-            if len(self.data_left) != len(self.data_right):
-                min_length = min(len(self.data_left), len(self.data_right))
-                self.data_left = self.data_left[:min_length]
-                self.data_right = self.data_right[:min_length]
-                # Update total time based on the corrected data length
-                self.total_time = min_length / self.sample_rate
-                print(f"Warning: Channels had different lengths. Truncated to {min_length} samples.")
-                
             # Create time array based on the actual data length
             self.time = np.linspace(0, self.total_time, len(self.data_left))
             self.segments = []
             
             # Calculate source BPM based on the loaded audio file
             measures = None  # Use the value from preset_info
+            measures = 1  # Use the value from preset_info (DJP: TODO IN REFACTOR FOR NOW TEST SANITY)
             self.calculate_source_bpm(measures=measures)
         except Exception as e:
             print(f"Error loading audio file {filename}: {e}")
@@ -669,27 +664,6 @@ class WavAudioProcessor:
             print(f"Using default BPM: {self.source_bpm}")
             return self.source_bpm
             
-        # Use provided measures or get from preset info
-        original_measures = measures
-        if measures is None:
-            print("No measures provided to calculate_source_bpm, checking preset_info")
-            if self.preset_info and 'measures' in self.preset_info:
-                measures = self.preset_info.get('measures', 4)
-                print(f"Using measures from preset_info: {measures}")
-                
-                # Print the entire preset_info for debugging
-                print(f"Complete preset_info: {self.preset_info}")
-            else:
-                measures = 4  # Default if not specified
-                print(f"No measures in preset_info, using default: {measures}")
-        else:
-            print(f"Using provided measures: {measures}")
-                
-        # Ensure positive value
-        if measures <= 0:
-            print(f"Measures value {measures} is invalid, using default of 4")
-            measures = 4
-            
         # Get beats per measure from config (default to 4/4 time signature)
         beats_per_measure = 4  # Standard 4/4 time for breakbeats
         print(f"Using beats_per_measure: {beats_per_measure}")
@@ -702,19 +676,10 @@ class WavAudioProcessor:
         old_source_bpm = getattr(self, 'source_bpm', None)
         self.source_bpm = (60.0 * total_beats) / self.total_time
         
-        print(f"CALCULATION: ({60.0} × {total_beats}) / {self.total_time} = {self.source_bpm:.2f} BPM")
+        print(f"BPM CALCULATION: ({60.0} × {total_beats}) / {self.total_time} = {self.source_bpm:.2f} BPM")
         if old_source_bpm is not None:
-            print(f"Changed from {old_source_bpm:.2f} to {self.source_bpm:.2f} BPM")
+            print(f"     Changed from {old_source_bpm:.2f} to {self.source_bpm:.2f} BPM")
             
-        # Additional analysis for diagnosis
-        if original_measures is None and self.preset_info and 'filepath' in self.preset_info:
-            preset_path = self.preset_info.get('filepath')
-            current_path = self.filename
-            print(f"Preset filepath: {preset_path}")
-            print(f"Current filepath: {current_path}")
-            if preset_path != current_path:
-                print("NOTE: Current file is different from preset filepath!")
-                
         print(f"Final source BPM: {self.source_bpm:.2f} BPM")
         print("===== END DETAILED BPM CALCULATION =====\n")
         
