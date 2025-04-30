@@ -29,7 +29,7 @@ class RcyView(QMainWindow):
         # Active segment highlight
         self.active_segment_highlight = None
         self.active_segment_highlight_right = None
-        self.current_active_segment = (None, None)  # (start, end) times of currently active segment
+        self.current_active_segment = (None, None)  
         
         self.init_ui()
         self.create_menu_bar()
@@ -218,13 +218,6 @@ class RcyView(QMainWindow):
         # Add separator
         playback_tempo_menu.addSeparator()
         
-        # Add common BPM choices
-        common_bpms = [50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 160, 170, 180]
-        for bpm in common_bpms:
-            bpm_action = QAction(f"{bpm} BPM", self)
-            bpm_action.triggered.connect(lambda checked, bpm=bpm: self.set_target_bpm(bpm))
-            playback_tempo_menu.addAction(bpm_action)
-        
         # Playback Mode submenu
         playback_mode_menu = options_menu.addMenu("Playback Mode")
         
@@ -400,11 +393,6 @@ class RcyView(QMainWindow):
         
         # Add the playback tempo layout to the info layout
         info_layout.addLayout(playback_tempo_layout)
-
-        ## Load Button
-        #self.load_button = QPushButton("Load Audio")
-        #self.load_button.clicked.connect(self.load_audio_file)
-        #info_layout.addWidget(self.load_button)
 
         ## add split buttons
         self.split_measures_button = QPushButton(config.get_string("buttons", "splitMeasures"))
