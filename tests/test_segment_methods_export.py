@@ -298,8 +298,8 @@ class TestSegmentBoundaryConsistency:
             result = analyze_midi(midi_path)
             assert result['note_count'] == 3, "Expected 3 MIDI notes matching segment count"
     
-    def test_midi_timing_modes(self):
-        """Test that different MIDI timing modes produce expected results"""
+    def test_continuous_midi_timing(self):
+        """Test that continuous MIDI timing produces expected results with no gaps"""
         # Use the apache_break preset for a real-world test case
         processor = WavAudioProcessor(preset_id='apache_break')
         
@@ -318,53 +318,28 @@ class TestSegmentBoundaryConsistency:
         processor.calculate_source_bpm(measures=2)
         tempo = processor.get_tempo(2)
         
-        # Create two temporary directories
-        temp_dir_original = tempfile.mkdtemp()
-        temp_dir_continuous = tempfile.mkdtemp()
-        
-        try:
-            # Export with original timing
-            export_stats_original = ExportUtils.export_segments(
-                processor, tempo, 2, temp_dir_original, midi_timing_mode="original"
+        # Create a temporary directory
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Export with continuous timing (default)
+            export_stats = ExportUtils.export_segments(
+                processor, tempo, 2, temp_dir
             )
             
             # Verify MIDI note count
-            midi_path_original = export_stats_original['midi_path']
-            result_original = analyze_midi(midi_path_original)
+            midi_path = export_stats['midi_path']
+            result = analyze_midi(midi_path)
             
             # There should be 5 segments (including implicit start/end)
-            assert result_original['note_count'] == 5, "Expected 5 MIDI notes with original timing"
+            assert result['note_count'] == 5, "Expected 5 MIDI notes"
             
-            # Check number of WAV files with original timing
-            wav_files_original = [f for f in os.listdir(temp_dir_original) if f.endswith('.wav')]
-            assert len(wav_files_original) == 5, "Expected 5 WAV files with original timing"
-            
-            # Export with continuous timing
-            export_stats_continuous = ExportUtils.export_segments(
-                processor, tempo, 2, temp_dir_continuous, midi_timing_mode="continuous"
-            )
-            
-            # Verify MIDI note count
-            midi_path_continuous = export_stats_continuous['midi_path']
-            result_continuous = analyze_midi(midi_path_continuous)
-            
-            # Should have same number of notes as original mode
-            assert result_continuous['note_count'] == 5, "Expected 5 MIDI notes with continuous timing"
-            
-            # Check number of WAV files with continuous timing
-            wav_files_continuous = [f for f in os.listdir(temp_dir_continuous) if f.endswith('.wav')]
-            assert len(wav_files_continuous) == 5, "Expected 5 WAV files with continuous timing"
-            
-            # Both should have the same number of segments
-            assert len(wav_files_original) == len(wav_files_continuous), "Both timing modes should export the same number of segments"
-            
-            # Both should have the same tempo
-            assert abs(result_original['tempo'] - result_continuous['tempo']) < 0.1, "Both should have the same tempo"
+            # Check number of WAV files
+            wav_files = [f for f in os.listdir(temp_dir) if f.endswith('.wav')]
+            assert len(wav_files) == 5, "Expected 5 WAV files"
             
             # VALIDATE NO GAPS: Use mido to verify there are no gaps in the continuous mode
             # Step 1: Read the MIDI file with mido
             import mido
-            mid = mido.MidiFile(midi_path_continuous)
+            mid = mido.MidiFile(midi_path)
             
             # Step 2: Extract all note events
             note_events = []
@@ -412,12 +387,6 @@ class TestSegmentBoundaryConsistency:
                 # Check for a gap (allowing for extremely small floating-point differences)
                 gap = current_start - prev_end
                 assert gap == 0, f"Gap detected between notes {i} and {i+1}: {gap} ticks"
-            
-        finally:
-            # Clean up temp directories
-            import shutil
-            shutil.rmtree(temp_dir_original, ignore_errors=True)
-            shutil.rmtree(temp_dir_continuous, ignore_errors=True)
     
     def test_zero_length_segment_handling(self):
         """Test that zero-length segments are properly skipped in export"""
