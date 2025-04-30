@@ -390,8 +390,8 @@ class RcyController:
         print(f"Target BPM updated from {old_target_bpm} to {self.target_bpm}")
         
         # IMPORTANT FIX: Always enable playback tempo when measures change
-        self.playback_tempo_enabled = True
-        print(f"Playback tempo enabled changed from {old_enabled} to {self.playback_tempo_enabled}")
+        # self.playback_tempo_enabled = True
+        # print(f"Playback tempo enabled changed from {old_enabled} to {self.playback_tempo_enabled}")
         
         # IMPORTANT FIX: Update the model's playback tempo settings directly
         print(f"\nUpdating model's playback tempo settings...")
@@ -611,13 +611,12 @@ class RcyController:
             # Calculate the new tempo
             self.tempo = total_beats / total_time_minutes
             
-            # IMPORTANT FIX: Update target BPM to match the new tempo
-            self.target_bpm = int(round(self.tempo))
+            # Update target BPM to match the new tempo, but only if tempo adjustment is already enabled
+            # This preserves the user's choice about whether tempo adjustment is enabled
+            if self.playback_tempo_enabled:
+                self.target_bpm = int(round(self.tempo))
             
-            # IMPORTANT FIX: Always enable playback tempo when markers change
-            self.playback_tempo_enabled = True
-            
-            # CRITICAL FIX: Also update the model's source BPM
+            # Update the model's source BPM
             # This ensures consistent playback when markers are moved
             self.model.source_bpm = self.tempo
             
@@ -629,10 +628,10 @@ class RcyController:
             print(f"DEBUG: - New source BPM: {self.model.source_bpm}")
             print(f"DEBUG: - Old target BPM: {old_target_bpm}")
             print(f"DEBUG: - New target BPM: {self.target_bpm}")
-            print(f"DEBUG: - Old playback tempo enabled: {old_enabled}")
-            print(f"DEBUG: - New playback tempo enabled: {self.playback_tempo_enabled}")
+            print(f"DEBUG: - Playback tempo enabled: {self.playback_tempo_enabled} (preserved user setting)")
             
-            # IMPORTANT FIX: Update the model's playback tempo settings directly
+            # Update the model's playback tempo settings directly
+            # This preserves the user's choice about whether tempo adjustment is enabled
             self.model.set_playback_tempo(self.playback_tempo_enabled, self.target_bpm)
             
             # Update the main tempo display
