@@ -74,11 +74,14 @@ class RcyView(QMainWindow):
         # Update checkbox
         self.playback_tempo_checkbox.setChecked(enabled)
 
-        # Get the current target BPM from the dropdown
+        # Get the current target BPM from the text input
         target_bpm = None
-        current_index = self.playback_tempo_combo.currentIndex()
-        if current_index >= 0:
-            target_bpm = self.playback_tempo_combo.itemData(current_index)
+        text = self.target_bpm_input.text()
+        if text:
+            try:
+                target_bpm = int(text)
+            except ValueError:
+                pass
 
         # Update controller
         self.controller.set_playback_tempo(enabled, target_bpm)
@@ -91,11 +94,8 @@ class RcyView(QMainWindow):
         """
         print(f"Setting target BPM to {bpm}")
         
-        # Update dropdown
-        for i in range(self.playback_tempo_combo.count()):
-            if self.playback_tempo_combo.itemData(i) == bpm:
-                self.playback_tempo_combo.setCurrentIndex(i)
-                break
+        # Update text input
+        self.target_bpm_input.setText(str(bpm))
         
         # Get current enabled state from checkbox
         enabled = self.playback_tempo_checkbox.isChecked()
@@ -103,27 +103,7 @@ class RcyView(QMainWindow):
         # Update controller
         # DJP: self.controller.set_playback_tempo(enabled, bpm)
     
-    def on_playback_tempo_changed(self, index):
-        """Handle changes to the playback tempo dropdown
-        
-        Args:
-            index (int): Index of the selected item
-        """
-        if index < 0:
-            return
-            
-        # Get the selected BPM
-        bpm = self.playback_tempo_combo.itemData(index)
-        print(f"Playback tempo changed to {bpm} BPM")
-        
-        # Update the custom BPM input to match the selected value
-        self.target_bpm_input.setText(str(bpm))
-        
-        # Get current enabled state
-        enabled = self.playback_tempo_checkbox.isChecked()
-        
-        # Update controller
-        self.controller.set_playback_tempo(enabled, bpm)
+    # Removed on_playback_tempo_changed method as dropdown has been removed
         
     def on_target_bpm_input_changed(self):
         """Handle changes to the custom BPM input field"""
@@ -142,15 +122,20 @@ class RcyView(QMainWindow):
             
             # Get current enabled state
             enabled = self.playback_tempo_checkbox.isChecked()
+            print(f"DEBUG: Tempo checkbox is currently {'enabled' if enabled else 'disabled'}")
             
-            # Update controller
-            self.controller.set_playback_tempo(enabled, bpm)
-            
-            # Ensure the checkbox is enabled since the user wants to use a custom tempo
+            # Always enable the checkbox when user manually enters a BPM
             if not enabled:
+                print("DEBUG: Enabling tempo checkbox as user entered BPM manually")
                 self.playback_tempo_checkbox.setChecked(True)
+                enabled = True
+            
+            # Update controller with the enabled state and BPM
+            print(f"DEBUG: Calling controller.set_playback_tempo(enabled={enabled}, target_bpm={bpm})")
+            self.controller.set_playback_tempo(enabled, bpm)
         else:
             # Reset to a default value if invalid
+            print("DEBUG: Invalid BPM value, resetting to 120")
             self.target_bpm_input.setText("120")
     
     def update_playback_tempo_display(self, enabled, target_bpm, ratio):
@@ -178,34 +163,6 @@ class RcyView(QMainWindow):
         # Update custom BPM input - IMPORTANT: Always update this field
         self.target_bpm_input.setText(str(target_bpm))
         print(f"DEBUG: Updated target_bpm_input text to {target_bpm}")
-            
-        # Update dropdown to show the target BPM
-        # First try exact match
-        dropdown_updated = False
-        for i in range(self.playback_tempo_combo.count()):
-            if self.playback_tempo_combo.itemData(i) == target_bpm:
-                self.playback_tempo_combo.setCurrentIndex(i)
-                dropdown_updated = True
-                print(f"DEBUG: Found exact match in dropdown at index {i}")
-                break
-                
-        # If no exact match, find the closest value in the dropdown
-        if not dropdown_updated:
-            print(f"DEBUG: No exact match found in dropdown for BPM {target_bpm}")
-            
-            closest_index = 0
-            closest_diff = abs(self.playback_tempo_combo.itemData(0) - target_bpm)
-            
-            # Find the closest BPM value in the dropdown
-            for i in range(1, self.playback_tempo_combo.count()):
-                diff = abs(self.playback_tempo_combo.itemData(i) - target_bpm)
-                if diff < closest_diff:
-                    closest_diff = diff
-                    closest_index = i
-            
-            # Set to closest value
-            self.playback_tempo_combo.setCurrentIndex(closest_index)
-            print(f"DEBUG: Set dropdown to closest match at index {closest_index} (value: {self.playback_tempo_combo.itemData(closest_index)})")
         
         # Update menu action
         self.playback_tempo_action.setChecked(enabled)
@@ -433,18 +390,10 @@ class RcyView(QMainWindow):
         self.playback_tempo_checkbox.toggled.connect(self.toggle_playback_tempo)
         playback_tempo_layout.addWidget(self.playback_tempo_checkbox)
         
-        # Create dropdown for target BPM
-        self.playback_tempo_combo = QComboBox()
-        common_bpms = [80, 90, 100, 110, 120, 130, 140, 160, 170, 180]
-        for bpm in common_bpms:
-            self.playback_tempo_combo.addItem(f"{bpm} BPM", bpm)
-        self.playback_tempo_combo.currentIndexChanged.connect(self.on_playback_tempo_changed)
-        playback_tempo_layout.addWidget(self.playback_tempo_combo)
-        
-        # Create free-form input for target BPM
+        # Create BPM input field
         self.target_bpm_input = QLineEdit()
         self.target_bpm_input.setValidator(QIntValidator(40, 300))  # Reasonable tempo range
-        self.target_bpm_input.setPlaceholderText("Custom BPM")
+        self.target_bpm_input.setPlaceholderText("BPM")
         self.target_bpm_input.editingFinished.connect(self.on_target_bpm_input_changed)
         self.target_bpm_input.setMaximumWidth(80)
         playback_tempo_layout.addWidget(self.target_bpm_input)
