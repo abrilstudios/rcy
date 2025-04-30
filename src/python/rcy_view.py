@@ -101,7 +101,7 @@ class RcyView(QMainWindow):
         enabled = self.playback_tempo_checkbox.isChecked()
         
         # Update controller
-        self.controller.set_playback_tempo(enabled, bpm)
+        # DJP: self.controller.set_playback_tempo(enabled, bpm)
     
     def on_playback_tempo_changed(self, index):
         """Handle changes to the playback tempo dropdown
