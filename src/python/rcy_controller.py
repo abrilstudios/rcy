@@ -819,33 +819,6 @@ class RcyController:
             # If not looping or loop handling failed, clear highlight
             self.view.clear_active_segment_highlight()
     
-    def test_first_segment(self):
-        """Special test method to debug first segment playback
-        
-        This can be manually called for debugging purposes.
-        It's not used in normal application flow.
-        """
-        print("\n\n### TESTING FIRST SEGMENT PLAYBACK ###")
-        
-        # Force a click in the first segment
-        test_click_time = 0.1  # This should be within the first segment
-        
-        print(f"### Test click time: {test_click_time}")
-        
-        # Get segment boundaries for the test click
-        start, end = self.get_segment_boundaries(test_click_time)
-        print(f"### First segment boundaries: {start} to {end}")
-        
-        # Try to play the segment
-        print(f"### Attempting to play first segment")
-        result = self.model.play_segment(start, end)
-        print(f"### First segment play result: {result}")
-        
-        # Wait for playback to complete
-        import time
-        time.sleep(0.5)
-        print("### First segment test complete")
-        
     def set_playback_tempo(self, enabled, target_bpm=None):
         """Configure playback tempo settings
         
