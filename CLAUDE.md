@@ -60,9 +60,12 @@ RCY uses a modular directory layout with absolute imports and explicit runtime c
 - **Never do work directly on the main branch unless specifically requested to do so**
 - Create feature branches from main for new work
 - Use descriptive branch names with prefixes like `feature/`, `fix/`, `enhancement/`, etc.
-- **IMPORTANT: Always run tests before staging or committing changes**
-  - Do not `git add` or `git commit` before validating that all relevant tests run successfully
+- **CRITICAL: Never stage or commit code without explicit permission or successful tests**
+  - Do not use `git add` or `git commit` before either:
+    1. Running and validating that all relevant tests pass successfully, OR
+    2. Receiving explicit confirmation from the developer that it's OK to commit
   - This prevents committing broken code and ensures the repository stays in a working state
+  - Always prioritize testing and verification over committing changes
 - Follow the git commit message conventions
 - Use pull requests for code review
 - Ensure tests pass before merging
