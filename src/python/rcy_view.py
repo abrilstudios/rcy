@@ -71,8 +71,14 @@ class RcyView(QMainWindow):
         # Update menu action
         self.playback_tempo_action.setChecked(enabled)
 
-        # Update checkbox
-        self.playback_tempo_checkbox.setChecked(enabled)
+        # IMPORTANT: Only update the checkbox if it doesn't match the requested state
+        # This prevents toggling loops
+        if self.playback_tempo_checkbox.isChecked() != enabled:
+            # Temporarily block signals to prevent recursion
+            old_state = self.playback_tempo_checkbox.blockSignals(True)
+            self.playback_tempo_checkbox.setChecked(enabled)
+            self.playback_tempo_checkbox.blockSignals(old_state)
+            print(f"Updated checkbox state to {enabled} with signals blocked")
 
         # Get the current target BPM from the text input
         target_bpm = None
@@ -127,7 +133,11 @@ class RcyView(QMainWindow):
             # Always enable the checkbox when user manually enters a BPM
             if not enabled:
                 print("DEBUG: Enabling tempo checkbox as user entered BPM manually")
+                # Block signals to prevent checkbox change from triggering toggle_playback_tempo
+                old_state = self.playback_tempo_checkbox.blockSignals(True)
                 self.playback_tempo_checkbox.setChecked(True)
+                self.playback_tempo_checkbox.blockSignals(old_state)
+                print("DEBUG: Checkbox enabled with signals blocked")
                 enabled = True
             
             # Update controller with the enabled state and BPM
@@ -136,7 +146,10 @@ class RcyView(QMainWindow):
         else:
             # Reset to a default value if invalid
             print("DEBUG: Invalid BPM value, resetting to 120")
+            # Block signals to prevent recursion
+            old_state = self.target_bpm_input.blockSignals(True)
             self.target_bpm_input.setText("120")
+            self.target_bpm_input.blockSignals(old_state)
     
     def update_playback_tempo_display(self, enabled, target_bpm, ratio):
         """Update the playback tempo UI display
@@ -156,13 +169,25 @@ class RcyView(QMainWindow):
             print("DEBUG: Warning - target_bpm is None, defaulting to 120")
             target_bpm = 120
         
-        # Update checkbox - IMPORTANT: Force the checkbox to match the 'enabled' parameter
-        print(f"DEBUG: Setting checkbox to {enabled}")
-        self.playback_tempo_checkbox.setChecked(enabled)
+        # Update checkbox - IMPORTANT: Block signals to prevent toggle loops
+        # Only update if the state doesn't match to avoid unnecessary signal blocking
+        if self.playback_tempo_checkbox.isChecked() != enabled:
+            print(f"DEBUG: Setting checkbox to {enabled} with signals blocked")
+            old_state = self.playback_tempo_checkbox.blockSignals(True)
+            self.playback_tempo_checkbox.setChecked(enabled)
+            self.playback_tempo_checkbox.blockSignals(old_state)
+        else:
+            print(f"DEBUG: Checkbox already set to {enabled}, no update needed")
         
-        # Update custom BPM input - IMPORTANT: Always update this field
-        self.target_bpm_input.setText(str(target_bpm))
-        print(f"DEBUG: Updated target_bpm_input text to {target_bpm}")
+        # Update custom BPM input - Block signals to prevent onChange triggers
+        current_text = self.target_bpm_input.text()
+        if current_text != str(target_bpm):
+            print(f"DEBUG: Updating target_bpm_input text to {target_bpm} with signals blocked")
+            old_state = self.target_bpm_input.blockSignals(True)
+            self.target_bpm_input.setText(str(target_bpm))
+            self.target_bpm_input.blockSignals(old_state)
+        else:
+            print(f"DEBUG: BPM input already set to {target_bpm}, no update needed")
         
         # Update menu action
         self.playback_tempo_action.setChecked(enabled)
