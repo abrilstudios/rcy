@@ -40,8 +40,7 @@ class MIDIFileWithMetadata(MIDIFile):
 
 class ExportUtils:
     @staticmethod
-    def export_segments(model, tempo, num_measures, directory, start_marker_pos=None, end_marker_pos=None, 
-                        midi_timing_mode="continuous"):
+    def export_segments(model, tempo, num_measures, directory, start_marker_pos=None, end_marker_pos=None):
         """Export segments to WAV files with SFZ instrument and MIDI sequence
         
         Args:
@@ -51,9 +50,6 @@ class ExportUtils:
             directory: Directory to export to
             start_marker_pos: Optional start marker position (seconds)
             end_marker_pos: Optional end marker position (seconds)
-            midi_timing_mode: Mode for calculating MIDI note timing:
-                - "original": Use original timing with potential gaps
-                - "continuous": Ensure notes are continuous with no gaps (default)
             
         Returns:
             dict: Export statistics including:
@@ -199,23 +195,6 @@ class ExportUtils:
             
             return processed_segments
         
-        def _apply_original_note_timing(midi, segment_info_list):
-            """Apply original timing strategy with potential gaps"""
-            print(f"\nDebug: Using ORIGINAL timing strategy (may have gaps)")
-            
-            for segment in segment_info_list:
-                # Use original timing calculations
-                start_beat = segment['start_beat']
-                duration_beats = segment['duration_beats']
-                midi_note = segment['midi_note']
-                
-                # Add note to MIDI file
-                midi.addNote(0, 0, midi_note, start_beat, duration_beats, 100)
-                
-                # Debug output
-                print(f"Debug: Note {segment['segment_number']} (MIDI {midi_note}): " 
-                      f"start_beat={start_beat:.4f}, duration={duration_beats:.4f} beats")
-        
         def _apply_continuous_note_timing(midi, segment_info_list):
             """Apply continuous timing strategy with no gaps between notes"""
             print(f"\nDebug: Using CONTINUOUS timing strategy (no gaps)")
@@ -254,7 +233,6 @@ class ExportUtils:
         # Detailed segment-to-MIDI mapping report
         print("\n==== SEGMENT TO MIDI MAPPING ====")
         print(f"Debug: Tempo: {tempo} BPM, beats per second: {beats_per_second}")
-        print(f"Debug: MIDI timing mode: {midi_timing_mode}")
         
         for segment in all_segment_info:
             print(f"Debug: Segment {segment['segment_number']} (original {segment['index']+1}):")
@@ -328,11 +306,8 @@ hikey={segment['midi_note']}
                   f"start={segment['start_time']:.2f}s, duration={segment['duration_seconds']:.2f}s, "
                   f"note={segment['midi_note']}")
         
-        # Apply the selected MIDI timing strategy
-        if midi_timing_mode.lower() == "original":
-            _apply_original_note_timing(midi, all_segment_info)
-        else:  # Default to "continuous"
-            _apply_continuous_note_timing(midi, all_segment_info)
+        # Apply continuous MIDI timing strategy
+        _apply_continuous_note_timing(midi, all_segment_info)
 
         # MIDI file debug information
         print("\n==== MIDI EXPORT SUMMARY ====")
