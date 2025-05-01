@@ -3,31 +3,60 @@ import os
 import pathlib
 import sys
 from PyQt6.QtGui import QColor, QFont
+from typing import Union, Optional, Dict, Any
 
 class ConfigManager:
     """Manages application configuration, including colors, fonts, and strings"""
     
-    def __init__(self):
+    def __init__(self, cfg_path: Optional[Union[str, pathlib.Path]] = None, 
+                 presets_path: Optional[Union[str, pathlib.Path]] = None,
+                 exit_on_error: bool = True):
+        """Initialize the ConfigManager with optional custom paths.
+        
+        Args:
+            cfg_path: Path to the config.json file (defaults to standard location if None)
+            presets_path: Path to the presets.json file (defaults to standard location if None)
+            exit_on_error: Whether to exit the program on configuration errors
+        """
         self.colors = {}
         self.fonts = {}
         self.strings = {}
         self.ui = {}
         self.presets = {}
+        self.exit_on_error = exit_on_error
+        self._cfg: Dict[str, Any] = {}
+        
+        # Store paths for configuration files
+        self.cfg_path = cfg_path if cfg_path is not None else self._default_config_path()
+        self.presets_path = presets_path if presets_path is not None else self._default_presets_path()
+        
+        # Load configuration
         self.load_config()
     
-    def load_config(self):
-        """Load master configuration from 'config/config.json' and exit on failure."""
+    def _default_config_path(self) -> pathlib.Path:
+        """Get the default path to the config.json file."""
         base = pathlib.Path(__file__).parent.parent.parent
-        cfg_file = base / "config" / "config.json"
-        presets_file = base / "presets" / "presets.json"
+        return base / "config" / "config.json"
+    
+    def _default_presets_path(self) -> pathlib.Path:
+        """Get the default path to the presets.json file."""
+        base = pathlib.Path(__file__).parent.parent.parent
+        return base / "presets" / "presets.json"
+        
+    def load_config(self):
+        """Load master configuration from the configured paths."""
         # Load master config
         try:
-            with open(cfg_file, 'r') as f:
+            with open(self.cfg_path, 'r') as f:
                 self._cfg = json.load(f)
         except Exception as e:
-            print(f"Critical error loading configuration '{cfg_file}': {e}", file=sys.stderr)
-            sys.exit(1)
-        # Validate and assign
+            error_msg = f"Critical error loading configuration '{self.cfg_path}': {e}"
+            print(error_msg, file=sys.stderr)
+            if self.exit_on_error:
+                sys.exit(1)
+            else:
+                raise RuntimeError(error_msg)
+        
         # Validate and assign sections
         try:
             c = self._cfg["colors"]
@@ -37,15 +66,24 @@ class ConfigManager:
             self.ui = self._cfg["ui"]
             self.audio = self._cfg["audio"]
         except KeyError as e:
-            print(f"Configuration missing key: {e}", file=sys.stderr)
-            sys.exit(1)
+            error_msg = f"Configuration missing key: {e}"
+            print(error_msg, file=sys.stderr)
+            if self.exit_on_error:
+                sys.exit(1)
+            else:
+                raise KeyError(error_msg)
+        
         # Load presets
         try:
-            with open(presets_file, 'r') as f:
+            with open(self.presets_path, 'r') as f:
                 self.presets = json.load(f)
         except Exception as e:
-            print(f"Critical error loading presets '{presets_file}': {e}", file=sys.stderr)
-            sys.exit(1)
+            error_msg = f"Critical error loading presets '{self.presets_path}': {e}"
+            print(error_msg, file=sys.stderr)
+            if self.exit_on_error:
+                sys.exit(1)
+            else:
+                raise RuntimeError(error_msg)
     
     # Default-setting methods removed: loading now always requires valid config.json
     
