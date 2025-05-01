@@ -1,95 +1,25 @@
 """
 Test suite for ConfigManager with dependency injection.
+
+This module tests the enhanced ConfigManager that supports:
+- Custom configuration paths
+- Test mode with exit_on_error=False
+- Various config access methods
 """
 import json
 import os
 import pathlib
 import pytest
-import sys
 from unittest.mock import patch
 
-# Add the src/python directory to the Python path
-sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "src" / "python"))
-
+# Import modules using conftest.py setup for PYTHONPATH
 from config_manager import ConfigManager
 
 
 class TestConfigManager:
     """Tests for the ConfigManager with dependency injection."""
 
-    @pytest.fixture
-    def test_config_data(self):
-        """Create test configuration data."""
-        return {
-            "colors": {
-                "palette": {
-                    "waveform": "#1E88E5",
-                    "background": "#121212",
-                    "segments": "#4CAF50",
-                    "text": "#FFFFFF"
-                },
-                "fonts": {
-                    "primary": "Arial"
-                }
-            },
-            "strings": {
-                "app": {
-                    "name": "RCY Test"
-                },
-                "ui": {
-                    "buttons": {
-                        "play": "Play",
-                        "stop": "Stop"
-                    }
-                }
-            },
-            "ui": {
-                "markers": {
-                    "width": 2,
-                    "style": "solid"
-                },
-                "waveform": {
-                    "resolution": 1000
-                }
-            },
-            "audio": {
-                "tailFade": {
-                    "enabled": True,
-                    "durationMs": 10,
-                    "curve": "linear"
-                }
-            }
-        }
-
-    @pytest.fixture
-    def test_presets_data(self):
-        """Create test presets data."""
-        return {
-            "test_preset": {
-                "name": "Test Preset",
-                "path": "test/path.wav",
-                "bpm": 120
-            }
-        }
-
-    @pytest.fixture
-    def test_config_files(self, tmp_path, test_config_data, test_presets_data):
-        """Create temporary config and preset files for testing."""
-        # Create test config files
-        config_file = tmp_path / "test_config.json"
-        presets_file = tmp_path / "test_presets.json"
-        
-        # Write test data to files
-        with open(config_file, 'w') as f:
-            json.dump(test_config_data, f)
-        
-        with open(presets_file, 'w') as f:
-            json.dump(test_presets_data, f)
-        
-        return {
-            "config_path": config_file,
-            "presets_path": presets_file
-        }
+    # All these fixtures are now defined in conftest.py
 
     def test_config_with_custom_paths(self, test_config_files, test_config_data, test_presets_data):
         """Test ConfigManager initialization with custom paths."""
