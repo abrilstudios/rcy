@@ -14,17 +14,12 @@ Additionally, it tests segment boundary consistency to ensure:
 """
 import os
 import tempfile
-import sys
 import pathlib
 import numpy as np
 from unittest.mock import patch, MagicMock
 import pytest
 
-# Add source directory to Python path
-current_file = pathlib.Path(__file__)
-src_dir = current_file.parent.parent / "src" / "python"
-sys.path.append(str(src_dir))
-
+# Import modules using conftest.py setup for PYTHONPATH
 from audio_processor import WavAudioProcessor
 from export_utils import ExportUtils
 from utils.midi_analyzer import analyze_midi
