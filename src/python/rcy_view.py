@@ -424,7 +424,9 @@ class RcyView(QMainWindow):
         self.split_measures_button.clicked.connect(self.on_split_measures_clicked)
 
         self.split_transients_button = QPushButton(config.get_string("buttons", "splitTransients"))
-        self.split_transients_button.clicked.connect(lambda: self.controller.split_audio('transients'))
+        self.split_transients_button.clicked.connect(
+            lambda: self.controller.execute_command('split_audio', method='transients')
+        )
 
         # Add measure resolution dropdown
         self.measure_resolution_combo = QComboBox()
@@ -512,9 +514,13 @@ class RcyView(QMainWindow):
         # Style the cut button to stand out
         self.cut_button.setStyleSheet(f"background-color: {config.get_qt_color('cutButton')}; color: white; font-weight: bold;")
         
-        # Connect button signals
-        self.zoom_in_button.clicked.connect(self.controller.zoom_in)
-        self.zoom_out_button.clicked.connect(self.controller.zoom_out)
+        # Connect button signals via command dispatcher
+        self.zoom_in_button.clicked.connect(
+            lambda: self.controller.execute_command('zoom_in')
+        )
+        self.zoom_out_button.clicked.connect(
+            lambda: self.controller.execute_command('zoom_out')
+        )
         self.cut_button.clicked.connect(self.on_cut_button_clicked)
         
         button_layout.addWidget(self.zoom_in_button)
@@ -648,7 +654,8 @@ class RcyView(QMainWindow):
     def on_threshold_changed(self, value):
         threshold = value / 100.0
         self.threshold_value_label.setText(f"{threshold:.2f}")
-        self.threshold_changed.emit(threshold)
+        # Dispatch via command pattern
+        self.controller.execute_command('set_threshold', threshold=threshold)
 
     def update_slices(self, slices):
         print("Convert slice points to times")
@@ -1064,8 +1071,13 @@ class RcyView(QMainWindow):
             print("Updated end marker handle")
 
     def update_scroll_bar(self, visible_time, total_time):
-        proportion = visible_time / total_time
-        self.scroll_bar.setPageStep(int(proportion * 100))
+        # Block signals to prevent recursive updates
+        proportion = visible_time / total_time if total_time > 0 else 0.0
+        old_state = self.scroll_bar.blockSignals(True)
+        try:
+            self.scroll_bar.setPageStep(int(proportion * 100))
+        finally:
+            self.scroll_bar.blockSignals(old_state)
 
     def get_scroll_position(self):
         return self.scroll_bar.value()
@@ -1184,7 +1196,8 @@ class RcyView(QMainWindow):
     def on_measure_resolution_changed(self, index):
         # Get the resolution value from the configuration data
         resolution_value = self.measure_resolutions[index]["value"]
-        self.controller.set_measure_resolution(resolution_value)
+        # Dispatch via command
+        self.controller.execute_command('set_resolution', resolution=resolution_value)
         
     def on_split_measures_clicked(self):
         """Handle the Split by Measures button click by using the current dropdown selection"""
@@ -1193,7 +1206,10 @@ class RcyView(QMainWindow):
         resolution_value = self.measure_resolutions[current_index]["value"]
         
         # Trigger the split with the current resolution
-        self.controller.split_audio(method='measures', measure_resolution=resolution_value)
+        # Dispatch via command
+        self.controller.execute_command(
+            'split_audio', method='measures', measure_resolution=resolution_value
+        )
         
     def show_keyboard_shortcuts(self):
         """Show a dialog with keyboard shortcuts information"""

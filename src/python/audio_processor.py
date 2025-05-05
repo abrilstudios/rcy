@@ -361,9 +361,16 @@ class WavAudioProcessor:
             self.time = np.linspace(0, self.total_time, len(self.data_left))
             self.segments = []
             
-            # Calculate source BPM based on the loaded audio file
-            measures = None  # Use the value from preset_info
-            measures = 1  # Use the value from preset_info (DJP: TODO IN REFACTOR FOR NOW TEST SANITY)
+            # Calculate source BPM based on the loaded audio file and preset measures
+            # Use the 'measures' field from preset_info if available
+            measures = None
+            try:
+                measures = self.preset_info.get('measures', None)
+            except Exception:
+                measures = None
+            # Fallback to 1 measure if not specified
+            if measures is None:
+                measures = 1
             self.calculate_source_bpm(measures=measures)
         except Exception as e:
             print(f"Error loading audio file {filename}: {e}")

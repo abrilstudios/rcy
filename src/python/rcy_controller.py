@@ -5,12 +5,37 @@ from midiutil import MIDIFile
 from math import ceil
 from export_utils import ExportUtils
 from config_manager import config
+from commands import (
+    ZoomInCommand, ZoomOutCommand, PanCommand,
+    AddSegmentCommand, RemoveSegmentCommand, PlaySegmentCommand, CutAudioCommand,
+    SetMeasuresCommand, SetThresholdCommand, SetResolutionCommand,
+    SplitAudioCommand, LoadPresetCommand
+)
+
+# Map command names to command classes
+COMMAND_MAP = {
+    'zoom_in': ZoomInCommand,
+    'zoom_out': ZoomOutCommand,
+    'pan': PanCommand,
+    'add_segment': AddSegmentCommand,
+    'remove_segment': RemoveSegmentCommand,
+    'play_segment': PlaySegmentCommand,
+    'cut_audio': CutAudioCommand,
+    'set_measures': SetMeasuresCommand,
+    'set_threshold': SetThresholdCommand,
+    'set_resolution': SetResolutionCommand,
+    'split_audio': SplitAudioCommand,
+    'load_preset': LoadPresetCommand,
+}
 from utils.audio_preview import get_downsampled_data
 
 class RcyController:
     def __init__(self, model):
         self.model = model
+        # Initialize view state based on model duration and default visible time
+        from view_state import ViewState
         self.visible_time = 10  # Initial visible time window
+        self.view_state = ViewState(self.model.total_time, self.visible_time)
         self.num_measures = 1
         self.measure_resolution = 4
         self.tempo = 120
@@ -47,17 +72,37 @@ class RcyController:
         self.playback_check_timer = QTimer()
         self.playback_check_timer.timeout.connect(self.check_playback_status)
         self.playback_check_timer.start(100)  # Check every 100ms
+        
+    def execute_command(self, name: str, **kwargs):
+        """
+        Instantiate and execute a Command by name, passing kwargs to its constructor.
+        """
+        cmd_cls = COMMAND_MAP.get(name)
+        if not cmd_cls:
+            raise KeyError(f"Unknown command: {name}")
+        cmd = cmd_cls(self, **kwargs)
+        return cmd.execute()
 
     def set_view(self, view):
         self.view = view
         self.view.measures_changed.connect(self.on_measures_changed)
         self.view.threshold_changed.connect(self.on_threshold_changed)
-        self.view.remove_segment.connect(self.remove_segment)
-        self.view.add_segment.connect(self.add_segment)
-        self.view.play_segment.connect(self.play_segment)
+        # Route segment manipulation through command dispatcher
+        self.view.remove_segment.connect(
+            lambda pos: self.execute_command('remove_segment', position=pos)
+        )
+        self.view.add_segment.connect(
+            lambda pos: self.execute_command('add_segment', position=pos)
+        )
+        self.view.play_segment.connect(
+            lambda pos: self.execute_command('play_segment', position=pos)
+        )
         self.view.start_marker_changed.connect(self.on_start_marker_changed)
         self.view.end_marker_changed.connect(self.on_end_marker_changed)
-        self.view.cut_requested.connect(self.cut_audio)
+        # Route cut action through command dispatcher
+        self.view.cut_requested.connect(
+            lambda start, end: self.execute_command('cut_audio', start=start, end=end)
+        )
         
         # Initialize marker positions
         self.start_marker_pos = None
@@ -240,12 +285,20 @@ class RcyController:
         return config.get_preset_list()
 
     def update_view(self):
+        # Prevent recursive UI updates
+        if getattr(self, '_updating_ui', False):
+            return
+        self._updating_ui = True
+        # Update and log view state
+        self.view_state.set_total_time(self.model.total_time)
+        self.view_state.set_visible_time(self.visible_time)
+        # Scroll position from UI (0-100) mapped to [0.0,1.0]
+        scroll_frac = self.view.get_scroll_position() / 100.0
+        self.view_state.set_scroll_frac(scroll_frac)
+        start_time = self.view_state.start
+        end_time = self.view_state.end
         print(f"\n==== CONTROLLER UPDATE_VIEW ====")
-        
-        # Get data window
-        start_time = self.view.get_scroll_position() * (self.model.total_time - self.visible_time) / 100
-        end_time = start_time + self.visible_time
-        print(f"DEBUG: View window: start_time={start_time:.6f}, end_time={end_time:.6f}, visible_time={self.visible_time}")
+        print(f"DEBUG: ViewState window: start_time={start_time:.6f}, end_time={end_time:.6f}, visible_time={self.view_state.visible_time:.6f}")
         print(f"DEBUG: Model total_time: {self.model.total_time}")
         
         # Track marker positions before update
@@ -358,19 +411,26 @@ class RcyController:
                 print("DEBUG: End marker handle exists in plot")
 
         print(f"==== END CONTROLLER UPDATE_VIEW ====\n")
+        # End of update cycle
+        
+        # Release update guard
+        self._updating_ui = False
 
     def zoom_in(self):
-        self.visible_time *= 0.97
+        # Zoom in by shrinking visible window to 97%, around center
+        self.view_state.zoom(0.97)
+        # Update controller's visible_time and refresh view
+        self.visible_time = self.view_state.visible_time
         self.update_view()
-        self.view.update_scroll_bar(self.visible_time,
-                                    self.model.total_time)
+        # Update scroll bar to reflect new window size
+        self.view.update_scroll_bar(self.visible_time, self.model.total_time)
 
     def zoom_out(self):
-        self.visible_time = min(self.visible_time * 1.03,
-                                self.model.total_time)
+        # Zoom out by expanding visible window to 103%, limited by total time
+        self.view_state.zoom(1.03)
+        self.visible_time = self.view_state.visible_time
         self.update_view()
-        self.view.update_scroll_bar(self.visible_time,
-                                    self.model.total_time)
+        self.view.update_scroll_bar(self.visible_time, self.model.total_time)
 
     def get_tempo(self):
         return self.tempo
