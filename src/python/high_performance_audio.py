@@ -157,6 +157,7 @@ class ImprovedAudioEngine:
         self._callback_lock = threading.Lock()
         self._underrun_count = 0
         
+        
         # Event callbacks
         self.playback_ended_callback: Optional[Callable] = None
         
@@ -301,6 +302,7 @@ class ImprovedAudioEngine:
                         self.current_segment = None
                         self.current_position = 0
                 
+                
         except Exception as e:
             # Log callback errors but don't raise (would crash the audio system)
             ErrorHandler.log_exception(e, context="ImprovedAudioEngine._audio_callback")
@@ -349,6 +351,7 @@ class ImprovedAudioEngine:
             tail_fade_enabled = tail_fade_config.get("enabled", False)
             fade_duration_ms = tail_fade_config.get("durationMs", 10)
             fade_curve = tail_fade_config.get("curve", "exponential")
+            
             
             # Process the segment through the pipeline
             processed_data, output_sample_rate = process_segment_for_output(
