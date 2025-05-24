@@ -140,7 +140,10 @@ class WavAudioProcessor:
             
             # Create time array based on the actual data length
             self.time = np.linspace(0, self.total_time, len(self.data_left))
-            self.segment_manager.clear_boundaries()
+            
+            # Initialize SegmentManager with audio context (creates single segment covering entire file)
+            total_samples = len(self.data_left)
+            self.segment_manager.set_audio_context(total_samples, self.sample_rate)
             
             # Initialize audio engine with source data
             self.audio_engine.set_source_audio(
@@ -243,19 +246,18 @@ class WavAudioProcessor:
         total_divisions = num_measures * measure_resolution
         samples_per_division = total_samples / total_divisions
         
-        # Create segment points including start and end
-        # This gives num_measures * measure_resolution + 1 points
-        # For 2 measures with resolution 4, this gives 9 points (0, 1/8, 2/8, ..., 8/8)
-        new_boundaries = [int(i * samples_per_division) for i in range(total_divisions + 1)]
+        # Create internal split positions (excluding start and end)
+        # For 2 measures with resolution 4, this gives 7 internal points (1/8, 2/8, ..., 7/8)
+        internal_positions = []
+        for i in range(1, total_divisions):  # Skip start (0) and end (total_divisions)
+            position = int(i * samples_per_division)
+            internal_positions.append(position)
         
-        # Ensure last point is exactly at the end of the audio
-        if new_boundaries[-1] != total_samples:
-            new_boundaries[-1] = total_samples
+        # Update SegmentManager (automatically adds start/end boundaries)
+        self.segment_manager.split_by_positions(internal_positions)
         
-        # Update centralized segment storage
-        self.segment_manager.set_boundaries(new_boundaries, self.sample_rate)
-            
-        return new_boundaries
+        # Return all boundaries for backward compatibility
+        return self.segment_manager.get_boundaries()
 
     def split_by_transients(self, threshold=None):
         # Get transient detection parameters from config
@@ -288,23 +290,18 @@ class WavAudioProcessor:
             post_max=post_max,
         )
         onset_samples = librosa.frames_to_samples(onsets)
-        new_boundaries = onset_samples.tolist()
+        internal_positions = onset_samples.tolist()
         
-        # Update centralized segment storage
-        self.segment_manager.set_boundaries(new_boundaries, self.sample_rate)
+        # Update SegmentManager (automatically adds start/end boundaries)
+        self.segment_manager.split_by_positions(internal_positions)
         
-        return new_boundaries
+        # Return all boundaries for backward compatibility
+        return self.segment_manager.get_boundaries()
 
     def remove_segment(self, click_time):
         """Remove the segment closest to click_time."""
         try:
-            boundaries = self.segment_manager.get_boundaries()
-            if not boundaries:
-                raise ValueError("No segments to remove")
-            
-            click_sample = int(click_time * self.sample_rate)
-            closest_boundary = min(boundaries, key=lambda b: abs(b - click_sample))
-            self.segment_manager.remove_boundary(closest_boundary)
+            self.segment_manager.remove_segment_boundary(click_time)
         except Exception as e:
             ErrorHandler.log_exception(e, context="WavAudioProcessor.remove_segment")
             return
@@ -312,19 +309,15 @@ class WavAudioProcessor:
     def add_segment(self, click_time):
         """Add a new segment at click_time."""
         try:
-            new_boundary = int(click_time * self.sample_rate)
-            self.segment_manager.add_boundary(new_boundary)
+            self.segment_manager.add_segment_boundary(click_time)
         except Exception as e:
             ErrorHandler.log_exception(e, context="WavAudioProcessor.add_segment")
             return
 
-    def get_segments(self):
-        """Get segment boundaries for backward compatibility."""
-        return self.segment_manager.get_boundaries()
 
     def get_segment_boundaries(self, click_time):
         click_sample = int(click_time * self.sample_rate)
-        segments = self.get_segments()
+        segments = self.segment_manager.get_boundaries()
         data_length = len(self.data_left)  # Use left channel for length reference
         
         for i, segment in enumerate(segments):
@@ -545,8 +538,9 @@ class WavAudioProcessor:
                 print("ERROR: TypeError when updating time data in cut_audio")
                 return False
             
-            # Clear segments since they're now invalid
-            self.segment_manager.clear_boundaries()
+            # Clear segments since they're now invalid - reset to single segment
+            total_samples = len(self.data_left)
+            self.segment_manager.set_audio_context(total_samples, self.sample_rate)
             
             # UPDATE AUDIO ENGINE with new source data
             self.audio_engine.set_source_audio(

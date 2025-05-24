@@ -377,7 +377,7 @@ class RcyController:
         # Update the plot with data (downsampled or raw)
         self.view.update_plot(time, data_left, data_right)
         
-        slices = self.model.get_segments()
+        slices = self.model.segment_manager.get_boundaries()
         try:
             if slices is not None:
                 print(f"DEBUG: About to call view.update_slices with {len(slices)} segments")

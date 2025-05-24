@@ -1,8 +1,8 @@
 """
-Centralized segment management system for RCY.
-
-Simple boundary-point model with observer pattern for automatic synchronization.
-Max 36 segments, so no complex optimizations needed.
+Redesigned SegmentManager based on specification:
+- Always maintains start (0) and end (total_samples) boundaries
+- Segment-focused API instead of boundary-focused
+- Enforces invariant: N boundaries = N-1 segments
 """
 
 import threading
@@ -15,73 +15,94 @@ class SegmentObserver(ABC):
     
     @abstractmethod
     def on_segments_changed(self, operation: str, **kwargs) -> None:
-        """Called when segments are modified.
-        
-        Args:
-            operation: Type of change ('set', 'add', 'remove', 'clear')
-            **kwargs: Additional context about the change
-        """
+        """Called when segments are modified."""
         pass
 
 
 class SegmentStore:
-    """Simple segment storage using boundary-point model.
+    """Segment storage that always maintains file coverage."""
     
-    Stores sample positions as boundaries: [0, pos1, pos2, ..., end]
-    N boundaries define N-1 segments between consecutive pairs.
-    """
-    
-    def __init__(self):
-        self._boundaries: List[int] = []  # Sample positions
-        self._sample_rate: float = 44100.0
+    def __init__(self, total_samples: int = 0, sample_rate: float = 44100.0):
+        """Initialize with audio file context."""
+        self._total_samples = total_samples
+        self._sample_rate = sample_rate
+        # INVARIANT: Always start with boundaries [0, total_samples] (1 segment)
+        self._boundaries: List[int] = [0, total_samples] if total_samples > 0 else []
         self._lock = threading.RLock()
     
-    def set_boundaries(self, boundaries: List[int], sample_rate: float) -> None:
-        """Replace all boundaries with new list."""
+    def set_audio_context(self, total_samples: int, sample_rate: float) -> None:
+        """Set audio file context and initialize default single segment."""
         with self._lock:
-            if not boundaries:
-                self._boundaries = []
-                return
-                
-            # Validate and sort boundaries
-            sorted_boundaries = sorted(set(boundaries))  # Remove duplicates and sort
-            
-            # Validate boundaries are non-negative
-            for boundary in boundaries:  # Check original list before sorting
-                if boundary < 0:
-                    raise ValueError(f"Boundary cannot be negative: {boundary}")
-            
-            # Validate increasing after sorting (duplicates removed by set())
-            for i in range(1, len(sorted_boundaries)):
-                if sorted_boundaries[i] <= sorted_boundaries[i-1]:
-                    raise ValueError(f"Boundaries must be strictly increasing")
-            
-            self._boundaries = sorted_boundaries
+            self._total_samples = total_samples
             self._sample_rate = sample_rate
+            # Initialize with single segment covering entire file
+            self._boundaries = [0, total_samples]
+    
+    def set_internal_boundaries(self, internal_positions: List[int]) -> None:
+        """Set internal boundaries (automatically adds start/end boundaries)."""
+        with self._lock:
+            if self._total_samples == 0:
+                raise RuntimeError("Must call set_audio_context() first")
+            
+            # Validate internal positions
+            for pos in internal_positions:
+                if pos < 0 or pos > self._total_samples:
+                    raise ValueError(f"Boundary {pos} outside valid range [0, {self._total_samples}]")
+            
+            # Remove duplicates and sort
+            unique_positions = sorted(set(internal_positions))
+            
+            # ENFORCE INVARIANT: Always include start and end
+            self._boundaries = [0]
+            for pos in unique_positions:
+                if pos != 0 and pos != self._total_samples:  # Skip start/end if provided
+                    self._boundaries.append(pos)
+            self._boundaries.append(self._total_samples)
+    
+    def add_boundary(self, position: int) -> None:
+        """Add a boundary at position (maintains start/end invariant)."""
+        with self._lock:
+            if position <= 0 or position >= self._total_samples:
+                return  # Cannot add boundary at start/end (always maintained)
+            
+            if position not in self._boundaries:
+                self._boundaries.append(position)
+                self._boundaries.sort()
+    
+    def remove_boundary(self, position: int) -> bool:
+        """Remove boundary at position (cannot remove start/end)."""
+        with self._lock:
+            if position == 0 or position == self._total_samples:
+                return False  # Cannot remove start/end boundaries
+            
+            if position in self._boundaries:
+                self._boundaries.remove(position)
+                return True
+            return False
     
     def get_boundaries(self) -> List[int]:
-        """Get all boundary sample positions."""
+        """Get all boundaries (always includes start/end)."""
         with self._lock:
             return self._boundaries.copy()
     
     def get_segment_count(self) -> int:
-        """Get number of segments (boundaries - 1)."""
+        """Get number of segments."""
         with self._lock:
             return max(0, len(self._boundaries) - 1)
     
     def get_segment_by_index(self, index: int) -> Optional[Tuple[float, float]]:
-        """Get segment N (1-based) as (start_time, end_time) in seconds."""
+        """Get segment N (1-based) as (start_time, end_time)."""
         with self._lock:
             if index < 1 or index > self.get_segment_count():
                 return None
             
-            start_sample = self._boundaries[index - 1] 
+            start_sample = self._boundaries[index - 1]
             end_sample = self._boundaries[index]
             
             return (start_sample / self._sample_rate, end_sample / self._sample_rate)
     
     def get_segment_by_time(self, time: float) -> Optional[Tuple[float, float]]:
-        """Find segment containing time. Linear search is fine for max 36 segments."""
+        """Find segment containing time."""
         time_sample = int(time * self._sample_rate)
         
         with self._lock:
@@ -94,7 +115,7 @@ class SegmentStore:
         return None
     
     def get_all_segments(self) -> List[Tuple[float, float]]:
-        """Get all segments as list of (start_time, end_time) tuples."""
+        """Get all segments as (start_time, end_time) pairs."""
         with self._lock:
             segments = []
             for i in range(len(self._boundaries) - 1):
@@ -103,125 +124,90 @@ class SegmentStore:
                 segments.append((start_time, end_time))
             return segments
     
-    def add_boundary(self, sample_position: int) -> None:
-        """Add a new boundary at the given sample position."""
+    def clear_to_single_segment(self) -> None:
+        """Reset to single segment covering entire file."""
         with self._lock:
-            if sample_position not in self._boundaries:
-                self._boundaries.append(sample_position)
-                self._boundaries.sort()
-    
-    def remove_boundary(self, sample_position: int) -> bool:
-        """Remove boundary at given position. Returns True if found and removed."""
-        with self._lock:
-            if sample_position in self._boundaries:
-                self._boundaries.remove(sample_position)
-                return True
-            return False
-    
-    def clear_boundaries(self) -> None:
-        """Remove all boundaries."""
-        with self._lock:
-            self._boundaries.clear()
+            self._boundaries = [0, self._total_samples]
 
 
 class SegmentManager:
-    """Centralized segment management with observer pattern."""
+    """Simplified segment management with guaranteed invariants."""
     
     def __init__(self):
         self._store = SegmentStore()
         self._observers: List[SegmentObserver] = []
         self._lock = threading.RLock()
     
+    def set_audio_context(self, total_samples: int, sample_rate: float) -> None:
+        """Initialize with audio file - creates single segment covering entire file."""
+        with self._lock:
+            self._store.set_audio_context(total_samples, sample_rate)
+            self._notify_observers('audio_loaded', total_samples=total_samples, sample_rate=sample_rate)
+    
+    def split_by_positions(self, positions: List[int]) -> None:
+        """Split audio at given positions (used by split_by_measures, split_by_transients)."""
+        with self._lock:
+            self._store.set_internal_boundaries(positions)
+            self._notify_observers('split', position_count=len(positions))
+    
+    def add_segment_boundary(self, time: float) -> None:
+        """Add segment boundary at time position."""
+        with self._lock:
+            sample_rate = self._store._sample_rate
+            position = int(time * sample_rate)
+            self._store.add_boundary(position)
+            self._notify_observers('add', time=time)
+    
+    def remove_segment_boundary(self, time: float) -> bool:
+        """Remove boundary closest to time position."""
+        with self._lock:
+            sample_rate = self._store._sample_rate
+            position = int(time * sample_rate)
+            removed = self._store.remove_boundary(position)
+            if removed:
+                self._notify_observers('remove', time=time)
+            return removed
+    
+    def clear_segments(self) -> None:
+        """Reset to single segment covering entire file."""
+        with self._lock:
+            self._store.clear_to_single_segment()
+            self._notify_observers('clear')
+    
+    # Query methods (delegate to store)
+    def get_segment_count(self) -> int:
+        return self._store.get_segment_count()
+    
+    def get_segment_by_index(self, index: int) -> Optional[Tuple[float, float]]:
+        return self._store.get_segment_by_index(index)
+    
+    def get_segment_by_time(self, time: float) -> Optional[Tuple[float, float]]:
+        return self._store.get_segment_by_time(time)
+    
+    def get_all_segments(self) -> List[Tuple[float, float]]:
+        return self._store.get_all_segments()
+    
+    def get_boundaries(self) -> List[int]:
+        """Get boundary positions (for backward compatibility)."""
+        return self._store.get_boundaries()
+    
+    # Observer management
     def add_observer(self, observer: SegmentObserver) -> None:
-        """Register an observer for segment changes."""
         with self._lock:
             if observer not in self._observers:
                 self._observers.append(observer)
     
     def remove_observer(self, observer: SegmentObserver) -> None:
-        """Unregister an observer."""
         with self._lock:
             if observer in self._observers:
                 self._observers.remove(observer)
     
     def _notify_observers(self, operation: str, **kwargs) -> None:
-        """Notify all observers of segment changes."""
         for observer in self._observers:
             try:
                 observer.on_segments_changed(operation, **kwargs)
             except Exception as e:
-                # Log error but don't let one observer break others
                 print(f"Error notifying observer {observer}: {e}")
-    
-    # Public API methods that delegate to store and notify observers
-    
-    def set_boundaries(self, boundaries: List[int], sample_rate: float) -> None:
-        """Replace all boundaries. Used for bulk operations like split_by_measures."""
-        with self._lock:
-            old_count = self._store.get_segment_count()
-            self._store.set_boundaries(boundaries, sample_rate)
-            new_count = self._store.get_segment_count()
-            self._notify_observers('set', old_count=old_count, new_count=new_count, boundaries=boundaries)
-    
-    def get_boundaries(self) -> List[int]:
-        """Get all boundary sample positions (compatible with current self.segments)."""
-        return self._store.get_boundaries()
-    
-    def get_segment_count(self) -> int:
-        """Get number of segments."""
-        return self._store.get_segment_count()
-    
-    def get_segment_by_index(self, index: int) -> Optional[Tuple[float, float]]:
-        """Get segment N (1-based) for keyboard shortcuts. Ultra-fast O(1) access."""
-        return self._store.get_segment_by_index(index)
-    
-    def get_segment_by_time(self, time: float) -> Optional[Tuple[float, float]]:
-        """Find segment containing time for mouse clicks. Fast linear search."""
-        return self._store.get_segment_by_time(time)
-    
-    def get_all_segments(self) -> List[Tuple[float, float]]:
-        """Get all segments as time ranges."""
-        return self._store.get_all_segments()
-    
-    def add_boundary(self, sample_position: int) -> None:
-        """Add a new boundary."""
-        with self._lock:
-            self._store.add_boundary(sample_position)
-            self._notify_observers('add', position=sample_position)
-    
-    def remove_boundary(self, sample_position: int) -> bool:
-        """Remove boundary. Returns True if found and removed."""
-        with self._lock:
-            removed = self._store.remove_boundary(sample_position)
-            if removed:
-                self._notify_observers('remove', position=sample_position)
-            return removed
-    
-    def clear_boundaries(self) -> None:
-        """Remove all boundaries."""
-        with self._lock:
-            old_count = self._store.get_segment_count()
-            self._store.clear_boundaries()
-            self._notify_observers('clear', old_count=old_count)
-    
-    # Convenience methods for time-based operations
-    
-    def add_segment_at_time(self, time: float, sample_rate: float) -> None:
-        """Add segment boundary at time position."""
-        sample_position = int(time * sample_rate)
-        self.add_boundary(sample_position)
-    
-    def remove_segment_at_time(self, time: float, sample_rate: float) -> bool:
-        """Remove boundary closest to time position."""
-        sample_position = int(time * sample_rate)
-        
-        # Find closest boundary
-        boundaries = self.get_boundaries()
-        if not boundaries:
-            return False
-            
-        closest_boundary = min(boundaries, key=lambda b: abs(b - sample_position))
-        return self.remove_boundary(closest_boundary)
 
 
 # Global instance for the application

@@ -158,6 +158,32 @@ class SegmentMutationHandler:
 
 ---
 
+## **📋 SEGMENT SYSTEM SPECIFICATION**
+
+### **Fundamental Rules:**
+1. **Initial State (file load):**
+   - Segment markers: `[0, len(audio_file)]` (2 markers)
+   - Segments: 1 segment from 0 to end
+   - Keyboard shortcut "1" plays the entire file
+
+2. **User adds segment at 50%:**
+   - Segment markers: `[0, 50%, len(audio_file)]` (3 markers) 
+   - Segments: 2 segments 
+     - Segment 1: 0 to 50%
+     - Segment 2: 50% to end
+   - Keyboard shortcuts "1" and "2" play respective segments
+
+3. **User clicks "measures=4" on 4-bar loop:**
+   - Segment markers: `[0, 1/16, 2/16, 3/16, ..., 16/16]` (17 markers)
+   - Segments: 16 segments (one per 16th note if 4 beats per bar)
+   - Keyboard shortcuts "1" through "16" play respective segments
+
+### **Core Invariants:**
+- **N markers = N-1 segments** (consecutive boundary pairs)
+- **SegmentManager ALWAYS includes start (0) and end boundaries**
+- **Export system exports exactly what SegmentManager provides**
+- **Segment system is completely independent of start/end marker system**
+
 ## **⚡ SIMPLIFIED DESIGN**
 
 **Key Constraint**: Maximum 36 segments (keyboard mappings 1-9, 0, q-p = 20 segments, with room for growth)
