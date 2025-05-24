@@ -144,17 +144,15 @@ class TestSegmentMethodsExport:
         # Total audio length in samples
         total_samples = len(audio_processor.data_left)
         
-        # Manually add 8 evenly-spaced segments
-        audio_processor.segments = []
+        # Clear any existing segments and manually add 8 evenly-spaced segments
+        audio_processor.segment_manager.clear_boundaries()
         for i in range(1, 9):
             segment_pos = int(total_samples * i / 8)
             audio_processor.add_segment(segment_pos / audio_processor.sample_rate)
         
-        # Sort segments (should already be sorted but just to be sure)
-        audio_processor.segments.sort()
-        
-        # Check segment creation
-        assert len(audio_processor.segments) == 8
+        # Check segment creation - should have 8 boundaries
+        boundaries = audio_processor.get_segments()
+        assert len(boundaries) == 8
         
         # Create a temporary directory for export
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -194,7 +192,7 @@ class TestSegmentMethodsExport:
         tempo = audio_processor.get_tempo(num_measures)
         
         # Clear any existing segments
-        audio_processor.segments = []
+        audio_processor.segment_manager.clear_boundaries()
         
         # Define start and end markers at 25% and 75% of the file
         start_marker_pos = audio_processor.total_time * 0.25
@@ -299,7 +297,6 @@ class TestSegmentBoundaryConsistency:
         processor = WavAudioProcessor(preset_id='apache_break')
         
         # Add several segment markers (not evenly spaced to test gap handling)
-        processor.segments = []
         total_samples = len(processor.data_left)
         segment_positions = [
             int(total_samples * 0.1),   # 10% into file
@@ -307,7 +304,7 @@ class TestSegmentBoundaryConsistency:
             int(total_samples * 0.6),   # 60% into file
             int(total_samples * 0.8),   # 80% into file
         ]
-        processor.segments = segment_positions
+        processor.segment_manager.set_boundaries(segment_positions, processor.sample_rate)
         
         # Calculate the source BPM for proper timing
         processor.calculate_source_bpm(measures=2)
