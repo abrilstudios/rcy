@@ -126,7 +126,7 @@
       "targetBpm": 120
     },
     "tailFade": {
-      "enabled": false,
+      "enabled": true,
       "durationMs": 10,
       "curve": "exponential"
     }
