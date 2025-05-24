@@ -8,8 +8,7 @@ from rcy_view import RcyView
 from config_manager import config
 from error_handler import ErrorHandler, install_global_exception_hook
 
-# Import but don't use yet until we're ready
-from waveform_view import create_waveform_view
+# Note: create_waveform_view import removed as it was unused
 
 # Configure logger for main module
 logger = logging.getLogger(__name__)
