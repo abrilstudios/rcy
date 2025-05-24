@@ -323,41 +323,7 @@ class RcyController:
         except TypeError:
             print("DEBUG: TypeError in update_view when accessing time length")
         
-        # Get downsampling configuration from config file
-        ds_config = config.get_setting("audio", "downsampling", {})
-        
-        # Check if downsampling is enabled
-        if ds_config.get("enabled", False):
-            # Get configuration values with defaults
-            always_apply = ds_config.get("alwaysApply", True)
-            default_target = ds_config.get("targetLength", 2000)
-            min_length = ds_config.get("minLength", 1000)
-            max_length = ds_config.get("maxLength", 5000)
-            method = ds_config.get("method", "envelope")
-            
-            # Convert method name to method parameter for downsampling function
-            ds_method = "max_min" if method == "envelope" else "simple"
-            
-            # Calculate appropriate target length based on view size
-            width = self.view.width()
-            target_length = min(max(width * 2, min_length), max_length)
-            
-            print(f"DEBUG: Downsampling settings: enabled={ds_config.get('enabled')}, method={method}, target_length={target_length}")
-            
-            # Apply downsampling if configured to always apply or if we have enough data to benefit
-            try:
-                if always_apply or (time is not None and len(time) > target_length):
-                    print(f"DEBUG: Applying downsampling - original length={len(time)}")
-                    # Use get_downsampled_data imported at the top of the file
-                    time, data_left, data_right = get_downsampled_data(
-                        time, data_left, data_right, target_length, method=ds_method
-                    )
-                if time is not None and len(time) > 0:
-                    print(f"DEBUG: After downsampling - length={len(time)}, time_range=[{time[0]}, {time[-1]}]")
-                else:
-                    print("DEBUG: After downsampling - time data is None or empty")
-            except TypeError:
-                print("DEBUG: TypeError in downsampling check when accessing time length")
+        # Note: Downsampling is now handled explicitly in tempo operations, not here
         
         # Pre-update check - see if markers would fall outside bounds
         try:

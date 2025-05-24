@@ -106,7 +106,7 @@
     "downsampling": {
       "enabled": true,
       "method": "envelope",
-      "alwaysApply": true,
+      "alwaysApply": false,
       "targetLength": 2000,
       "minLength": 1000,
       "maxLength": 5000
