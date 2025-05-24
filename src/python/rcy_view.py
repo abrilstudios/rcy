@@ -16,6 +16,14 @@ class RcyView(QMainWindow):
     start_marker_changed = pyqtSignal(float)
     end_marker_changed = pyqtSignal(float)
     cut_requested = pyqtSignal(float, float)  # start_time, end_time
+    
+    # Ultra-fast segment shortcut mapping (class attribute for performance)
+    SEGMENT_KEY_MAP = {
+        Qt.Key.Key_1: 1, Qt.Key.Key_2: 2, Qt.Key.Key_3: 3, Qt.Key.Key_4: 4, Qt.Key.Key_5: 5,
+        Qt.Key.Key_6: 6, Qt.Key.Key_7: 7, Qt.Key.Key_8: 8, Qt.Key.Key_9: 9, Qt.Key.Key_0: 10,
+        Qt.Key.Key_Q: 11, Qt.Key.Key_W: 12, Qt.Key.Key_E: 13, Qt.Key.Key_R: 14, Qt.Key.Key_T: 15,
+        Qt.Key.Key_Y: 16, Qt.Key.Key_U: 17, Qt.Key.Key_I: 18, Qt.Key.Key_O: 19, Qt.Key.Key_P: 20
+    }
 
     def __init__(self, controller):
         super().__init__()
@@ -107,7 +115,7 @@ class RcyView(QMainWindow):
         enabled = self.playback_tempo_checkbox.isChecked()
         
         # Update controller
-        # DJP: self.controller.set_playback_tempo(enabled, bpm)
+        self.controller.set_playback_tempo(enabled, bpm)
     
     # Removed on_playback_tempo_changed method as dropdown has been removed
         
@@ -775,18 +783,65 @@ class RcyView(QMainWindow):
         
     def window_key_press(self, event):
         """Handle Qt key press events for the entire window"""
-        print(f"Qt window key press - Key: {event.key()}, Modifiers: {event.modifiers()}")
+        key = event.key()
         
-        # Check for spacebar (Qt.Key_Space is 32)
-        if event.key() == Qt.Key.Key_Space:
-            print("Spacebar press detected! Toggling playback...")
+        # Spacebar - toggle playback
+        if key == Qt.Key.Key_Space:
             self.toggle_playback()
             return
         
-        # 'r' key handler removed - no longer needed for clearing markers
+        # Segment shortcuts - ultra-fast lookup
+        segment_index = self._get_segment_index_from_key(key)
+        if segment_index is not None:
+            self._play_segment_by_index(segment_index)
+            return
                 
         # Default processing
         super().keyPressEvent(event)
+    
+    def _get_segment_index_from_key(self, key):
+        """Ultra-fast key to segment index mapping. Returns 1-based index or None."""
+        return self.SEGMENT_KEY_MAP.get(key)
+    
+    def _play_segment_by_index(self, segment_index):
+        """Play segment by 1-based index. Ultra-fast, no error messages."""
+        segments = self.controller.model.get_segments()
+        if not segments:
+            return
+        
+        # Calculate number of actual segments (N boundary points create N+1 segments)
+        num_segments = len(segments) + 1
+        if segment_index > num_segments:
+            return
+        
+        data_length = len(self.controller.model.data_left)
+        
+        # Map segment index to boundaries
+        # Note: segments[0] might be 0, so we need to handle the first segment specially
+        if segment_index == 1:
+            # First segment: [0, segments[1]] if segments[0] == 0, else [0, segments[0]]
+            start_sample = 0
+            if len(segments) > 1 and segments[0] == 0:
+                end_sample = segments[1]
+            else:
+                end_sample = segments[0]
+        elif segment_index <= len(segments):
+            # Middle segments: [segments[K-1], segments[K]]
+            start_sample = segments[segment_index - 1]
+            end_sample = segments[segment_index]
+        else:
+            # Last segment: [segments[-1], data_length]
+            start_sample = segments[-1]
+            end_sample = data_length
+        
+        # Convert to time and play
+        sample_rate = self.controller.model.sample_rate
+        start_time = start_sample / sample_rate
+        end_time = end_sample / sample_rate
+        
+        # Highlight and play
+        self.highlight_active_segment(start_time, end_time)
+        self.controller.model.play_segment(start_time, end_time)
         
     def toggle_playback(self):
         """Toggle playback between start and stop"""

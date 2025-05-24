@@ -99,14 +99,14 @@ def resample_to_standard_rate(segment, adjusted_sample_rate, target_sample_rate=
             left_channel, 
             orig_sr=adjusted_sample_rate, 
             target_sr=target_sample_rate,
-            res_type='kaiser_fast'  # Faster method that's still good quality
+            res_type='kaiser_best'  # Higher quality resampling, less aliasing
         )
         
         right_resampled = librosa.resample(
             right_channel, 
             orig_sr=adjusted_sample_rate, 
             target_sr=target_sample_rate,
-            res_type='kaiser_fast'
+            res_type='kaiser_best'
         )
         
         # Recombine channels
@@ -117,7 +117,7 @@ def resample_to_standard_rate(segment, adjusted_sample_rate, target_sample_rate=
             segment, 
             orig_sr=adjusted_sample_rate, 
             target_sr=target_sample_rate,
-            res_type='kaiser_fast'  # Faster method that's still good quality
+            res_type='kaiser_best'  # Higher quality resampling, less aliasing
         )
     
     return resampled
@@ -260,14 +260,19 @@ def process_segment_for_output(
     # Store the original adjusted rate for return value
     output_sample_rate = adjusted_sample_rate
     
-    # Stage 4: Resample to standard sample rate if for export
-    if for_export and resample_on_export and playback_tempo_enabled:
-        # Only resample if tempo adjustment was actually applied
-        if adjusted_sample_rate != sample_rate:
+    # Stage 4: Resample to standard sample rate for playback or export
+    if playback_tempo_enabled and adjusted_sample_rate != sample_rate:
+        if for_export and resample_on_export:
+            # For export, resample and use original sample rate in WAV header
             segment = resample_to_standard_rate(
                 segment, adjusted_sample_rate, sample_rate, is_stereo
             )
-            # For export, we'll use the original sample rate in the WAV header
+            output_sample_rate = sample_rate
+        elif not for_export:
+            # For playback, always resample back to standard rate so audio system can play it
+            segment = resample_to_standard_rate(
+                segment, adjusted_sample_rate, sample_rate, is_stereo
+            )
             output_sample_rate = sample_rate
     
     # Stage 5: Apply tail fade
