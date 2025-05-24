@@ -127,7 +127,7 @@
     },
     "tailFade": {
       "enabled": false,
-      "durationMs": 10,
+      "durationMs": 200,
       "curve": "exponential"
     }
   }

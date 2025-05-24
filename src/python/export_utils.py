@@ -1,7 +1,6 @@
 # export_utils.py
 
 import os
-import numpy as np
 import soundfile as sf
 from midiutil import MIDIFile
 from config_manager import config

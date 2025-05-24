@@ -29,11 +29,7 @@ class RcyView(QMainWindow):
     def __init__(self, controller):
         super().__init__()
         self.controller = controller
-        self.start_marker = None
-        self.end_marker = None
-        self.start_marker_handle = None
-        self.end_marker_handle = None
-        self.dragging_marker = None
+        # Note: marker handling moved to waveform_view component
         
         # Active segment highlight
         self.active_segment_highlight = None
@@ -538,107 +534,8 @@ class RcyView(QMainWindow):
         main_layout.addLayout(button_layout)
         
 
-    def on_plot_click(self, event):
-        print("on_plot_click")
-        # Allow clicks in either waveform (top or bottom) for stereo display
-        if event.inaxes not in [self.ax_left, self.ax_right]:
-            return
-
-        modifiers = QApplication.keyboardModifiers()
-        print(f"    Modifiers value: {modifiers}")
-        print(f"    Is Control: {bool(modifiers & Qt.KeyboardModifier.ControlModifier)}")
-        print(f"    Is Shift: {bool(modifiers & Qt.KeyboardModifier.ShiftModifier)}")
-        print(f"    Is Alt: {bool(modifiers & Qt.KeyboardModifier.AltModifier)}")
-        print(f"    Is Meta: {bool(modifiers & Qt.KeyboardModifier.MetaModifier)}")
-        
-        # Using a more direct approach: if clicking on the first segment area, allow both marker and segment handling
-        # Get click position details to help debug
-        pos_info = ""
-        if event.xdata is not None:
-            # Get the view limits
-            x_min, x_max = event.inaxes.get_xlim()
-            # Determine if we're in first or last segment area
-            # 'current_slices' may not exist until update_slices is called
-            if getattr(self.controller, 'current_slices', None):
-                first_slice = self.controller.current_slices[0]
-                last_slice = self.controller.current_slices[-1]
-                total_time = self.controller.model.total_time
-                pos_info = (f"Click at x={event.xdata:.2f}, first_slice={first_slice:.2f}, "
-                           f"last_slice={last_slice:.2f}, total={total_time:.2f}")
-                print(pos_info)
-        
-        # PRIORITY 1: Check for keyboard modifiers first
-        # ==================================================
-        
-        # Shift+Click to force play the first segment (for easier access)
-        # This takes precedence over marker handling to ensure it always works
-        if modifiers & Qt.KeyboardModifier.ShiftModifier:
-            print(f"### Shift+Click detected - forcing first segment playback")
-            # Always use a very small value to ensure first segment
-            print(f"### Forcing first segment playback (0.01s)")
-            self.play_segment.emit(0.01)
-            return
-            
-        # Check for Ctrl+Alt (Option) combination for removing segments
-        if (modifiers & Qt.KeyboardModifier.ControlModifier) and (modifiers & Qt.KeyboardModifier.AltModifier):
-            print(f"Ctrl+Alt (Option) combination detected - removing segment at {event.xdata}")
-            self.remove_segment.emit(event.xdata)
-            return
-            
-        # Check for Alt+Cmd (Meta) combination for removing segments
-        if (modifiers & Qt.KeyboardModifier.AltModifier) and (modifiers & Qt.KeyboardModifier.MetaModifier):
-            print(f"Alt+Cmd combination detected - removing segment at {event.xdata}")
-            self.remove_segment.emit(event.xdata)
-            return
-            
-        # Add segment with Ctrl+Click
-        if modifiers & Qt.KeyboardModifier.ControlModifier:
-            print(f"Ctrl detected - adding segment at {event.xdata}")
-            self.add_segment.emit(event.xdata)
-            return
-            
-        # Add segment with Alt+Click
-        if modifiers & Qt.KeyboardModifier.AltModifier:
-            print(f"Alt detected - adding segment at {event.xdata}")
-            self.add_segment.emit(event.xdata)
-            return
-        
-        # PRIORITY 2: Check for marker interaction - now with improved marker detection
-        # ==================================================
-        
-        # Check if we're clicking near start marker (with enhanced detection)
-        start_marker_x = self.start_marker.get_xdata()[0] if self.start_marker and self.start_marker.get_visible() else None
-        print(f"Start marker at: {start_marker_x}")
-        
-        # Enhanced detection for start marker dragging - higher priority near the edge of waveform
-        if start_marker_x is not None and abs(event.xdata - start_marker_x) < 0.1:
-            print("Starting to drag start marker (enhanced detection)")
-            self.dragging_marker = 'start'
-            return
-            
-        # Check if we're clicking near end marker (with enhanced detection)
-        end_marker_x = self.end_marker.get_xdata()[0] if self.end_marker and self.end_marker.get_visible() else None
-        print(f"End marker at: {end_marker_x}")
-        
-        # Enhanced detection for end marker dragging
-        if end_marker_x is not None and abs(event.xdata - end_marker_x) < 0.1:
-            print("Starting to drag end marker (enhanced detection)")
-            self.dragging_marker = 'end'
-            return
-            
-        # Standard marker detection as fallback
-        if self.is_near_marker(event.xdata, event.ydata, self.start_marker, self.start_marker_handle):
-            print("Starting to drag start marker (standard detection)")
-            self.dragging_marker = 'start'
-            return
-        elif self.is_near_marker(event.xdata, event.ydata, self.end_marker, self.end_marker_handle):
-            print("Starting to drag end marker (standard detection)")
-            self.dragging_marker = 'end'
-            return
-                
-        # No modifiers - play segment at clicked position
-        print(f"### Emitting play_segment signal with click position: {event.xdata}")
-        self.play_segment.emit(event.xdata)
+    # on_plot_click method removed - was referencing undefined matplotlib axes
+    # Click handling is now done through waveform_view PyQtGraph implementation
             
     def is_near_marker(self, x, y, marker, marker_handle):
         """Check if coordinates are near the marker or its handle"""
@@ -744,28 +641,7 @@ class RcyView(QMainWindow):
             
             self.dragging_marker = None
     
-    def on_motion_notify(self, event):
-        """Handle mouse movement for dragging markers"""
-        if not self.dragging_marker or event.inaxes not in [self.ax_left, self.ax_right]:
-            return
-        
-        # Update marker position
-        if self.dragging_marker == 'start':
-            # Ensure start marker doesn't go past end marker
-            if self.end_marker.get_visible():
-                end_x = self.end_marker.get_xdata()[0]
-                if event.xdata >= end_x:
-                    return
-            self.set_start_marker(event.xdata)
-        elif self.dragging_marker == 'end':
-            # Ensure end marker doesn't go before start marker
-            if self.start_marker.get_visible():
-                start_x = self.start_marker.get_xdata()[0]
-                if event.xdata <= start_x:
-                    return
-            self.set_end_marker(event.xdata)
-        
-        self.canvas.draw()
+    # on_motion_notify method removed - was referencing undefined matplotlib axes
     
     def set_start_marker(self, x_pos):
         """Set the position of the start marker"""
@@ -854,26 +730,8 @@ class RcyView(QMainWindow):
             print(f"Toggle: Emulating click at center of view: {center_pos}")
             self.controller.play_segment(center_pos)
     
-    def on_key_press(self, event):
-        """Handle key press events"""
-        # Print in detail what key was pressed
-        print(f"Key pressed: {event.key}")
-        print(f"Key modifiers: {QApplication.keyboardModifiers()}")
-        
-        # Handle spacebar for play/stop toggle
-        if event.key == ' ' or event.key == 'space':
-            print("Spacebar detected! Toggling playback...")
-            self.toggle_playback()
-            return
-            
-        # 'r' key handlers removed - no longer needed for clearing markers
-            
-        # Allow key presses in either waveform for stereo display
-        if event.inaxes not in [self.ax_left, self.ax_right]:
-            return
-            
-        # 'c' key no longer needed for clearing markers
-        # Can be repurposed for other functionality
+    # on_key_press method removed - was referencing undefined matplotlib axes
+    # Key handling is now done through Qt's window_key_press method
     
     def on_segment_clicked(self, x_position):
         """Handle segment click events from waveform view."""
