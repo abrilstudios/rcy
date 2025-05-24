@@ -432,6 +432,11 @@ class WavAudioProcessor:
         print(f"Playback tempo updated: {self.playback_tempo_enabled}, "
               f"target={self.target_bpm} BPM, source={self.source_bpm:.2f} BPM")
         
+        # Update audio engine immediately with new tempo settings
+        self.audio_engine.set_playback_tempo(
+            self.playback_tempo_enabled, self.source_bpm, self.target_bpm
+        )
+        
         # Return the new playback ratio for convenience
         return self.get_playback_ratio()
         
@@ -511,6 +516,11 @@ class WavAudioProcessor:
             # Clear segments since they're now invalid
             self.segments = []
             
+            # UPDATE AUDIO ENGINE with new source data
+            self.audio_engine.set_source_audio(
+                self.data_left, self.data_right, self.sample_rate, self.is_stereo
+            )
+            
             # DEBUG: Print detailed information about the result
             print(f"DEBUG: Cut operation result:")
             print(f"DEBUG:   - Old total_time: {old_total_time}, New total_time: {self.total_time}")
@@ -531,6 +541,7 @@ class WavAudioProcessor:
                     print("DEBUG:   - New time is None")
             except TypeError:
                 print("WARNING: TypeError when printing debug info in cut_audio")
+            print(f"DEBUG:   - Audio engine updated with new source data")
             print(f"==== END AUDIO PROCESSOR CUT OPERATION ====\n")
             
             return True
