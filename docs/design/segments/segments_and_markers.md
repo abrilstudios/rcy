@@ -34,12 +34,10 @@ The key design point is that **segments and markers operate independently**. Mov
 This has implications for features that might need to consider both systems:
 
 1. For loop mode:
-   - Should it loop between markers (like spacebar playback does)?
-   - Or should it loop the segment that was clicked (like click-based playback does)?
+   - Looping must loop between markers (like spacebar playback does) going from start to end and back to start.
 
 2. For exporting:
-   - Should it export all segments?
-   - Or should it only export segments between start and end markers?
+   - All segments from 0 to sample end (not marker end) should be included. 
 
 ## User Experience 
 

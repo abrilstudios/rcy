@@ -6,6 +6,7 @@ import pathlib
 import sys
 from config_manager import config
 from error_handler import ErrorHandler
+from segment_manager import get_segment_manager, SegmentObserver
 
 # Import the high-performance audio engine
 from high_performance_audio import ImprovedAudioEngine, PlaybackMode
@@ -17,18 +18,37 @@ from audio_utils import (
 )
 
 
+class AudioEngineObserver(SegmentObserver):
+    """Observer that keeps audio engine synchronized with segment changes."""
+    
+    def __init__(self, audio_engine):
+        self.audio_engine = audio_engine
+    
+    def on_segments_changed(self, operation: str, **kwargs) -> None:
+        """Update audio engine when segments change."""
+        try:
+            # Audio engine needs to know about segment changes for playback
+            # This ensures the engine stays synchronized with current segment data
+            if hasattr(self.audio_engine, 'on_segments_updated'):
+                self.audio_engine.on_segments_updated(operation, **kwargs)
+        except Exception as e:
+            print(f"Error updating audio engine on segment change: {e}")
+
+
 class WavAudioProcessor:
     def __init__(self,
                  duration = 2.0,
                  sample_rate=44100,
                  preset_id='amen_classic'):
-        self.segments = []
         self.preset_id = preset_id
         self.preset_info = None
         self.is_playing = False
         self.playback_just_ended = False  # Flag to indicate playback has just ended
         self.is_stereo = False
         self.channels = 1
+        
+        # Initialize centralized segment management
+        self.segment_manager = get_segment_manager()
         
         # Initialize high-performance audio engine
         print("Using high-performance audio engine")
@@ -38,6 +58,10 @@ class WavAudioProcessor:
             blocksize=512  # Low latency block size
         )
         self.audio_engine.set_playback_ended_callback(self._on_playback_ended)
+        
+        # Set up observer to keep audio engine synchronized with segment changes
+        self.audio_observer = AudioEngineObserver(self.audio_engine)
+        self.segment_manager.add_observer(self.audio_observer)
         
         # Initialize playback tempo settings
         self._init_playback_tempo()
@@ -116,7 +140,7 @@ class WavAudioProcessor:
             
             # Create time array based on the actual data length
             self.time = np.linspace(0, self.total_time, len(self.data_left))
-            self.segments = []
+            self.segment_manager.clear_boundaries()
             
             # Initialize audio engine with source data
             self.audio_engine.set_source_audio(
@@ -222,13 +246,16 @@ class WavAudioProcessor:
         # Create segment points including start and end
         # This gives num_measures * measure_resolution + 1 points
         # For 2 measures with resolution 4, this gives 9 points (0, 1/8, 2/8, ..., 8/8)
-        self.segments = [int(i * samples_per_division) for i in range(total_divisions + 1)]
+        new_boundaries = [int(i * samples_per_division) for i in range(total_divisions + 1)]
         
         # Ensure last point is exactly at the end of the audio
-        if self.segments[-1] != total_samples:
-            self.segments[-1] = total_samples
+        if new_boundaries[-1] != total_samples:
+            new_boundaries[-1] = total_samples
+        
+        # Update centralized segment storage
+        self.segment_manager.set_boundaries(new_boundaries, self.sample_rate)
             
-        return self.segments
+        return new_boundaries
 
     def split_by_transients(self, threshold=None):
         # Get transient detection parameters from config
@@ -261,18 +288,23 @@ class WavAudioProcessor:
             post_max=post_max,
         )
         onset_samples = librosa.frames_to_samples(onsets)
-        self.segments = onset_samples.tolist()
-        return self.segments
+        new_boundaries = onset_samples.tolist()
+        
+        # Update centralized segment storage
+        self.segment_manager.set_boundaries(new_boundaries, self.sample_rate)
+        
+        return new_boundaries
 
     def remove_segment(self, click_time):
         """Remove the segment closest to click_time."""
         try:
-            if not self.segments:
+            boundaries = self.segment_manager.get_boundaries()
+            if not boundaries:
                 raise ValueError("No segments to remove")
+            
             click_sample = int(click_time * self.sample_rate)
-            closest_index = min(range(len(self.segments)),
-                                key=lambda i: abs(self.segments[i] - click_sample))
-            del self.segments[closest_index]
+            closest_boundary = min(boundaries, key=lambda b: abs(b - click_sample))
+            self.segment_manager.remove_boundary(closest_boundary)
         except Exception as e:
             ErrorHandler.log_exception(e, context="WavAudioProcessor.remove_segment")
             return
@@ -280,15 +312,15 @@ class WavAudioProcessor:
     def add_segment(self, click_time):
         """Add a new segment at click_time."""
         try:
-            new_segment = int(click_time * self.sample_rate)
-            self.segments.append(new_segment)
-            self.segments.sort()
+            new_boundary = int(click_time * self.sample_rate)
+            self.segment_manager.add_boundary(new_boundary)
         except Exception as e:
             ErrorHandler.log_exception(e, context="WavAudioProcessor.add_segment")
             return
 
     def get_segments(self):
-        return self.segments
+        """Get segment boundaries for backward compatibility."""
+        return self.segment_manager.get_boundaries()
 
     def get_segment_boundaries(self, click_time):
         click_sample = int(click_time * self.sample_rate)
@@ -514,7 +546,7 @@ class WavAudioProcessor:
                 return False
             
             # Clear segments since they're now invalid
-            self.segments = []
+            self.segment_manager.clear_boundaries()
             
             # UPDATE AUDIO ENGINE with new source data
             self.audio_engine.set_source_audio(

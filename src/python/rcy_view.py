@@ -5,6 +5,7 @@ import os
 from config_manager import config
 from waveform_view import create_waveform_view
 from error_handler import ErrorHandler
+from segment_manager import get_segment_manager
 import numpy as np
 
 class RcyView(QMainWindow):
@@ -804,43 +805,20 @@ class RcyView(QMainWindow):
         return self.SEGMENT_KEY_MAP.get(key)
     
     def _play_segment_by_index(self, segment_index):
-        """Play segment by 1-based index. Ultra-fast, no error messages."""
-        segments = self.controller.model.get_segments()
-        if not segments:
-            return
+        """Ultra-fast segment playback using SegmentManager O(1) lookup."""
+        segment_manager = get_segment_manager()
         
-        # Calculate number of actual segments (N boundary points create N+1 segments)
-        num_segments = len(segments) + 1
-        if segment_index > num_segments:
-            return
+        # Get segment boundaries directly from SegmentManager
+        segment_bounds = segment_manager.get_segment_by_index(segment_index)
+        if not segment_bounds:
+            return  # Invalid segment index
         
-        data_length = len(self.controller.model.data_left)
+        start_time, end_time = segment_bounds
         
-        # Map segment index to boundaries
-        # Note: segments[0] might be 0, so we need to handle the first segment specially
-        if segment_index == 1:
-            # First segment: [0, segments[1]] if segments[0] == 0, else [0, segments[0]]
-            start_sample = 0
-            if len(segments) > 1 and segments[0] == 0:
-                end_sample = segments[1]
-            else:
-                end_sample = segments[0]
-        elif segment_index <= len(segments):
-            # Middle segments: [segments[K-1], segments[K]]
-            start_sample = segments[segment_index - 1]
-            end_sample = segments[segment_index]
-        else:
-            # Last segment: [segments[-1], data_length]
-            start_sample = segments[-1]
-            end_sample = data_length
-        
-        # Convert to time and play
-        sample_rate = self.controller.model.sample_rate
-        start_time = start_sample / sample_rate
-        end_time = end_sample / sample_rate
-        
-        # Highlight and play
+        # Highlight the segment in the UI
         self.highlight_active_segment(start_time, end_time)
+        
+        # Play the segment
         self.controller.model.play_segment(start_time, end_time)
         
     def toggle_playback(self):
