@@ -543,6 +543,15 @@ class RcyController:
             print(f"Playback mode changed from '{self.playback_mode}' to '{mode}'")
             self.playback_mode = mode
             
+            # Update playback mode in audio engine
+            from high_performance_audio import PlaybackMode
+            mode_map = {
+                "one-shot": PlaybackMode.ONE_SHOT,
+                "loop": PlaybackMode.LOOP,
+                "loop-reverse": PlaybackMode.LOOP_REVERSE
+            }
+            self.model.audio_engine.set_playback_mode(mode_map[mode])
+            
             # Update playback mode in view
             self.view.update_playback_mode_menu(mode)
                 
