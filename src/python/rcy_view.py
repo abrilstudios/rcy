@@ -703,9 +703,10 @@ class RcyView(QMainWindow):
         # Update the waveform view with slices and total time
         self.waveform_view.update_slices(slice_times, total_time)
         
-        # Update controller with marker positions
-        self.controller.on_start_marker_changed(start_pos)
-        self.controller.on_end_marker_changed(end_pos)
+        # Update controller's internal marker position tracking without triggering tempo updates
+        # This is different from on_start/end_marker_changed which should only be called for user dragging
+        self.controller.start_marker_pos = start_pos
+        self.controller.end_marker_pos = end_pos
         
         # Store the current slices in the controller
         self.controller.current_slices = slice_times

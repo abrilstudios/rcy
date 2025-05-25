@@ -150,23 +150,65 @@ class SegmentManager:
             self._store.set_internal_boundaries(positions)
             self._notify_observers('split', position_count=len(positions))
     
+    def split_by_measures(self, num_measures: int, measure_resolution: int, total_time: float) -> None:
+        """Split audio into equal divisions based on musical measures using consistent position calculation."""
+        with self._lock:
+            total_divisions = num_measures * measure_resolution
+            time_per_division = total_time / total_divisions
+            
+            # Create internal split positions using consistent time-to-position calculation
+            internal_positions = []
+            for i in range(1, total_divisions):  # Skip start (0) and end (total_divisions)
+                time = i * time_per_division
+                position = self._time_to_position(time)
+                internal_positions.append(position)
+            
+            # Update boundaries
+            self._store.set_internal_boundaries(internal_positions)
+            self._notify_observers('split', position_count=len(internal_positions))
+    
+    def _time_to_position(self, time: float) -> int:
+        """Convert time to sample position using consistent calculation."""
+        return int(time * self._store._sample_rate)
+    
+    def _position_to_time(self, position: int) -> float:
+        """Convert sample position to time using consistent calculation."""
+        return position / self._store._sample_rate
+    
     def add_segment_boundary(self, time: float) -> None:
         """Add segment boundary at time position."""
         with self._lock:
-            sample_rate = self._store._sample_rate
-            position = int(time * sample_rate)
+            position = self._time_to_position(time)
             self._store.add_boundary(position)
             self._notify_observers('add', time=time)
     
     def remove_segment_boundary(self, time: float) -> bool:
         """Remove boundary closest to time position."""
         with self._lock:
-            sample_rate = self._store._sample_rate
-            position = int(time * sample_rate)
-            removed = self._store.remove_boundary(position)
-            if removed:
-                self._notify_observers('remove', time=time)
-            return removed
+            click_position = self._time_to_position(time)
+            
+            # Find closest boundary to click position (excluding start/end)
+            boundaries = self._store.get_boundaries()
+            closest_boundary = None
+            min_distance = float('inf')
+            
+            for boundary in boundaries:
+                # Skip start and end boundaries
+                if boundary == 0 or boundary == self._store._total_samples:
+                    continue
+                    
+                distance = abs(boundary - click_position)
+                if distance < min_distance:
+                    min_distance = distance
+                    closest_boundary = boundary
+            
+            if closest_boundary is not None:
+                removed = self._store.remove_boundary(closest_boundary)
+                if removed:
+                    self._notify_observers('remove', time=time)
+                return removed
+            
+            return False
     
     def clear_segments(self) -> None:
         """Reset to single segment covering entire file."""
