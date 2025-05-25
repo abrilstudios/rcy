@@ -157,11 +157,81 @@ class ImprovedAudioEngine:
         self._callback_lock = threading.Lock()
         self._underrun_count = 0
         
+        # Micro-crossfade for pop elimination (applied during queuing)
+        self._fade_samples = int(0.002 * sample_rate)  # 2ms fade
+        
+        # Stream-level fade-in/fade-out for pop elimination
+        self._stream_fade_in = False
+        self._stream_fade_out = False
+        self._stream_fade_position = 0
+        self._pending_stop = False
         
         # Event callbacks
         self.playback_ended_callback: Optional[Callable] = None
         
         print(f"ImprovedAudioEngine initialized: {sample_rate}Hz, {channels}ch, blocksize={blocksize}")
+    
+    def _apply_end_fade(self, segment_data: np.ndarray) -> None:
+        """
+        Apply 2ms fade to segment end to eliminate pops.
+        Assumes musical segments are always > 2ms (which they are).
+        """
+        fade_curve = np.linspace(1.0, 0.0, self._fade_samples) ** 2
+        start_idx = len(segment_data) - self._fade_samples
+        
+        if segment_data.ndim == 1:
+            segment_data[start_idx:] *= fade_curve  # Mono
+        else:
+            # Stereo - reshape fade curve for broadcasting
+            fade_curve_stereo = fade_curve[:, np.newaxis]  # Shape: (88, 1)
+            segment_data[start_idx:, :] *= fade_curve_stereo
+    
+    def _apply_stream_fade(self, outdata: np.ndarray, start_frame: int, num_frames: int):
+        """
+        Apply stream-level fade-in/fade-out to eliminate start/stop pops.
+        Called from audio callback for each block of copied audio data.
+        """
+        if not (self._stream_fade_in or self._stream_fade_out):
+            return
+            
+        for i in range(num_frames):
+            frame_idx = start_frame + i
+            
+            # Calculate fade multiplier
+            fade_multiplier = 1.0
+            
+            if self._stream_fade_in:
+                # Fade in from 0 to 1 over _fade_samples
+                if self._stream_fade_position < self._fade_samples:
+                    fade_multiplier = self._stream_fade_position / self._fade_samples
+                    self._stream_fade_position += 1
+                else:
+                    # Fade-in complete
+                    self._stream_fade_in = False
+                    fade_multiplier = 1.0
+            
+            elif self._stream_fade_out:
+                # Fade out from 1 to 0 over _fade_samples
+                if self._stream_fade_position < self._fade_samples:
+                    fade_multiplier = 1.0 - (self._stream_fade_position / self._fade_samples)
+                    self._stream_fade_position += 1
+                else:
+                    # Fade-out complete - stop playback
+                    self._stream_fade_out = False
+                    self._pending_stop = True
+                    fade_multiplier = 0.0
+            
+            # Apply fade to output data
+            if self.channels == 1:
+                outdata[frame_idx, 0] *= fade_multiplier
+            else:
+                outdata[frame_idx, 0] *= fade_multiplier
+                outdata[frame_idx, 1] *= fade_multiplier
+        
+        # Handle pending stop after fade-out
+        if self._pending_stop:
+            self._pending_stop = False
+            self.is_playing = False
     
     def set_source_audio(self, data_left: np.ndarray, data_right: np.ndarray, 
                         sample_rate: int, is_stereo: bool):
@@ -295,6 +365,10 @@ class ImprovedAudioEngine:
                                 outdata[frames_filled:frames_filled + copy_frames, 1] = mono_data
                         
                         self.current_position += copy_frames
+                        
+                        # Apply stream-level fade-in/fade-out for pop elimination
+                        self._apply_stream_fade(outdata, frames_filled - copy_frames, copy_frames)
+                        
                         frames_filled += copy_frames
                     
                     # Check if we've finished the current segment
@@ -346,31 +420,32 @@ class ImprovedAudioEngine:
             start_sample = int(start_time * self.source_sample_rate)
             end_sample = int(end_time * self.source_sample_rate)
             
-            # Get tail fade settings from config
-            tail_fade_config = config.get_setting("audio", "tailFade", {})
-            tail_fade_enabled = tail_fade_config.get("enabled", False)
-            fade_duration_ms = tail_fade_config.get("durationMs", 10)
-            fade_curve = tail_fade_config.get("curve", "exponential")
+            # TODO: Use pre-computed zero crossings from segment manager
+            # For now, use raw boundaries (zero crossing optimization in next phase)
             
+            # LIGHTWEIGHT REAL-TIME PLAYBACK PATH
+            # Direct segment extraction - bypass heavy processing pipeline for musical performance
             
-            # Process the segment through the pipeline
-            processed_data, output_sample_rate = process_segment_for_output(
-                self.source_data_left,
-                self.source_data_right,
-                start_sample,
-                end_sample,
-                self.source_sample_rate,
-                self.source_is_stereo,
-                reverse,
-                self.playback_tempo_enabled,
-                self.source_bpm,
-                self.target_bpm,
-                tail_fade_enabled,
-                fade_duration_ms,
-                fade_curve,
-                for_export=False,
-                resample_on_export=True
-            )
+            if self.source_is_stereo:
+                # Stereo: extract from both channels and stack
+                segment_left = self.source_data_left[start_sample:end_sample]
+                segment_right = self.source_data_right[start_sample:end_sample]
+                processed_data = np.column_stack((segment_left, segment_right))
+            else:
+                # Mono: extract single channel
+                processed_data = self.source_data_left[start_sample:end_sample]
+            
+            # Apply reverse if needed (lightweight operation)
+            if reverse:
+                processed_data = np.flipud(processed_data)
+            
+            # Apply micro-crossfade to eliminate pops (pre-computed, zero callback overhead)
+            self._apply_end_fade(processed_data)
+            
+            # Use original sample rate for real-time playback (no resampling)
+            output_sample_rate = self.source_sample_rate
+            
+            print(f"Lightweight playback: {len(processed_data)} samples at {output_sample_rate}Hz, reverse={reverse}")
             
             # Create processed segment
             segment = ProcessedSegment(
@@ -413,7 +488,10 @@ class ImprovedAudioEngine:
         if self.loop_enabled:
             self._queue_loop_segments(start_time, end_time, reverse)
         
-        # Start playback
+        # Start playback with fade-in to eliminate pops
+        self._stream_fade_in = True
+        self._stream_fade_out = False
+        self._stream_fade_position = 0
         self.is_playing = True
         print(f"Started playback: {start_time:.2f}s to {end_time:.2f}s, mode={self.playback_mode.value}")
         return True
@@ -431,12 +509,20 @@ class ImprovedAudioEngine:
             self.queue_segment(start_time, end_time, initial_reverse)      # Back to original
     
     def stop_playback(self):
-        """Stop current playback"""
-        self.is_playing = False
+        """Stop current playback with fade-out to eliminate pops"""
+        if self.is_playing:
+            # Trigger stream fade-out instead of immediate stop
+            self._stream_fade_out = True
+            self._stream_fade_in = False
+            self._stream_fade_position = 0
+            print("Playback stopped")
+        else:
+            # Already stopped
+            self.is_playing = False
+        
         self.segment_buffer.clear()
         self.current_segment = None
         self.current_position = 0
-        print("Playback stopped")
     
     def is_playing_audio(self) -> bool:
         """Check if audio is currently playing"""

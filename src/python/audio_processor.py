@@ -236,25 +236,9 @@ class WavAudioProcessor:
         
         Returns:
             List of sample positions for the segments
-        
-        For example, with 2 measures and resolution 4:
-        - We should create 8 segments (2 measures × 4 divisions)
-        - This requires 9 slice points (to define the 8 segments)
         """
-        # Get total samples and calculate division sizes
-        total_samples = len(self.data_left)
-        total_divisions = num_measures * measure_resolution
-        samples_per_division = total_samples / total_divisions
-        
-        # Create internal split positions (excluding start and end)
-        # For 2 measures with resolution 4, this gives 7 internal points (1/8, 2/8, ..., 7/8)
-        internal_positions = []
-        for i in range(1, total_divisions):  # Skip start (0) and end (total_divisions)
-            position = int(i * samples_per_division)
-            internal_positions.append(position)
-        
-        # Update SegmentManager (automatically adds start/end boundaries)
-        self.segment_manager.split_by_positions(internal_positions)
+        # Use segment manager's centralized split method with consistent position calculation
+        self.segment_manager.split_by_measures(num_measures, measure_resolution, self.total_time)
         
         # Return all boundaries for backward compatibility
         return self.segment_manager.get_boundaries()
