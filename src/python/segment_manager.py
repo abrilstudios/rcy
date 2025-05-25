@@ -73,16 +73,11 @@ class SegmentStore:
         """Remove boundary at position (cannot remove start/end)."""
         with self._lock:
             if position == 0 or position == self._total_samples:
-                print(f"DEBUG: Cannot remove start/end boundary at position {position}")
                 return False  # Cannot remove start/end boundaries
             
             if position in self._boundaries:
-                print(f"DEBUG: Removing boundary at position {position}, boundaries before: {len(self._boundaries)}")
                 self._boundaries.remove(position)
-                print(f"DEBUG: Boundaries after removal: {len(self._boundaries)}")
                 return True
-            else:
-                print(f"DEBUG: Boundary at position {position} not found in {self._boundaries}")
             return False
     
     def get_boundaries(self) -> List[int]:
