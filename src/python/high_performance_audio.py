@@ -331,9 +331,14 @@ class ImprovedAudioEngine:
     def _handle_loop_continuation(self):
         """Handle loop continuation logic"""
         # This would be called from the audio callback to handle looping
-        # For now, we'll implement a simple mechanism to signal that we need
-        # the next segment to be queued
-        pass
+        # Re-queue the current loop segment to continue seamless playback
+        if hasattr(self, '_loop_start_time') and hasattr(self, '_loop_end_time'):
+            print("Re-queuing loop segment for continuous playback")
+            self.queue_segment(self._loop_start_time, self._loop_end_time, self._loop_reverse)
+        else:
+            # Fallback: end playback if we don't have loop parameters
+            print("WARNING: No loop parameters available, ending playback")
+            self._end_playback()
     
     def _end_playback(self):
         """Handle end of playback"""
@@ -428,6 +433,11 @@ class ImprovedAudioEngine:
         if not self.queue_segment(start_time, end_time, reverse):
             return False
         
+        # Store loop parameters for continuous re-queuing
+        self._loop_start_time = start_time
+        self._loop_end_time = end_time
+        self._loop_reverse = reverse
+        
         # Handle looping by pre-queuing additional segments
         if self.loop_enabled:
             self._queue_loop_segments(start_time, end_time, reverse)
@@ -455,6 +465,15 @@ class ImprovedAudioEngine:
         self.segment_buffer.clear()
         self.current_segment = None
         self.current_position = 0
+        
+        # Clear loop parameters
+        if hasattr(self, '_loop_start_time'):
+            delattr(self, '_loop_start_time')
+        if hasattr(self, '_loop_end_time'):
+            delattr(self, '_loop_end_time')
+        if hasattr(self, '_loop_reverse'):
+            delattr(self, '_loop_reverse')
+            
         print("Playback stopped")
     
     def is_playing_audio(self) -> bool:
