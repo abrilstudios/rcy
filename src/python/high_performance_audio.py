@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from enum import Enum
 import time
 
-from audio_utils import process_segment_for_output
+from audio_utils import process_segment_for_output, process_segment_for_playback
 from config_manager import config
 from error_handler import ErrorHandler
 
@@ -350,8 +350,8 @@ class ImprovedAudioEngine:
             fade_duration_ms = tail_fade_config.get("durationMs", 10)
             fade_curve = tail_fade_config.get("curve", "exponential")
             
-            # Process the segment through the pipeline
-            processed_data, output_sample_rate = process_segment_for_output(
+            # Process the segment through the lightweight playback pipeline
+            processed_data, output_sample_rate = process_segment_for_playback(
                 self.source_data_left,
                 self.source_data_right,
                 start_sample,

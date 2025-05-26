@@ -13,7 +13,7 @@ from high_performance_audio import ImprovedAudioEngine, PlaybackMode
 
 # Import audio processing functions from shared utils
 from audio_utils import (
-    extract_segment, apply_playback_tempo, resample_to_standard_rate,
+    extract_segment, resample_to_standard_rate,
     apply_tail_fade, reverse_segment, process_segment_for_output
 )
 
