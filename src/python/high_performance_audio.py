@@ -351,14 +351,13 @@ class ImprovedAudioEngine:
             fade_curve = tail_fade_config.get("curve", "exponential")
             
             # Process the segment through the lightweight playback pipeline
-            processed_data, output_sample_rate = process_segment_for_playback(
+            processed_data = process_segment_for_playback(
                 self.source_data_left,
                 self.source_data_right,
                 start_sample,
                 end_sample,
                 self.source_sample_rate,
                 self.source_is_stereo,
-                reverse,
                 self.playback_tempo_enabled,
                 self.source_bpm,
                 self.target_bpm,
@@ -368,6 +367,9 @@ class ImprovedAudioEngine:
                 for_export=False,
                 resample_on_export=True
             )
+            
+            # Use original sample rate since no tempo processing in playback pipeline
+            output_sample_rate = self.source_sample_rate
             
             # Create processed segment
             segment = ProcessedSegment(

@@ -333,32 +333,9 @@ def process_segment_for_playback(
         data_left, data_right, start_sample, end_sample, is_stereo
     )
     
-    # Stage 2: Calculate fake sample rate for tempo adjustment
-    adjusted_sample_rate = calculate_tempo_adjusted_sample_rate(
-        sample_rate, source_bpm, target_bpm, playback_tempo_enabled
-    )
-    
-    # Store the original adjusted rate for return value
-    output_sample_rate = adjusted_sample_rate
-    
-    # Stage 3: Resample to standard sample rate for playback or export
-    if playback_tempo_enabled and adjusted_sample_rate != sample_rate:
-        if for_export and resample_on_export:
-            # For export, resample and use original sample rate in WAV header
-            segment = resample_to_standard_rate(
-                segment, adjusted_sample_rate, sample_rate, is_stereo
-            )
-            output_sample_rate = sample_rate
-        elif not for_export:
-            # For playback, always resample back to standard rate so audio system can play it
-            segment = resample_to_standard_rate(
-                segment, adjusted_sample_rate, sample_rate, is_stereo
-            )
-            output_sample_rate = sample_rate
-    
-    # Stage 4: Apply tail fade
+    # Stage 2: Apply tail fade if needed
     #segment = apply_tail_fade(
-    #    segment, adjusted_sample_rate, is_stereo, tail_fade_enabled, fade_duration_ms, fade_curve
+    #    segment, sample_rate, is_stereo, tail_fade_enabled, fade_duration_ms, fade_curve
     #)
     
-    return segment, output_sample_rate
+    return segment
