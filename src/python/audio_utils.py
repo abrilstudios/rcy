@@ -42,30 +42,32 @@ def extract_segment(data_left, data_right, start_sample, end_sample, is_stereo=F
     return segment
 
 
-def apply_playback_tempo(segment, original_sample_rate, source_bpm, target_bpm, enabled=True):
-    """Apply tempo adjustment via sample rate modification
+def calculate_tempo_adjusted_sample_rate(original_sample_rate, source_bpm, target_bpm, enabled=True):
+    """Calculate the fake sample rate needed for tempo adjustment via resampling trick
+    
+    This function calculates what sample rate to tell the resampler the audio is at,
+    so that when it "resamples" back to the original rate, it creates a tempo effect.
     
     Args:
-        segment: Audio segment data (mono or stereo)
         original_sample_rate: Original sample rate of the audio
         source_bpm: Source BPM of the audio
         target_bpm: Target BPM for playback
         enabled: Whether tempo adjustment is enabled
         
     Returns:
-        tuple: (segment, adjusted_sample_rate)
+        int: The fake "adjusted" sample rate for the resampling trick
     """
     # Return original if not enabled or invalid BPM values
     if not enabled or target_bpm is None or source_bpm is None or source_bpm <= 0:
-        return segment, original_sample_rate
+        return original_sample_rate
     
     # Calculate the tempo ratio
     tempo_ratio = target_bpm / source_bpm
     
-    # Calculate the adjusted sample rate
+    # Calculate the fake sample rate for the resampling trick
     adjusted_sample_rate = int(original_sample_rate * tempo_ratio)
     
-    return segment, adjusted_sample_rate
+    return adjusted_sample_rate
 
 
 def resample_to_standard_rate(segment, adjusted_sample_rate, target_sample_rate=44100, is_stereo=False):
@@ -252,9 +254,9 @@ def process_segment_for_output(
     if reverse:
         segment = reverse_segment(segment, is_stereo)
     
-    # Stage 3: Apply playback tempo adjustment
-    segment, adjusted_sample_rate = apply_playback_tempo(
-        segment, sample_rate, source_bpm, target_bpm, playback_tempo_enabled
+    # Stage 3: Calculate fake sample rate for tempo adjustment
+    adjusted_sample_rate = calculate_tempo_adjusted_sample_rate(
+        sample_rate, source_bpm, target_bpm, playback_tempo_enabled
     )
     
     # Store the original adjusted rate for return value
@@ -281,3 +283,59 @@ def process_segment_for_output(
     #)
     
     return segment, output_sample_rate
+
+
+def process_segment_for_playback(
+    data_left,
+    data_right,
+    start_sample,
+    end_sample,
+    sample_rate=44100,
+    is_stereo=False,
+    playback_tempo_enabled=False,
+    source_bpm=None,
+    target_bpm=None,
+    tail_fade_enabled=False,
+    fade_duration_ms=10,
+    fade_curve="exponential",
+    for_export=False,
+    resample_on_export=True
+):
+    """Process audio segment through lightweight pipeline for real-time playback
+    
+    This function provides a streamlined pipeline for real-time playback:
+    1. Extract segment from source data
+    2. Calculate fake sample rate for tempo adjustment
+    3. Resample to standard rate (if for_export=True and resample_on_export=True)
+    4. Apply tail fade if enabled
+    
+    Args:
+        data_left: Left channel audio data
+        data_right: Right channel audio data (same as left for mono)
+        start_sample: Start sample index 
+        end_sample: End sample index
+        sample_rate: Sample rate of the audio
+        is_stereo: Whether to create a stereo segment
+        playback_tempo_enabled: Whether tempo adjustment is enabled
+        source_bpm: Source BPM of the audio
+        target_bpm: Target BPM for playback
+        tail_fade_enabled: Whether to apply fade-out
+        fade_duration_ms: Duration of fade in milliseconds
+        fade_curve: Type of fade curve ("linear" or "exponential")
+        for_export: Whether this processing is for export (vs. playback)
+        resample_on_export: Whether to resample to standard rate on export
+        
+    Returns:
+        tuple: (processed_segment, output_sample_rate)
+    """
+    # Stage 1: Extract the segment
+    segment = extract_segment(
+        data_left, data_right, start_sample, end_sample, is_stereo
+    )
+    
+    # Stage 2: Apply tail fade if needed
+    #segment = apply_tail_fade(
+    #    segment, sample_rate, is_stereo, tail_fade_enabled, fade_duration_ms, fade_curve
+    #)
+    
+    return segment

@@ -13,7 +13,7 @@ from high_performance_audio import ImprovedAudioEngine, PlaybackMode
 
 # Import audio processing functions from shared utils
 from audio_utils import (
-    extract_segment, apply_playback_tempo, resample_to_standard_rate,
+    extract_segment, resample_to_standard_rate,
     apply_tail_fade, reverse_segment, process_segment_for_output
 )
 
@@ -328,11 +328,6 @@ class WavAudioProcessor:
         """
         print(f"### Model play_segment called with start_time={start_time}, end_time={end_time}, reverse={reverse}")
         print(f"### High-performance play: {start_time:.2f}s to {end_time:.2f}s, reverse={reverse}")
-        
-        # Update engine settings
-        self.audio_engine.set_playback_tempo(
-            self.playback_tempo_enabled, self.source_bpm, self.target_bpm
-        )
         
         # Play the segment
         self.is_playing = True

@@ -106,21 +106,32 @@ class TestMIDITimeSignature:
         from export_utils import ExportUtils
         
         # Create a simple model-like object with the required attributes
+        class MockSegmentManager:
+            def __init__(self, audio_duration, sample_rate):
+                self.total_duration = audio_duration
+                # Create 4 equal segments
+                segment_duration = audio_duration / 4
+                self.segments = []
+                for i in range(4):
+                    start_time = i * segment_duration
+                    end_time = (i + 1) * segment_duration
+                    self.segments.append((start_time, end_time))
+            
+            def get_all_segments(self):
+                return self.segments
+        
         class MockModel:
             def __init__(self, audio_data):
                 self.data_left = audio_data['data_left']
                 self.data_right = audio_data['data_right']
                 self.is_stereo = True
                 self.sample_rate = audio_data['sample_rate']
-                segment_count = 4
-                segment_size = len(self.data_left) // segment_count
-                self.segments = [i * segment_size for i in range(segment_count + 1)]
                 self.playback_tempo_enabled = False
                 self.source_bpm = 120
                 self.target_bpm = 120
-            
-            def get_segments(self):
-                return self.segments
+                # Create mock segment manager
+                audio_duration = len(self.data_left) / self.sample_rate
+                self.segment_manager = MockSegmentManager(audio_duration, self.sample_rate)
                 
             def get_tempo(self, num_measures):
                 return 120.0
