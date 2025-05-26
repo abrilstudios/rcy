@@ -172,11 +172,21 @@ class ImprovedAudioEngine:
         print(f"Source audio set: {len(data_left)} samples at {sample_rate}Hz, stereo={is_stereo}")
     
     def set_playback_tempo(self, enabled: bool, source_bpm: float, target_bpm: int):
-        """Configure playback tempo settings"""
+        """Configure playback tempo using engine sample rate adjustment"""
         self.playback_tempo_enabled = enabled
         self.source_bpm = source_bpm
         self.target_bpm = target_bpm
+        
         print(f"Playback tempo: enabled={enabled}, {source_bpm:.1f} -> {target_bpm} BPM")
+        
+        if enabled and source_bpm > 0:
+            tempo_ratio = target_bpm / source_bpm
+            new_sample_rate = int(self.source_sample_rate * tempo_ratio)
+            print(f"Tempo ratio: {tempo_ratio:.3f}, new sample rate: {new_sample_rate}Hz")
+            self.restart_with_sample_rate(new_sample_rate)
+        else:
+            print(f"Resetting to original sample rate: {self.source_sample_rate}Hz")
+            self.restart_with_sample_rate(self.source_sample_rate)
     
     def set_playback_mode(self, mode: PlaybackMode):
         """Set the playback mode"""
@@ -227,6 +237,16 @@ class ImprovedAudioEngine:
             print("Audio stream stopped")
         except Exception as e:
             ErrorHandler.log_exception(e, context="ImprovedAudioEngine.stop_stream")
+    
+    def restart_with_sample_rate(self, new_sample_rate: int):
+        """Restart the audio engine with a new sample rate for tempo adjustment"""
+        print(f"Restarting audio engine: {self.sample_rate}Hz → {new_sample_rate}Hz")
+        
+        self.stop_stream()
+        self.sample_rate = new_sample_rate
+        self.start_stream()
+        
+        print(f"Audio engine restarted: {new_sample_rate}Hz")
     
     def _audio_callback(self, outdata: np.ndarray, frames: int, time, status):
         """

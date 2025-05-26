@@ -329,11 +329,6 @@ class WavAudioProcessor:
         print(f"### Model play_segment called with start_time={start_time}, end_time={end_time}, reverse={reverse}")
         print(f"### High-performance play: {start_time:.2f}s to {end_time:.2f}s, reverse={reverse}")
         
-        # Update engine settings
-        self.audio_engine.set_playback_tempo(
-            self.playback_tempo_enabled, self.source_bpm, self.target_bpm
-        )
-        
         # Play the segment
         self.is_playing = True
         return self.audio_engine.play_segment(start_time, end_time, reverse)
