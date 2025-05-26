@@ -276,8 +276,8 @@ def process_segment_for_output(
             output_sample_rate = sample_rate
     
     # Stage 5: Apply tail fade
-    segment = apply_tail_fade(
-        segment, adjusted_sample_rate, is_stereo, tail_fade_enabled, fade_duration_ms, fade_curve
-    )
+    #segment = apply_tail_fade(
+    #    segment, adjusted_sample_rate, is_stereo, tail_fade_enabled, fade_duration_ms, fade_curve
+    #)
     
     return segment, output_sample_rate
