@@ -68,7 +68,7 @@ gh auth status
 Create or edit `~/.gitconfig` to use different credentials for different repositories:
 
 ```
-[includeIf "gitdir:/Users/davidpalaitis/experimental/rcy/"]
+[includeIf "gitdir:~/experimental/rcy/"]
   path = ~/.gitconfig-abrilstudios
 
 [includeIf "gitdir:/path/to/personal/repos/"]

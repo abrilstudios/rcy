@@ -520,8 +520,8 @@ class PyQtGraphWaveformView(BaseWaveformView):
         self.waveform_left.setData(time, data_left)
         
         # Set view ranges for left channel
-        # Add padding to ensure markers are visible at the edges
-        padding_value = 0.08  # 8% padding on each side
+        # No padding to eliminate visual gap at marker end
+        padding_value = 0.0  # No padding
         self.plot_left.setXRange(time[0], time[-1], padding=padding_value)
         y_max_left = max(abs(data_left.min()), abs(data_left.max()))
         self.plot_left.setYRange(-y_max_left, y_max_left, padding=0.1)

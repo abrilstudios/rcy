@@ -54,8 +54,8 @@ The `mp3extract` utility is a bash script that utilizes `ffmpeg` to perform the 
 
 ```
 Input file duration: 276.216000 seconds
-Extracting from /Users/davidpalaitis/experimental/rcy/mp3/conga.mp3 (2:55 to 3:05) to /Users/davidpalaitis/experimental/rcy/wav/conga_extract.wav at 44100Hz
-Extraction complete: /Users/davidpalaitis/experimental/rcy/wav/conga_extract.wav
+Extracting from ~/experimental/rcy/mp3/conga.mp3 (2:55 to 3:05) to ~/experimental/rcy/wav/conga_extract.wav at 44100Hz
+Extraction complete: ~/experimental/rcy/wav/conga_extract.wav
 ```
 
 The extracted segment can now be loaded into RCY for further processing.

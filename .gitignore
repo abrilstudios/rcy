@@ -32,6 +32,7 @@ build/
 
 # Sample libraries and temporary workspace
 tal/
+scratch/
 
 # Tutorial sample directories
 mp3/
