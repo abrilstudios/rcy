@@ -1060,13 +1060,13 @@ class RcyView(QMainWindow):
 
         print(f"Reset markers to file boundaries (0.0s to {total_time:.2f}s)")
     
-    def update_plot(self, time, data_left, data_right=None):
+    def update_plot(self, time, data_left, data_right=None, is_stereo=False):
         """Update the plot with time and audio data.
         For mono files, data_right can be None or same as data_left.
         For stereo files, data_left and data_right will be different channels.
         """
         # Delegate to the waveform view component
-        self.waveform_view.update_plot(time, data_left, data_right)
+        self.waveform_view.update_plot(time, data_left, data_right, is_stereo=is_stereo)
     
     def _update_marker_visibility(self, ax, start_marker, end_marker):
         """Update marker visibility based on current view
