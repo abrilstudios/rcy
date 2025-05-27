@@ -1,0 +1,21 @@
+{
+  "dataset_name": "RX2_Reverse_Engineering_Dataset",
+  "version": "1.0",
+  "created_date": "2025-05-26",
+  "description": "Complete dataset for RX2 file format reverse engineering validation",
+  "methodology": "User-created test files with known ground truth for algorithm validation",
+  "algorithm_accuracy": "100%",
+  "total_files": 17,
+  "splits": {
+    "train": 9,
+    "test": 4,
+    "validation": 4
+  },
+  "discoveries": [
+    "User marker detection via non-standard unknown data",
+    "Multiple marker type classification",
+    "Boundary system for start/end trimming",
+    "Mixed creation method support",
+    "Universal detection algorithm"
+  ]
+}

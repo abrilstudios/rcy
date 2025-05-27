@@ -1,0 +1,134 @@
+{
+  "description": "Final validation data - blind tests to prove algorithm robustness",
+  "files": [
+    {
+      "file": "apache-outsample-2.rx2",
+      "break_type": "apache_break",
+      "measures": 2,
+      "expected_segments": 9,
+      "expected_markers": 8,
+      "marker_types": [
+        "user_manual"
+      ],
+      "marker_patterns": [
+        "40000200"
+      ],
+      "special_features": [
+        "blind_test",
+        "high_marker_count"
+      ],
+      "purpose": "Blind test #1 - high marker count validation"
+    },
+    {
+      "file": "FBI-outsample-3.rx2",
+      "break_type": "FBI_break",
+      "measures": "unknown",
+      "expected_segments": 32,
+      "expected_markers": 31,
+      "marker_types": [
+        "grid_spaced"
+      ],
+      "marker_patterns": [
+        "40000200"
+      ],
+      "special_features": [
+        "blind_test",
+        "grid_segmentation",
+        "very_high_marker_count"
+      ],
+      "purpose": "Grid-based segmentation discovery"
+    },
+    {
+      "file": "rcy-bonus-outsample.rx2",
+      "break_type": "unknown",
+      "measures": "unknown",
+      "expected_segments": 15,
+      "expected_markers": 14,
+      "marker_types": [
+        "user_manual",
+        "transient_detected",
+        "grid_spaced"
+      ],
+      "marker_patterns": [
+        "40000200",
+        "7fff0000",
+        "77590000"
+      ],
+      "special_features": [
+        "blind_test",
+        "mixed_creation_methods"
+      ],
+      "purpose": "Mixed marker type discovery - transient + grid + manual"
+    },
+    {
+      "file": "super-outsample-1.rx2",
+      "break_type": "unknown",
+      "measures": "unknown",
+      "expected_segments": 20,
+      "expected_markers": 29,
+      "active_markers": 21,
+      "marker_types": [
+        "user_manual",
+        "transient_detected",
+        "boundary_start",
+        "boundary_end",
+        "unknown_types"
+      ],
+      "marker_patterns": [
+        "40000200",
+        "7fff0000",
+        "5f290000",
+        "59a80000",
+        "42700000",
+        "646c0000",
+        "7a400000",
+        "7a690000"
+      ],
+      "special_features": [
+        "blind_test",
+        "boundary_system",
+        "advanced_features",
+        "trimmed_region"
+      ],
+      "boundary_info": {
+        "start_marker": 3,
+        "start_time": 0.234,
+        "end_marker": 23,
+        "end_time": 3.641,
+        "active_region_seconds": 3.407
+      },
+      "purpose": "Boundary system discovery - start/end trimming"
+    }
+  ],
+  "summary": {
+    "total_files": 4,
+    "total_markers": 82,
+    "total_segments": 76,
+    "break_types": [
+      "FBI_break",
+      "apache_break",
+      "unknown"
+    ],
+    "marker_patterns": [
+      "7fff0000",
+      "7a400000",
+      "59a80000",
+      "40000200",
+      "7a690000",
+      "77590000",
+      "5f290000",
+      "42700000",
+      "646c0000"
+    ],
+    "special_features": [
+      "boundary_system",
+      "advanced_features",
+      "grid_segmentation",
+      "trimmed_region",
+      "blind_test",
+      "very_high_marker_count",
+      "high_marker_count",
+      "mixed_creation_methods"
+    ]
+  }
+}
