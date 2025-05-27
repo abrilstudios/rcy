@@ -27,7 +27,7 @@ class BaseWaveformView(QWidget):
         # TODO: Unify handling of config - do not allow get_value_from_json
         self.stereo_display = config.get_setting("audio", "stereoDisplay", True)
     
-    def update_plot(self, time, data_left, data_right=None):
+    def update_plot(self, time, data_left, data_right=None, is_stereo=False):
         """Update the plot with new audio data"""
         raise NotImplementedError("Subclasses must implement update_plot")
     
@@ -482,9 +482,17 @@ class PyQtGraphWaveformView(BaseWaveformView):
                 self.segment_clicked.emit(x_pos)
                 return
     
-    def update_plot(self, time, data_left, data_right=None):
+    def update_plot(self, time, data_left, data_right=None, is_stereo=False):
         """Update the plot with new audio data"""
         print(f"\n==== WAVEFORM_VIEW UPDATE_PLOT ====")
+        print(f"File is_stereo: {is_stereo}, config stereo_display: {self.stereo_display}")
+        
+        # Detect if we need to rebuild the view for different stereo mode
+        actual_stereo_display = is_stereo  # Use actual file metadata instead of config
+        if actual_stereo_display != self.stereo_display:
+            print(f"Stereo mode changed: {self.stereo_display} -> {actual_stereo_display}")
+            print("Note: This would require rebuilding the view, which is complex.")
+            print("For now, showing stereo layout but will be fixed in single plot architecture.")
         
         # Get detailed information about the current state
         old_start_pos = self.start_marker.value() if self.start_marker else None
@@ -526,14 +534,22 @@ class PyQtGraphWaveformView(BaseWaveformView):
         y_max_left = max(abs(data_left.min()), abs(data_left.max()))
         self.plot_left.setYRange(-y_max_left, y_max_left, padding=0.1)
         
-        # Update right channel if stereo
-        if self.stereo_display and data_right is not None and self.waveform_right is not None:
+        # Update right channel if actually stereo (use file metadata, not config)
+        if is_stereo and data_right is not None and self.waveform_right is not None:
             self.waveform_right.setData(time, data_right)
             
             # Set view ranges for right channel with padding
             self.plot_right.setXRange(time[0], time[-1], padding=padding_value)
             y_max_right = max(abs(data_right.min()), abs(data_right.max()))
             self.plot_right.setYRange(-y_max_right, y_max_right, padding=0.1)
+            
+            # Show right channel plot for stereo files
+            if self.plot_right is not None:
+                self.plot_right.setVisible(True)
+        else:
+            # Hide right channel plot for mono files
+            if self.plot_right is not None:
+                self.plot_right.setVisible(False)
         
         # Get marker positions immediately after data update but before clamping
         current_start_pos = self.start_marker.value()

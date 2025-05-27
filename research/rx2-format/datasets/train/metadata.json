@@ -1,0 +1,170 @@
+{
+  "description": "Algorithm development data - files used to develop the core algorithm",
+  "files": [
+    {
+      "file": "think-1-slice.rx2",
+      "break_type": "think_break",
+      "measures": 1,
+      "expected_segments": 1,
+      "expected_markers": 0,
+      "marker_types": [],
+      "special_features": [
+        "baseline"
+      ],
+      "purpose": "Baseline case - no user markers"
+    },
+    {
+      "file": "think-2-slice.rx2",
+      "break_type": "think_break",
+      "measures": 1,
+      "expected_segments": 2,
+      "expected_markers": 1,
+      "marker_types": [
+        "user_manual"
+      ],
+      "marker_patterns": [
+        "40000200"
+      ],
+      "special_features": [
+        "single_marker"
+      ],
+      "purpose": "Minimal case - single user marker"
+    },
+    {
+      "file": "think-4-slice.rx2",
+      "break_type": "think_break",
+      "measures": 1,
+      "expected_segments": 4,
+      "expected_markers": 3,
+      "marker_types": [
+        "user_manual"
+      ],
+      "marker_patterns": [
+        "40000200"
+      ],
+      "special_features": [
+        "incremental_test"
+      ],
+      "purpose": "Incremental test - 3 user markers"
+    },
+    {
+      "file": "think-8-slice.rx2",
+      "break_type": "think_break",
+      "measures": 1,
+      "expected_segments": 8,
+      "expected_markers": 7,
+      "marker_types": [
+        "user_manual"
+      ],
+      "marker_patterns": [
+        "40000200"
+      ],
+      "special_features": [
+        "incremental_test"
+      ],
+      "purpose": "Incremental test - 7 user markers"
+    },
+    {
+      "file": "amen-1-slice.rx2",
+      "break_type": "amen_break",
+      "measures": 4,
+      "expected_segments": 1,
+      "expected_markers": 0,
+      "marker_types": [],
+      "special_features": [
+        "baseline",
+        "different_break_type"
+      ],
+      "purpose": "Cross-validation baseline - different break type"
+    },
+    {
+      "file": "amen-2-slice.rx2",
+      "break_type": "amen_break",
+      "measures": 4,
+      "expected_segments": 2,
+      "expected_markers": 1,
+      "marker_types": [
+        "user_manual"
+      ],
+      "marker_patterns": [
+        "40000200"
+      ],
+      "special_features": [
+        "cross_validation"
+      ],
+      "purpose": "Cross-validation - amen with single marker"
+    },
+    {
+      "file": "amen-5-slice.rx2",
+      "break_type": "amen_break",
+      "measures": 4,
+      "expected_segments": 5,
+      "expected_markers": 4,
+      "marker_types": [
+        "user_manual"
+      ],
+      "marker_patterns": [
+        "40000200"
+      ],
+      "special_features": [
+        "cross_validation"
+      ],
+      "purpose": "Cross-validation - amen with multiple markers"
+    },
+    {
+      "file": "amen-6-slice.rx2",
+      "break_type": "amen_break",
+      "measures": 4,
+      "expected_segments": 6,
+      "expected_markers": 5,
+      "marker_types": [
+        "user_manual"
+      ],
+      "marker_patterns": [
+        "40000200"
+      ],
+      "special_features": [
+        "cross_validation"
+      ],
+      "purpose": "Cross-validation - amen with 5 markers"
+    },
+    {
+      "file": "apache-outsample.rx2",
+      "break_type": "apache_break",
+      "measures": 2,
+      "expected_segments": 3,
+      "expected_markers": 2,
+      "marker_types": [
+        "user_manual"
+      ],
+      "marker_patterns": [
+        "40000200"
+      ],
+      "special_features": [
+        "third_break_type"
+      ],
+      "purpose": "Third break type validation"
+    }
+  ],
+  "summary": {
+    "total_files": 9,
+    "total_markers": 23,
+    "total_segments": 32,
+    "break_types": [
+      "apache_break",
+      "think_break",
+      "amen_break"
+    ],
+    "marker_patterns": [
+      "40000200"
+    ],
+    "special_features": [
+      "cross_validation",
+      "single_marker",
+      "third_break_type",
+      "different_break_type",
+      "incremental_test",
+      "baseline"
+    ]
+  }
+}

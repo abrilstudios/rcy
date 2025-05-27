@@ -319,7 +319,7 @@ class RcyController:
                 )
         
         # Update the plot and segments
-        self.view.update_plot(time, data_left, data_right)
+        self.view.update_plot(time, data_left, data_right, is_stereo=self.model.is_stereo)
         slices = self.model.segment_manager.get_boundaries()
         self.view.update_slices(slices)
         
