@@ -1,0 +1,33 @@
+{
+  "rx2_files": {
+    "train": [
+      "think-8-slice.rx2",
+      "amen-2-slice.rx2",
+      "think-4-slice.rx2",
+      "amen-5-slice.rx2",
+      "think-2-slice.rx2",
+      "amen-6-slice.rx2",
+      "think-1-slice.rx2",
+      "apache-outsample.rx2",
+      "amen-1-slice.rx2"
+    ],
+    "test": [
+      "amen-4-slice.rx2",
+      "amen-3-slice.rx2",
+      "FBI-outsample-1.rx2",
+      "FBI-outsample-2.rx2"
+    ],
+    "validation": [
+      "super-outsample-1.rx2",
+      "rcy-bonus-outsample.rx2",
+      "apache-outsample-2.rx2",
+      "FBI-outsample-3.rx2"
+    ]
+  },
+  "wav_files": {
+    "train": [],
+    "test": [],
+    "validation": []
+  },
+  "missing_files": []
+}
