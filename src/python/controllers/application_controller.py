@@ -720,7 +720,7 @@ class ApplicationController:
             self.update_view()
 
             # Disable Convert to Mono menu items now that file is mono
-            self.view.menu_bar.update_convert_mono_menu(False)
+            self.view.menu_manager.update_convert_mono_menu(False)
 
             logger.info("Successfully converted to mono (method=%s)", method)
 

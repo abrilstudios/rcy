@@ -172,34 +172,6 @@ class MenuBarManager:
         self.convert_mono_action.triggered.connect(self._on_convert_to_mono_action)
         process_menu.addAction(self.convert_mono_action)
 
-        # Convert to Mono Method (preference submenu with radio buttons)
-        convert_mono_method_menu = process_menu.addMenu("Convert to Mono Method")
-
-        # Create action group for radio button behavior
-        mono_method_group = QActionGroup(self.parent)
-        mono_method_group.setExclusive(True)
-
-        self.mono_left_action = QAction("Left Channel", self.parent)
-        self.mono_left_action.setCheckable(True)
-        self.mono_left_action.triggered.connect(lambda: self._on_mono_method_changed('left'))
-        mono_method_group.addAction(self.mono_left_action)
-        convert_mono_method_menu.addAction(self.mono_left_action)
-
-        self.mono_right_action = QAction("Right Channel", self.parent)
-        self.mono_right_action.setCheckable(True)
-        self.mono_right_action.triggered.connect(lambda: self._on_mono_method_changed('right'))
-        mono_method_group.addAction(self.mono_right_action)
-        convert_mono_method_menu.addAction(self.mono_right_action)
-
-        self.mono_mix_action = QAction("Mix (Blend)", self.parent)
-        self.mono_mix_action.setCheckable(True)
-        self.mono_mix_action.triggered.connect(lambda: self._on_mono_method_changed('mix'))
-        mono_method_group.addAction(self.mono_mix_action)
-        convert_mono_method_menu.addAction(self.mono_mix_action)
-
-        # Set default to Mix
-        self.mono_mix_action.setChecked(True)
-
         # Convert Sample Format
         convert_format_action = QAction("Convert Sample Format...", self.parent)
         convert_format_action.triggered.connect(self._on_convert_sample_format)
@@ -355,6 +327,34 @@ class MenuBarManager:
         # Set initial selection to one-shot (default)
         # The controller will update this later if needed
         self.one_shot_action.setChecked(True)
+
+        # Convert to Mono submenu (preference - always enabled)
+        convert_mono_menu = options_menu.addMenu("Convert to Mono")
+
+        # Create action group for radio button behavior
+        mono_method_group = QActionGroup(self.parent)
+        mono_method_group.setExclusive(True)
+
+        self.mono_left_action = QAction("Left Channel", self.parent)
+        self.mono_left_action.setCheckable(True)
+        self.mono_left_action.triggered.connect(lambda: self._on_mono_method_changed('left'))
+        mono_method_group.addAction(self.mono_left_action)
+        convert_mono_menu.addAction(self.mono_left_action)
+
+        self.mono_right_action = QAction("Right Channel", self.parent)
+        self.mono_right_action.setCheckable(True)
+        self.mono_right_action.triggered.connect(lambda: self._on_mono_method_changed('right'))
+        mono_method_group.addAction(self.mono_right_action)
+        convert_mono_menu.addAction(self.mono_right_action)
+
+        self.mono_mix_action = QAction("Mix (Blend)", self.parent)
+        self.mono_mix_action.setCheckable(True)
+        self.mono_mix_action.triggered.connect(lambda: self._on_mono_method_changed('mix'))
+        mono_method_group.addAction(self.mono_mix_action)
+        convert_mono_menu.addAction(self.mono_mix_action)
+
+        # Set default to Mix
+        self.mono_mix_action.setChecked(True)
 
     def _create_help_menu(self) -> None:
         """Create the Help menu with documentation and about actions."""
