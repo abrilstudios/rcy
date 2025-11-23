@@ -369,8 +369,11 @@ class ImprovedAudioEngine:
         
         try:
             # Convert times to sample positions
+            logger.debug("queue_segment: start_time=%s, end_time=%s, source_sample_rate=%s, source_data_left length=%s",
+                        start_time, end_time, self.source_sample_rate, len(self.source_data_left))
             start_sample = int(start_time * self.source_sample_rate)
             end_sample = int(end_time * self.source_sample_rate)
+            logger.debug("queue_segment: start_sample=%s, end_sample=%s", start_sample, end_sample)
             
             # Get tail fade settings from config
             tail_fade_config = config.get_setting("audio", "tailFade", {})

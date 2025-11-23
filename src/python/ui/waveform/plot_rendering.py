@@ -69,6 +69,9 @@ def update_plot(
         new_max_pos = None
 
     widget.time_data = time
+    if time is not None and len(time) > 0:
+        logger.debug("update_plot: time array: len=%s, first=%s, last=%s",
+                    len(time), time[0], time[-1])
 
     # Detail all current properties
 

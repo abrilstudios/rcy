@@ -48,7 +48,7 @@ def main():
         controller.set_view(view)
         
         # Ensure view has correct number of measures
-        view.measures_input.setText(str(initial_measures))
+        view.control_panel.measures_input.setText(str(initial_measures))
         
         # Initial update
         controller.update_view()

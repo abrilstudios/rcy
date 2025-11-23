@@ -502,7 +502,10 @@ class PyQtGraphWaveformView(BaseWaveformView):
         if not self.start_marker or not self.end_marker:
             return None, None
 
-        return self.start_marker.value(), self.end_marker.value()
+        start_val = self.start_marker.value()
+        end_val = self.end_marker.value()
+        logger.debug("get_marker_positions: start=%s, end=%s", start_val, end_val)
+        return start_val, end_val
 
     def get_view_center(self) -> float:
         """Get the center position of the current view.
