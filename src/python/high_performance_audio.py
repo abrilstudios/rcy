@@ -194,7 +194,7 @@ class ImprovedAudioEngine:
     def set_playback_mode(self, mode: PlaybackMode) -> None:
         """Set the playback mode"""
         self.playback_mode = mode
-        self.loop_enabled = mode in [PlaybackMode.LOOP, PlaybackMode.LOOP_REVERSE]
+        self.loop_enabled = mode == PlaybackMode.LOOP
         logger.debug("Playback mode set to: %s (loop_enabled=%s)", mode.value, self.loop_enabled)
 
     def set_playback_ended_callback(self, callback: Callable[[], None]) -> None:
@@ -459,11 +459,6 @@ class ImprovedAudioEngine:
             # Simple loop - queue the same segment multiple times
             for i in range(2):  # Pre-queue 2 additional loops
                 self.queue_segment(start_time, end_time, initial_reverse)
-
-        elif self.playback_mode == PlaybackMode.LOOP_REVERSE:
-            # Alternating direction loop
-            self.queue_segment(start_time, end_time, not initial_reverse)  # Opposite direction
-            self.queue_segment(start_time, end_time, initial_reverse)      # Back to original
 
     def stop_playback(self) -> None:
         """Stop current playback"""

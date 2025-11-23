@@ -71,7 +71,6 @@ class MenuBarManager:
         self.playback_tempo_action: QAction | None = None
         self.one_shot_action: QAction | None = None
         self.loop_action: QAction | None = None
-        self.loop_reverse_action: QAction | None = None
 
     def create_menu_bar(self) -> QMenuBar:
         """Create and configure the complete menu bar.
@@ -308,12 +307,6 @@ class MenuBarManager:
         playback_mode_group.addAction(self.loop_action)
         playback_mode_menu.addAction(self.loop_action)
 
-        self.loop_reverse_action = QAction("Loop and Reverse", self.parent)
-        self.loop_reverse_action.setCheckable(True)
-        self.loop_reverse_action.triggered.connect(lambda: self.on_playback_mode_changed(PlaybackMode.LOOP_REVERSE.value))
-        playback_mode_group.addAction(self.loop_reverse_action)
-        playback_mode_menu.addAction(self.loop_reverse_action)
-
         # Set initial selection to one-shot (default)
         # The controller will update this later if needed
         self.one_shot_action.setChecked(True)
@@ -361,7 +354,7 @@ class MenuBarManager:
         """Update the playback mode menu to reflect the current mode.
 
         Args:
-            mode: The current playback mode ("one-shot", "loop", or "loop-reverse")
+            mode: The current playback mode ("one-shot" or "loop")
         """
         # Convert string to enum if necessary
         if isinstance(mode, str):
@@ -377,8 +370,6 @@ class MenuBarManager:
                 self.one_shot_action.setChecked(True)
             case PlaybackMode.LOOP:
                 self.loop_action.setChecked(True)
-            case PlaybackMode.LOOP_REVERSE:
-                self.loop_reverse_action.setChecked(True)
             case _:
                 logger.warning(f"Unknown playback mode '{mode}'")
                 self.one_shot_action.setChecked(True)

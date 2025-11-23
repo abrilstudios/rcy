@@ -13,7 +13,7 @@ class PlaybackController(QObject):
 
     This controller manages all playback-related functionality including:
     - Playing audio segments at specific time positions
-    - Handling playback modes (one-shot, loop, loop-reverse)
+    - Handling playback modes (one-shot, loop)
     - Managing segment boundaries and playback regions
     - Coordinating playback state between model and view
 
@@ -51,7 +51,7 @@ class PlaybackController(QObject):
         """Set the playback mode.
 
         Args:
-            mode: One of 'one-shot', 'loop', or 'loop-reverse' (string or PlaybackMode enum)
+            mode: One of 'one-shot' or 'loop' (string or PlaybackMode enum)
 
         Returns:
             True if mode was valid and set successfully, False otherwise
@@ -171,7 +171,7 @@ class PlaybackController(QObject):
         self.model.stop_playback()
 
         # Clear the current_segment to prevent loop continuation
-        if self.playback_mode in (PlaybackMode.LOOP, PlaybackMode.LOOP_REVERSE):
+        if self.playback_mode == PlaybackMode.LOOP:
             self.current_segment = (None, None)
 
         # Clear the active segment highlight
@@ -228,7 +228,7 @@ class PlaybackController(QObject):
         """Handle looping of the current segment according to playback mode.
 
         Called when playback of a segment ends. Determines whether to restart
-        playback based on the current playback mode (loop or loop-reverse).
+        playback based on the current playback mode.
 
         Returns:
             True if looping was initiated, False otherwise
@@ -239,31 +239,14 @@ class PlaybackController(QObject):
             logger.debug("### No current segment to loop")
             return False
 
-        match self.playback_mode:
-            case PlaybackMode.LOOP:
-                # Simple loop - play the same segment again
-                logger.debug("### Loop playback: %ss to %ss", start, end)
-                self.model.play_segment(start, end)
-                return True
+        if self.playback_mode == PlaybackMode.LOOP:
+            # Simple loop - play the same segment again
+            logger.debug("### Loop playback: %ss to %ss", start, end)
+            self.model.play_segment(start, end)
+            return True
 
-            case PlaybackMode.LOOP_REVERSE:
-                # Loop with direction change
-                if self.is_playing_reverse:
-                    # Just finished reverse playback, now play forward
-                    logger.debug("### Loop-reverse: Forward playback %ss to %ss", start, end)
-                    self.is_playing_reverse = False
-                    self.model.play_segment(start, end, reverse=False)
-                else:
-                    # Just finished forward playback, now play reverse
-                    logger.debug("### Loop-reverse: Reverse playback %ss to %ss", end, start)
-                    self.is_playing_reverse = True
-                    # Use reverse=True to properly play the segment in reverse
-                    self.model.play_segment(start, end, reverse=True)
-                return True
-
-            case _:
-                # Not a looping mode
-                return False
+        # Not a looping mode
+        return False
 
     def handle_plot_click(self, click_time: float) -> None:
         """Handle a click on the plot waveform.

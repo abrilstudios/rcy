@@ -214,11 +214,7 @@ class TestImprovedAudioEngine:
         engine.set_playback_mode(PlaybackMode.LOOP)
         assert engine.playback_mode == PlaybackMode.LOOP
         assert engine.loop_enabled is True
-        
-        engine.set_playback_mode(PlaybackMode.LOOP_REVERSE)
-        assert engine.playback_mode == PlaybackMode.LOOP_REVERSE
-        assert engine.loop_enabled is True
-        
+
         engine.set_playback_mode(PlaybackMode.ONE_SHOT)
         assert engine.playback_mode == PlaybackMode.ONE_SHOT
         assert engine.loop_enabled is False

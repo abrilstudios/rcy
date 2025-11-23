@@ -14,11 +14,9 @@ class PlaybackMode(StrEnum):
     Attributes:
         ONE_SHOT: Play once and stop
         LOOP: Loop continuously in forward direction
-        LOOP_REVERSE: Loop with alternating forward/reverse playback
     """
     ONE_SHOT = "one-shot"
     LOOP = "loop"
-    LOOP_REVERSE = "loop-reverse"
 
 
 class SplitMethod(StrEnum):

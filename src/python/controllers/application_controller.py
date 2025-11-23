@@ -71,7 +71,7 @@ class ApplicationController:
         - measure_resolution: Beat resolution for splitting
         - playback_tempo_enabled: Whether playback tempo adjustment is enabled
         - target_bpm: Target BPM for playback tempo adjustment
-        - playback_mode: Playback mode (one-shot, loop, loop-reverse)
+        - playback_mode: Playback mode (one-shot, loop)
         - start_marker_pos: Start marker position in seconds
         - end_marker_pos: End marker position in seconds
         - visible_time: Visible time window in seconds
@@ -384,7 +384,7 @@ class ApplicationController:
         """Set the playback mode.
 
         Args:
-            mode: One of 'one-shot', 'loop', or 'loop-reverse'
+            mode: One of 'one-shot' or 'loop'
 
         Returns:
             bool: True if mode was valid and set successfully
@@ -456,9 +456,14 @@ class ApplicationController:
             # Handle looping if needed
             # Get current mode from playback controller to ensure consistency
             current_mode = self.playback_ctrl.playback_mode
-            if current_mode in (PlaybackMode.LOOP, PlaybackMode.LOOP_REVERSE):
+            logger.debug("### Current playback mode: %s", current_mode)
+            if current_mode == PlaybackMode.LOOP:
+                logger.debug("### Mode is looping, calling handle_loop_playback()")
                 if self.handle_loop_playback():
+                    logger.debug("### Loop playback initiated")
                     return
+                else:
+                    logger.debug("### Loop playback returned False")
 
             # If not looping or loop handling failed, clear highlight
             self.view.clear_active_segment_highlight()

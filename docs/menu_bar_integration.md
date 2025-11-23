@@ -46,7 +46,7 @@ All user interactions with the menu are communicated back to the parent window v
 
 3. **`update_playback_mode_menu(mode: str) -> None`**
    - Updates the playback mode menu to reflect current mode
-   - Accepts: "one-shot", "loop", or "loop-reverse"
+   - Accepts: "one-shot" or "loop"
 
 ### Private Methods
 
