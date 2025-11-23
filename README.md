@@ -22,12 +22,13 @@ RCY isn't just a tool—it's a perspective on breakbeat culture. The design refe
 - A typography system based on Futura PT Book
 - A careful balance between utility and historical resonance
 
-Read our [Breakbeat Science](docs/breakbeat-science.md) guide to understand the three core workflows that shaped jungle, drum & bass, and big beat, and how they're implemented in RCY. For those interested in the history and techniques of sampling in drum & bass, check out our comprehensive [Drum & Bass Sampling Techniques](drum_and_bass_sample_techniques.md) document.
+Read our [Breakbeat Science](docs/breakbeat-science.md) guide to understand the three core workflows that shaped jungle, drum & bass, and big beat, and how they're implemented in RCY. For those interested in the history and techniques of sampling in drum & bass, check out our comprehensive [Drum & Bass Sampling Techniques](docs/drum_and_bass_sample_techniques.md) document.
 
 ## Requirements
 
-- **Python 3.x**: Ensure Python is installed on your system
+- **Python 3.11+**: RCY requires Python 3.11 or higher
 - **Dependencies**: Install necessary Python packages using the provided `requirements.txt` file
+  - For Python 3.13+ support, use `requirements-py313.txt` instead
 
 ## Installation
 
@@ -39,8 +40,27 @@ Read our [Breakbeat Science](docs/breakbeat-science.md) guide to understand the 
 
 2. **Install Dependencies**:
    ```bash
+   # For Python 3.11-3.12
    pip install -r requirements.txt
+
+   # For Python 3.13+
+   pip install -r requirements-py313.txt
    ```
+
+## Development Setup
+
+RCY uses modern Python development tools:
+
+- **Code Quality**: [ruff](https://github.com/astral-sh/ruff) for linting and formatting
+- **Type Checking**: [mypy](https://www.mypy-lang.org/) for static type analysis
+- **Package Management**: `pyproject.toml` configuration
+- **Testing**: pytest for unit and integration tests
+
+For development details, see [CONTRIBUTING.md](CONTRIBUTING.md) and [CLAUDE.md](CLAUDE.md).
+
+## Architecture
+
+RCY follows a Model-View-Controller (MVC) pattern with clear separation of concerns. For detailed information about the system architecture and modernization phases, see [docs/mvc-current-flow.md](docs/mvc-current-flow.md).
 
 ## Usage
 

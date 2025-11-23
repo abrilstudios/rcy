@@ -35,7 +35,7 @@ pip install -r requirements.txt
 python src/python/main.py
 ```
 
-Ensure you're using Python 3.10+ and PyQt6.
+Ensure you're using Python 3.11+ and PyQt6.
 
 ---
 

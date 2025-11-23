@@ -6,7 +6,7 @@ import sys
 import numpy as np
 from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QPushButton, QWidget
 from PyQt6.QtCore import Qt
-from pyqtgraph_waveform import WaveformView
+from ui.waveform import PyQtGraphWaveformView as WaveformView
 
 class TestWindow(QMainWindow):
     """Test window for PyQtGraph waveform view"""

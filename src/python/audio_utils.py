@@ -10,7 +10,13 @@ import librosa
 from config_manager import config
 
 
-def extract_segment(data_left, data_right, start_sample, end_sample, is_stereo=False):
+def extract_segment(
+    data_left: np.ndarray,
+    data_right: np.ndarray,
+    start_sample: int,
+    end_sample: int,
+    is_stereo: bool = False
+) -> np.ndarray:
     """Extract a slice of audio from source data
     
     Args:
@@ -42,7 +48,12 @@ def extract_segment(data_left, data_right, start_sample, end_sample, is_stereo=F
     return segment
 
 
-def calculate_tempo_adjusted_sample_rate(original_sample_rate, source_bpm, target_bpm, enabled=True):
+def calculate_tempo_adjusted_sample_rate(
+    original_sample_rate: int,
+    source_bpm: float | None,
+    target_bpm: int | None,
+    enabled: bool = True
+) -> int:
     """Calculate the fake sample rate needed for tempo adjustment via resampling trick
     
     This function calculates what sample rate to tell the resampler the audio is at,
@@ -70,7 +81,12 @@ def calculate_tempo_adjusted_sample_rate(original_sample_rate, source_bpm, targe
     return adjusted_sample_rate
 
 
-def resample_to_standard_rate(segment, adjusted_sample_rate, target_sample_rate=44100, is_stereo=False):
+def resample_to_standard_rate(
+    segment: np.ndarray,
+    adjusted_sample_rate: int,
+    target_sample_rate: int = 44100,
+    is_stereo: bool = False
+) -> np.ndarray:
     """Resample audio from adjusted sample rate back to standard rate
     
     This function resamples audio that has been pitch-shifted via sample rate adjustment
@@ -125,7 +141,14 @@ def resample_to_standard_rate(segment, adjusted_sample_rate, target_sample_rate=
     return resampled
 
 
-def apply_tail_fade(segment, sample_rate, is_stereo=False, enabled=False, duration_ms=10, curve="exponential"):
+def apply_tail_fade(
+    segment: np.ndarray,
+    sample_rate: int,
+    is_stereo: bool = False,
+    enabled: bool = False,
+    duration_ms: int = 10,
+    curve: str = "exponential"
+) -> np.ndarray:
     """Apply fade-out at the end of a segment
     
     Args:
@@ -178,7 +201,7 @@ def apply_tail_fade(segment, sample_rate, is_stereo=False, enabled=False, durati
     return processed
 
 
-def reverse_segment(segment, is_stereo=False):
+def reverse_segment(segment: np.ndarray, is_stereo: bool = False) -> np.ndarray:
     """Reverse an audio segment
     
     Args:
@@ -200,22 +223,22 @@ def reverse_segment(segment, is_stereo=False):
 
 
 def process_segment_for_output(
-    data_left,
-    data_right,
-    start_sample,
-    end_sample,
-    sample_rate=44100,
-    is_stereo=False,
-    reverse=False,
-    playback_tempo_enabled=False,
-    source_bpm=None,
-    target_bpm=None,
-    tail_fade_enabled=False,
-    fade_duration_ms=10,
-    fade_curve="exponential",
-    for_export=False,
-    resample_on_export=True
-):
+    data_left: np.ndarray,
+    data_right: np.ndarray,
+    start_sample: int,
+    end_sample: int,
+    sample_rate: int = 44100,
+    is_stereo: bool = False,
+    reverse: bool = False,
+    playback_tempo_enabled: bool = False,
+    source_bpm: float | None = None,
+    target_bpm: int | None = None,
+    tail_fade_enabled: bool = False,
+    fade_duration_ms: int = 10,
+    fade_curve: str = "exponential",
+    for_export: bool = False,
+    resample_on_export: bool = True
+) -> tuple[np.ndarray, int]:
     """Process audio segment through the complete pipeline for output
     
     This function orchestrates the full pipeline:
@@ -286,21 +309,21 @@ def process_segment_for_output(
 
 
 def process_segment_for_playback(
-    data_left,
-    data_right,
-    start_sample,
-    end_sample,
-    sample_rate=44100,
-    is_stereo=False,
-    playback_tempo_enabled=False,
-    source_bpm=None,
-    target_bpm=None,
-    tail_fade_enabled=False,
-    fade_duration_ms=10,
-    fade_curve="exponential",
-    for_export=False,
-    resample_on_export=True
-):
+    data_left: np.ndarray,
+    data_right: np.ndarray,
+    start_sample: int,
+    end_sample: int,
+    sample_rate: int = 44100,
+    is_stereo: bool = False,
+    playback_tempo_enabled: bool = False,
+    source_bpm: float | None = None,
+    target_bpm: int | None = None,
+    tail_fade_enabled: bool = False,
+    fade_duration_ms: int = 10,
+    fade_curve: str = "exponential",
+    for_export: bool = False,
+    resample_on_export: bool = True
+) -> np.ndarray:
     """Process audio segment through lightweight pipeline for real-time playback
     
     This function provides a streamlined pipeline for real-time playback:

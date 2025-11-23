@@ -22,24 +22,22 @@ import numpy as np
 import sounddevice as sd
 import threading
 import collections
-from typing import Optional, Tuple, Callable, List
+from typing import Any, Callable
 from dataclasses import dataclass
-from enum import Enum
 import time
 
 from audio_utils import process_segment_for_output, process_segment_for_playback
 from config_manager import config
 from error_handler import ErrorHandler
+from enums import PlaybackMode
 
 
-class PlaybackMode(Enum):
-    """Playback mode enumeration"""
-    ONE_SHOT = "one-shot"
-    LOOP = "loop"
-    LOOP_REVERSE = "loop-reverse"
+import logging
+
+logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(slots=True)
 class ProcessedSegment:
     """Container for a processed audio segment ready for playback"""
     data: np.ndarray
@@ -63,31 +61,31 @@ class ProcessedSegment:
 class SegmentBuffer:
     """Thread-safe buffer for managing pre-processed audio segments"""
     
-    def __init__(self, max_size: int = 3):
+    def __init__(self, max_size: int = 3) -> None:
         self.max_size = max_size
-        self._buffer = collections.deque(maxlen=max_size)
+        self._buffer: collections.deque[ProcessedSegment] = collections.deque(maxlen=max_size)
         self._lock = threading.Lock()
-        
-    def add_segment(self, segment: ProcessedSegment):
+
+    def add_segment(self, segment: ProcessedSegment) -> None:
         """Add a processed segment to the buffer"""
         with self._lock:
             self._buffer.append(segment)
-            
-    def get_next_segment(self) -> Optional[ProcessedSegment]:
+
+    def get_next_segment(self) -> ProcessedSegment | None:
         """Get the next segment from the buffer"""
         with self._lock:
             if self._buffer:
                 return self._buffer.popleft()
             return None
-            
-    def peek_next_segment(self) -> Optional[ProcessedSegment]:
+
+    def peek_next_segment(self) -> ProcessedSegment | None:
         """Peek at the next segment without removing it"""
         with self._lock:
             if self._buffer:
                 return self._buffer[0]
             return None
-            
-    def clear(self):
+
+    def clear(self) -> None:
         """Clear all buffered segments"""
         with self._lock:
             self._buffer.clear()
@@ -114,10 +112,10 @@ class ImprovedAudioEngine:
     - Sample-accurate timing control
     """
     
-    def __init__(self, sample_rate: int = 44100, channels: int = 2, blocksize: int = 512):
+    def __init__(self, sample_rate: int = 44100, channels: int = 2, blocksize: int = 512) -> None:
         """
         Initialize the audio engine
-        
+
         Args:
             sample_rate: Audio sample rate (default 44100)
             channels: Number of audio channels (default 2 for stereo)
@@ -126,82 +124,87 @@ class ImprovedAudioEngine:
         self.sample_rate = sample_rate
         self.channels = channels
         self.blocksize = blocksize
-        
+
         # Stream and playback state
-        self.stream: Optional[sd.OutputStream] = None
+        self.stream: sd.OutputStream | None = None
         self.is_playing = False
         self.is_streaming = False
-        
+
         # Segment management
         self.segment_buffer = SegmentBuffer()
-        self.current_segment: Optional[ProcessedSegment] = None
+        self.current_segment: ProcessedSegment | None = None
         self.current_position = 0  # Position within current segment
-        
+
         # Playback configuration
         self.playback_mode = PlaybackMode.ONE_SHOT
         self.loop_enabled = False
         self.is_playing_reverse = False
-        
+
         # Source audio data (reference to the main audio processor data)
-        self.source_data_left: Optional[np.ndarray] = None
-        self.source_data_right: Optional[np.ndarray] = None
+        self.source_data_left: np.ndarray | None = None
+        self.source_data_right: np.ndarray | None = None
         self.source_sample_rate = 44100
         self.source_is_stereo = False
-        
+
         # Playback tempo settings
         self.playback_tempo_enabled = False
         self.source_bpm = 120.0
         self.target_bpm = 120
-        
+
         # Callback state
         self._callback_lock = threading.Lock()
         self._underrun_count = 0
-        
+
         # Event callbacks
-        self.playback_ended_callback: Optional[Callable] = None
-        
-        print(f"ImprovedAudioEngine initialized: {sample_rate}Hz, {channels}ch, blocksize={blocksize}")
+        self.playback_ended_callback: Callable[[], None] | None = None
+
+        # Loop parameters
+        self._loop_start_time: float | None = None
+        self._loop_end_time: float | None = None
+        self._loop_reverse: bool = False
+
+        logger.debug("ImprovedAudioEngine initialized: %sHz, %sch, blocksize=%s", sample_rate, channels, blocksize)
     
-    def set_source_audio(self, data_left: np.ndarray, data_right: np.ndarray, 
-                        sample_rate: int, is_stereo: bool):
+    def set_source_audio(self, data_left: np.ndarray, data_right: np.ndarray,
+                        sample_rate: int, is_stereo: bool) -> None:
         """Set the source audio data for processing"""
         self.source_data_left = data_left
         self.source_data_right = data_right
         self.source_sample_rate = sample_rate
         self.source_is_stereo = is_stereo
-        print(f"Source audio set: {len(data_left)} samples at {sample_rate}Hz, stereo={is_stereo}")
-    
-    def set_playback_tempo(self, enabled: bool, source_bpm: float, target_bpm: int):
+        logger.debug("Set source audio: %s samples at %sHz, stereo=%s", len(data_left), sample_rate, is_stereo)
+
+    def set_playback_tempo(self, enabled: bool, source_bpm: float, target_bpm: int) -> None:
         """Configure playback tempo using engine sample rate adjustment"""
         self.playback_tempo_enabled = enabled
         self.source_bpm = source_bpm
         self.target_bpm = target_bpm
-        
-        print(f"Playback tempo: enabled={enabled}, {source_bpm:.1f} -> {target_bpm} BPM")
-        
+
+        logger.debug("Playback tempo: enabled=%s, %s -> %s BPM", enabled, source_bpm, target_bpm)
+
         if enabled and source_bpm > 0:
             tempo_ratio = target_bpm / source_bpm
             new_sample_rate = int(self.source_sample_rate * tempo_ratio)
-            print(f"Tempo ratio: {tempo_ratio:.3f}, new sample rate: {new_sample_rate}Hz")
+            logger.debug("Adjusting sample rate from %s to %s Hz (ratio: %s)", self.source_sample_rate, new_sample_rate, tempo_ratio)
             self.restart_with_sample_rate(new_sample_rate)
         else:
-            print(f"Resetting to original sample rate: {self.source_sample_rate}Hz")
+            logger.debug("Resetting to original sample rate: %sHz", self.source_sample_rate)
             self.restart_with_sample_rate(self.source_sample_rate)
-    
-    def set_playback_mode(self, mode: PlaybackMode):
+
+    def set_playback_mode(self, mode: PlaybackMode) -> None:
         """Set the playback mode"""
         self.playback_mode = mode
         self.loop_enabled = mode in [PlaybackMode.LOOP, PlaybackMode.LOOP_REVERSE]
-        print(f"Playback mode set to: {mode.value}")
-    
-    def set_playback_ended_callback(self, callback: Callable):
+        logger.debug("Playback mode set to: %s (loop_enabled=%s)", mode.value, self.loop_enabled)
+
+    def set_playback_ended_callback(self, callback: Callable[[], None]) -> None:
         """Set callback to be called when playback ends"""
         self.playback_ended_callback = callback
-    
-    def start_stream(self):
+
+    def start_stream(self) -> None:
         """Start the audio stream"""
         if self.is_streaming:
-            print("Stream already running")
+            logger.debug("Stream already running")
             return
             
         try:
@@ -214,16 +217,16 @@ class ImprovedAudioEngine:
             )
             self.stream.start()
             self.is_streaming = True
-            print(f"Audio stream started: {self.sample_rate}Hz, {self.channels}ch, blocksize={self.blocksize}")
+            logger.error("Audio stream started: %sHz, %sch, blocksize=%s")
         except Exception as e:
             ErrorHandler.log_exception(e, context="ImprovedAudioEngine.start_stream")
             raise
-    
-    def stop_stream(self):
+
+    def stop_stream(self) -> None:
         """Stop the audio stream"""
         if not self.is_streaming:
             return
-            
+
         try:
             if self.stream:
                 self.stream.stop()
@@ -234,21 +237,21 @@ class ImprovedAudioEngine:
             self.segment_buffer.clear()
             self.current_segment = None
             self.current_position = 0
-            print("Audio stream stopped")
+            logger.debug("Audio stream stopped")
         except Exception as e:
             ErrorHandler.log_exception(e, context="ImprovedAudioEngine.stop_stream")
-    
-    def restart_with_sample_rate(self, new_sample_rate: int):
+
+    def restart_with_sample_rate(self, new_sample_rate: int) -> None:
         """Restart the audio engine with a new sample rate for tempo adjustment"""
-        print(f"Restarting audio engine: {self.sample_rate}Hz → {new_sample_rate}Hz")
-        
+        logger.debug("Restarting audio engine: %sHz -> %sHz", self.sample_rate, new_sample_rate)
+
         self.stop_stream()
         self.sample_rate = new_sample_rate
         self.start_stream()
-        
-        print(f"Audio engine restarted: {new_sample_rate}Hz")
-    
-    def _audio_callback(self, outdata: np.ndarray, frames: int, time, status):
+
+        logger.error("Audio engine restarted: %sHz")
+
+    def _audio_callback(self, outdata: np.ndarray, frames: int, time: Any, status: Any) -> None:
         """
         Audio callback function called by sounddevice
         
@@ -326,32 +329,32 @@ class ImprovedAudioEngine:
             ErrorHandler.log_exception(e, context="ImprovedAudioEngine._audio_callback")
             self._underrun_count += 1
             if self._underrun_count > 10:
-                print(f"WARNING: Multiple audio callback errors ({self._underrun_count})")
-    
-    def _handle_loop_continuation(self):
+                logger.warning("Multiple audio callback errors detected (%d)", self._underrun_count)
+
+    def _handle_loop_continuation(self) -> None:
         """Handle loop continuation logic"""
         # This would be called from the audio callback to handle looping
         # Re-queue the current loop segment to continue seamless playback
-        if hasattr(self, '_loop_start_time') and hasattr(self, '_loop_end_time'):
-            print("Re-queuing loop segment for continuous playback")
+        if self._loop_start_time is not None and self._loop_end_time is not None:
+            logger.debug("Re-queuing loop segment for continuous playback")
             self.queue_segment(self._loop_start_time, self._loop_end_time, self._loop_reverse)
         else:
             # Fallback: end playback if we don't have loop parameters
-            print("WARNING: No loop parameters available, ending playback")
+            logger.warning("WARNING: No loop parameters available, ending playback")
             self._end_playback()
-    
-    def _end_playback(self):
+
+    def _end_playback(self) -> None:
         """Handle end of playback"""
         self.is_playing = False
         self.current_segment = None
         self.current_position = 0
-        
+
         # Notify callback if set
         if self.playback_ended_callback:
             # Call in a separate thread to avoid blocking the audio callback
             threading.Thread(target=self.playback_ended_callback, daemon=True).start()
-    
-    def queue_segment(self, start_time: float, end_time: float, reverse: bool = False):
+
+    def queue_segment(self, start_time: float, end_time: float, reverse: bool = False) -> bool:
         """
         Queue a segment for playback
         
@@ -361,7 +364,7 @@ class ImprovedAudioEngine:
             reverse: Whether to play the segment in reverse
         """
         if self.source_data_left is None:
-            print("ERROR: No source audio data set")
+            logger.error("ERROR: No source audio data set")
             return False
         
         try:
@@ -408,17 +411,17 @@ class ImprovedAudioEngine:
             
             # Add to buffer
             self.segment_buffer.add_segment(segment)
-            print(f"Queued segment: {start_time:.2f}s to {end_time:.2f}s, reverse={reverse}, frames={segment.frame_count}")
+            logger.debug("Queued segment: %ss to %ss, reverse=%s, frames=%s", start_time, end_time, reverse, segment.frame_count)
             return True
             
         except Exception as e:
             ErrorHandler.log_exception(e, context="ImprovedAudioEngine.queue_segment")
             return False
-    
-    def play_segment(self, start_time: float, end_time: float, reverse: bool = False):
+
+    def play_segment(self, start_time: float, end_time: float, reverse: bool = False) -> bool:
         """
         Play a single segment
-        
+
         Args:
             start_time: Start time in seconds
             end_time: End time in seconds
@@ -426,61 +429,58 @@ class ImprovedAudioEngine:
         """
         # Stop current playback
         self.stop_playback()
-        
+
         # Clear buffer and queue the new segment
         self.segment_buffer.clear()
-        
+
         if not self.queue_segment(start_time, end_time, reverse):
             return False
-        
+
         # Store loop parameters for continuous re-queuing
         self._loop_start_time = start_time
         self._loop_end_time = end_time
         self._loop_reverse = reverse
-        
+
         # Handle looping by pre-queuing additional segments
         if self.loop_enabled:
             self._queue_loop_segments(start_time, end_time, reverse)
-        
+
         # Start playback
         self.is_playing = True
-        print(f"Started playback: {start_time:.2f}s to {end_time:.2f}s, mode={self.playback_mode.value}")
+        logger.debug("Started playback: %ss to %ss, reverse=%s", start_time, end_time, reverse)
         return True
-    
-    def _queue_loop_segments(self, start_time: float, end_time: float, initial_reverse: bool):
+
+    def _queue_loop_segments(self, start_time: float, end_time: float, initial_reverse: bool) -> None:
         """Pre-queue segments for looping to ensure seamless transitions"""
         if self.playback_mode == PlaybackMode.LOOP:
             # Simple loop - queue the same segment multiple times
             for i in range(2):  # Pre-queue 2 additional loops
                 self.queue_segment(start_time, end_time, initial_reverse)
-        
+
         elif self.playback_mode == PlaybackMode.LOOP_REVERSE:
             # Alternating direction loop
             self.queue_segment(start_time, end_time, not initial_reverse)  # Opposite direction
             self.queue_segment(start_time, end_time, initial_reverse)      # Back to original
-    
-    def stop_playback(self):
+
+    def stop_playback(self) -> None:
         """Stop current playback"""
         self.is_playing = False
         self.segment_buffer.clear()
         self.current_segment = None
         self.current_position = 0
-        
+
         # Clear loop parameters
-        if hasattr(self, '_loop_start_time'):
-            delattr(self, '_loop_start_time')
-        if hasattr(self, '_loop_end_time'):
-            delattr(self, '_loop_end_time')
-        if hasattr(self, '_loop_reverse'):
-            delattr(self, '_loop_reverse')
-            
-        print("Playback stopped")
-    
+        self._loop_start_time = None
+        self._loop_end_time = None
+        self._loop_reverse = False
+
+        logger.debug("Playback stopped")
+
     def is_playing_audio(self) -> bool:
         """Check if audio is currently playing"""
         return self.is_playing
-    
-    def get_playback_position(self) -> Tuple[float, float]:
+
+    def get_playback_position(self) -> tuple[float, float]:
         """
         Get current playback position
         
@@ -493,8 +493,8 @@ class ImprovedAudioEngine:
         current_time = self.current_position / self.current_segment.sample_rate
         total_time = self.current_segment.duration
         return current_time, total_time
-    
-    def get_stream_info(self) -> dict:
+
+    def get_stream_info(self) -> dict[str, Any]:
         """Get information about the current stream"""
         return {
             'sample_rate': self.sample_rate,
@@ -506,12 +506,12 @@ class ImprovedAudioEngine:
             'underrun_count': self._underrun_count,
             'latency': getattr(self.stream, 'latency', None) if self.stream else None
         }
-    
-    def __enter__(self):
+
+    def __enter__(self) -> 'ImprovedAudioEngine':
         """Context manager entry"""
         self.start_stream()
         return self
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Context manager exit"""
         self.stop_stream()

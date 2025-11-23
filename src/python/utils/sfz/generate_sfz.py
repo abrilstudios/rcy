@@ -10,14 +10,14 @@ Part of the RCY (Recycling) audio tool suite.
 import argparse
 import os
 import logging
-from typing import List, Optional, Dict, Any
+from typing import Any
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
 
-def is_audio_file(filename: str, extensions: List[str] = None) -> bool:
+def is_audio_file(filename: str, extensions: list[str] | None = None) -> bool:
     """
     Check if a file is a valid audio file based on its extension.
     
@@ -42,7 +42,7 @@ def is_audio_file(filename: str, extensions: List[str] = None) -> bool:
     return any(filename.lower().endswith(ext) for ext in extensions)
 
 
-def collect_audio_files(root_dir: str, extensions: List[str] = None) -> List[str]:
+def collect_audio_files(root_dir: str, extensions: list[str] | None = None) -> list[str]:
     """
     Recursively collect audio files from a directory.
     
@@ -68,10 +68,10 @@ def collect_audio_files(root_dir: str, extensions: List[str] = None) -> List[str
     return audio_files
 
 
-def generate_sfz(audio_files: List[str], start_key: int = 36, 
-                group_id: Optional[int] = None, 
-                additional_params: Optional[Dict[str, Any]] = None,
-                input_dir: Optional[str] = None) -> str:
+def generate_sfz(audio_files: list[str], start_key: int = 36,
+                group_id: int | None = None,
+                additional_params: dict[str, Any] | None = None,
+                input_dir: str | None = None) -> str:
     """
     Generate SFZ content from a list of audio files.
     
@@ -127,7 +127,7 @@ def generate_sfz(audio_files: List[str], start_key: int = 36,
     return "\n".join(lines)
 
 
-def main():
+def main() -> int:
     """Main entry point for the SFZ generator tool."""
     parser = argparse.ArgumentParser(description="Generate SFZ from directory of audio files")
     parser.add_argument("-i", "--input", 

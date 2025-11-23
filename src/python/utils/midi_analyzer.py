@@ -10,7 +10,7 @@ Part of the RCY (Recycling) audio tool suite.
 import argparse
 import os
 import logging
-from typing import Dict, Optional, Any, Tuple
+from typing import Any
 import mido
 
 # Configure logging
@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
 
-def analyze_midi(midi_path: str) -> Dict[str, Any]:
+def analyze_midi(midi_path: str) -> dict[str, Any]:
     """
     Analyze a MIDI file and extract tempo, bar information, and notes.
     
@@ -77,7 +77,7 @@ def analyze_midi(midi_path: str) -> Dict[str, Any]:
     }
 
 
-def main():
+def main() -> int:
     """Main entry point for the MIDI analyzer tool."""
     parser = argparse.ArgumentParser(description="Analyze MIDI files for tempo and bar information")
     parser.add_argument("-i", "--input", help="Input MIDI file to analyze")

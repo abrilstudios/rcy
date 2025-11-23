@@ -2,17 +2,36 @@ import json
 import os
 import pathlib
 import sys
+import logging
 from PyQt6.QtGui import QColor, QFont
-from typing import Union, Optional, Dict, Any
+from typing import Any
+
+from custom_types import PresetInfo
+
+logger = logging.getLogger(__name__)
 
 class ConfigManager:
     """Manages application configuration, including colors, fonts, and strings"""
-    
-    def __init__(self, cfg_path: Optional[Union[str, pathlib.Path]] = None, 
-                 presets_path: Optional[Union[str, pathlib.Path]] = None,
-                 exit_on_error: bool = True):
+
+    colors: dict[str, str]
+    fonts: dict[str, str]
+    strings: dict[str, Any]
+    ui: dict[str, Any]
+    audio: dict[str, Any]
+    presets: dict[str, Any]
+    exit_on_error: bool
+    _cfg: dict[str, Any]
+    cfg_path: str | pathlib.Path
+    presets_path: str | pathlib.Path
+
+    def __init__(
+        self,
+        cfg_path: str | pathlib.Path | None = None,
+        presets_path: str | pathlib.Path | None = None,
+        exit_on_error: bool = True
+    ) -> None:
         """Initialize the ConfigManager with optional custom paths.
-        
+
         Args:
             cfg_path: Path to the config.json file (defaults to standard location if None)
             presets_path: Path to the presets.json file (defaults to standard location if None)
@@ -22,40 +41,41 @@ class ConfigManager:
         self.fonts = {}
         self.strings = {}
         self.ui = {}
+        self.audio = {}
         self.presets = {}
         self.exit_on_error = exit_on_error
-        self._cfg: Dict[str, Any] = {}
-        
+        self._cfg = {}
+
         # Store paths for configuration files
         self.cfg_path = cfg_path if cfg_path is not None else self._default_config_path()
         self.presets_path = presets_path if presets_path is not None else self._default_presets_path()
-        
+
         # Load configuration
         self.load_config()
-    
+
     def _default_config_path(self) -> pathlib.Path:
         """Get the default path to the config.json file."""
         base = pathlib.Path(__file__).parent.parent.parent
         return base / "config" / "config.json"
-    
+
     def _default_presets_path(self) -> pathlib.Path:
         """Get the default path to the presets.json file."""
         base = pathlib.Path(__file__).parent.parent.parent
         return base / "presets" / "presets.json"
-        
-    def load_config(self):
+
+    def load_config(self) -> None:
         """Load master configuration from the configured paths."""
         # Load master config
         try:
             with open(self.cfg_path, 'r') as f:
                 self._cfg = json.load(f)
         except Exception as e:
-            error_msg = f"Critical error loading configuration '{self.cfg_path}': {e}"
-            print(error_msg, file=sys.stderr)
+            error_msg = f"Critical error loading configuration '%s': %s"
+            logger.error(error_msg, self.cfg_path, e)
             if self.exit_on_error:
                 sys.exit(1)
             else:
-                raise RuntimeError(error_msg)
+                raise RuntimeError(f"Critical error loading configuration '{self.cfg_path}': {e}")
         
         # Validate and assign sections
         try:
@@ -66,43 +86,43 @@ class ConfigManager:
             self.ui = self._cfg["ui"]
             self.audio = self._cfg["audio"]
         except KeyError as e:
-            error_msg = f"Configuration missing key: {e}"
-            print(error_msg, file=sys.stderr)
+            error_msg = "Configuration missing key: %s"
+            logger.error(error_msg, e)
             if self.exit_on_error:
                 sys.exit(1)
             else:
-                raise KeyError(error_msg)
+                raise KeyError(f"Configuration missing key: {e}")
         
         # Load presets
         try:
             with open(self.presets_path, 'r') as f:
                 self.presets = json.load(f)
         except Exception as e:
-            error_msg = f"Critical error loading presets '{self.presets_path}': {e}"
-            print(error_msg, file=sys.stderr)
+            error_msg = "Critical error loading presets '%s': %s"
+            logger.error(error_msg, self.presets_path, e)
             if self.exit_on_error:
                 sys.exit(1)
             else:
-                raise RuntimeError(error_msg)
+                raise RuntimeError(f"Critical error loading presets '{self.presets_path}': {e}")
     
     # Default-setting methods removed: loading now always requires valid config.json
-    
-    def get_color(self, key, default=None):
+
+    def get_color(self, key: str, default: str | None = None) -> QColor:
         """Get a color from the palette by key"""
         color_hex = self.colors.get(key, default)
         if color_hex:
             return QColor(color_hex)
         return QColor("#000000")  # Fallback to black
-    
-    def get_qt_color(self, key, default=None):
+
+    def get_qt_color(self, key: str, default: str | None = None) -> str:
         """Get a color as a string for stylesheet use"""
         return self.colors.get(key, default or "#000000")
-    
-    def get_font(self, key="primary"):
+
+    def get_font(self, key: str = "primary") -> QFont:
         """Get a font by key, with system fallbacks"""
         font_name = self.fonts.get(key, "Arial")
         font = QFont(font_name)
-        
+
         # Add fallbacks if Futura PT Book isn't available
         if key == "primary":
             # Try common geometric sans-serifs as fallbacks
@@ -110,53 +130,158 @@ class ConfigManager:
             for fallback in fallbacks:
                 if fallback != font_name:  # Don't add the same font twice
                     font.insertSubstitution(font_name, fallback)
-        
+
         return font
-    
-    def get_string(self, category, key, default=None):
+
+    def get_string(self, category: str, key: str, default: str | None = None) -> str:
         """Get a string resource by category and key"""
         if category in self.strings and key in self.strings[category]:
             return self.strings[category][key]
         return default or key
-    
-    def get_nested_string(self, path, default=None):
+
+    def get_nested_string(self, path: str, default: str | None = None) -> str | list[Any]:
         """Get a string resource by dot-notation path (e.g., 'ui.windowTitle')"""
         parts = path.split('.')
-        current = self.strings
-        
+        current: Any = self.strings
+
         for part in parts:
             if part in current:
                 current = current[part]
             else:
                 return default or path
-        
+
         return current if isinstance(current, (str, list)) else default or path
-        
-    def get_ui_setting(self, category, key, default=None):
+
+    def get_ui_setting(self, category: str, key: str, default: Any = None) -> Any:
         """Get a UI setting value by category and key"""
         if category in self.ui and key in self.ui[category]:
             return self.ui[category][key]
         return default
-        
-    def get_preset_info(self, preset_id):
+
+    def get_preset_info(self, preset_id: str) -> PresetInfo | None:
         """Get information about a specific preset by its ID"""
         return self.presets.get(preset_id)
-        
-    def get_preset_list(self):
+
+    def get_preset_list(self) -> list[tuple[str, str]]:
         """Get a list of available presets with their names"""
-        preset_list = []
+        preset_list: list[tuple[str, str]] = []
         for preset_id, preset_data in self.presets.items():
             name = preset_data.get('name', preset_id)
             preset_list.append((preset_id, name))
         return preset_list
-    
-    def get_setting(self, section: str, key: str, default=None):  # noqa: C901
+
+    def get_setting(self, section: str, key: str, default: Any = None) -> Any:
         """Get a generic setting from the master config"""
         try:
             return self._cfg.get(section, {}).get(key, default)
         except Exception:
             return default
-        
+
+    def get_logging_setting(self, key: str, default: Any = None) -> Any:
+        """Get a logging configuration setting"""
+        try:
+            return self._cfg.get("logging", {}).get(key, default)
+        except Exception:
+            return default
+
+    # ============================================================================
+    # Unified Audio Configuration Accessors
+    # ============================================================================
+
+    def get_stereo_display(self, default: bool = True) -> bool:
+        """Get stereo display mode setting from audio configuration.
+
+        Returns:
+            bool: Whether stereo display is enabled (True for stereo, False for mono)
+        """
+        return self.get_setting("audio", "stereoDisplay", default)
+
+    def get_downsampling_config(self) -> dict[str, Any]:
+        """Get downsampling configuration from audio settings.
+
+        Returns:
+            dict: Downsampling configuration with keys:
+                - enabled: Whether downsampling is enabled
+                - method: 'envelope' or 'simple'
+                - alwaysApply: Whether to always apply downsampling
+                - targetLength: Target sample count
+                - minLength: Minimum sample count
+                - maxLength: Maximum sample count
+        """
+        return self.get_setting("audio", "downsampling", {})
+
+    def get_transient_detection_config(self) -> dict[str, Any]:
+        """Get transient detection configuration from audio settings.
+
+        Returns:
+            dict: Transient detection configuration with keys:
+                - threshold: Detection threshold
+                - waitTime: Wait time between detections
+                - preMax: Pre-maximum window
+                - postMax: Post-maximum window
+                - deltaFactor: Delta factor for detection
+        """
+        return self.get_setting("audio", "transientDetection", {})
+
+    def get_playback_tempo_config(self) -> dict[str, Any]:
+        """Get playback tempo configuration from audio settings.
+
+        Returns:
+            dict: Playback tempo configuration with keys:
+                - enabled: Whether tempo adjustment is enabled
+                - targetBpm: Target BPM for tempo adjustment
+        """
+        return self.get_setting("audio", "playbackTempo", {})
+
+    def get_tail_fade_config(self) -> dict[str, Any]:
+        """Get tail fade configuration from audio settings.
+
+        Returns:
+            dict: Tail fade configuration with keys:
+                - enabled: Whether tail fade is enabled
+                - durationMs: Duration in milliseconds
+                - curve: Fade curve type ('exponential', 'linear', etc.)
+        """
+        return self.get_setting("audio", "tailFade", {})
+
+    def get_playback_config(self) -> dict[str, Any]:
+        """Get playback configuration from audio settings.
+
+        Returns:
+            dict: Playback configuration with keys:
+                - mode: Playback mode ('one-shot', 'loop', etc.)
+        """
+        return self.get_setting("audio", "playback", {})
+
+    # ============================================================================
+    # Unified UI Configuration Accessors
+    # ============================================================================
+
+    def get_marker_handle_config(self) -> dict[str, Any]:
+        """Get marker handle configuration from UI settings.
+
+        Returns:
+            dict: Marker handle configuration with keys:
+                - type: Handle type ('rectangle')
+                - width: Handle width in pixels
+                - height: Handle height in pixels
+                - offsetY: Y offset in pixels
+        """
+        if "markerHandles" in self.ui:
+            return self.ui["markerHandles"]
+        return {"type": "rectangle", "width": 8, "height": 14, "offsetY": 0}
+
+    def get_snap_threshold(self, default: float = 0.025) -> float:
+        """Get marker snapping threshold from UI settings.
+
+        Args:
+            default: Default threshold in seconds
+
+        Returns:
+            float: Snap threshold in seconds
+        """
+        return self.get_ui_setting("markerSnapping", "snapThreshold", default)
+
 
 # Create a singleton instance
 config = ConfigManager()

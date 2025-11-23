@@ -2,7 +2,6 @@
 audio_preview.py - Utilities for audio waveform downsampling and visualization
 """
 import numpy as np
-from typing import Tuple, Optional, Union, List
 
 
 def downsample_waveform(y: np.ndarray, target_length: int = 2000) -> np.ndarray:
@@ -76,12 +75,12 @@ def downsample_waveform_max_min(y: np.ndarray, target_length: int = 2000) -> np.
 
 
 def get_downsampled_data(
-    time: np.ndarray, 
-    data_left: np.ndarray, 
-    data_right: Optional[np.ndarray] = None,
+    time: np.ndarray,
+    data_left: np.ndarray,
+    data_right: np.ndarray | None = None,
     target_length: int = 2000,
     method: str = 'max_min'
-) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarray]]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
     """
     Get downsampled time and audio data for efficient visualization.
     

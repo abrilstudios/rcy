@@ -2,12 +2,21 @@
 ViewState: encapsulate view window parameters (zoom and scroll) for MVC refactor.
 """
 
+from dataclasses import dataclass, field
+
+
+@dataclass(slots=True)
 class ViewState:
     """Manage view window (start/end times) based on total duration, zoom, and scroll."""
-    def __init__(self, total_time: float, visible_time: float, scroll_frac: float = 0.0):
-        self.total_time = float(total_time)
-        self.visible_time = float(visible_time)
-        self.scroll_frac = float(scroll_frac)
+    total_time: float
+    visible_time: float
+    scroll_frac: float = 0.0
+
+    def __post_init__(self) -> None:
+        """Initialize and clamp values after dataclass initialization."""
+        self.total_time = float(self.total_time)
+        self.visible_time = float(self.visible_time)
+        self.scroll_frac = float(self.scroll_frac)
         self._clamp()
 
     def _clamp(self):

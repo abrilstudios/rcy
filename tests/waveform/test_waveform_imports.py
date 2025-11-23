@@ -6,18 +6,18 @@ import pytest
 
 
 def test_waveform_view_import():
-    """Test that waveform_view module can be imported"""
+    """Test that ui.waveform module can be imported"""
     try:
-        from waveform_view import create_waveform_view
+        from ui.waveform import create_waveform_view
         assert callable(create_waveform_view)
     except ImportError as e:
-        pytest.fail(f"Failed to import waveform_view: {e}")
+        pytest.fail(f"Failed to import ui.waveform: {e}")
 
 
 def test_waveform_classes_import():
     """Test that waveform view classes can be imported"""
     try:
-        from waveform_view import BaseWaveformView, PyQtGraphWaveformView
+        from ui.waveform import BaseWaveformView, PyQtGraphWaveformView
         assert issubclass(PyQtGraphWaveformView, BaseWaveformView)
     except ImportError as e:
         pytest.fail(f"Failed to import waveform view classes: {e}")

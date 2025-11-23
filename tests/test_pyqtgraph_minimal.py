@@ -2,12 +2,12 @@
 A minimal test program for PyQtGraph waveform view to isolate the segmentation fault.
 
 Run this test from the project root directory with:
-python src/python/test_pyqtgraph_minimal.py
+PYTHONPATH=./src/python pytest tests/test_pyqtgraph_minimal.py
 """
 import sys
 import numpy as np
 from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
-from waveform_view import create_waveform_view
+from ui.waveform import create_waveform_view
 
 class MinimalTest(QMainWindow):
     def __init__(self):

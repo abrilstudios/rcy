@@ -10,7 +10,7 @@ This module provides a centralized error handling system that:
 import sys
 import traceback
 import logging
-from typing import Optional, Callable, Any
+from typing import Any, Callable
 
 from PyQt6.QtWidgets import QMessageBox, QApplication, QWidget
 from PyQt6.QtCore import Qt, QObject, QTimer
@@ -31,35 +31,35 @@ SHOW_UI_ERRORS = True
 
 class ErrorHandler:
     """Centralized error handling for RCY application."""
-    
+
     @staticmethod
-    def set_show_ui_errors(show: bool):
+    def set_show_ui_errors(show: bool) -> None:
         """Set whether UI error dialogs should be shown."""
         global SHOW_UI_ERRORS
         SHOW_UI_ERRORS = show
-    
+
     @staticmethod
-    def log_exception(e: Exception, context: str = ""):
+    def log_exception(e: Exception, context: str = "") -> str:
         """Log an exception with stack trace to stdout."""
         error_type = type(e).__name__
         error_msg = str(e)
-        
+
         if context:
             logger.error(f"{context}: {error_type}: {error_msg}")
         else:
             logger.error(f"{error_type}: {error_msg}")
-        
+
         # Log the full stack trace
         traceback.print_exc()
-        
+
         return f"{error_type}: {error_msg}"
-    
+
     @staticmethod
-    def show_error(message: str, title: str = "Error", parent: Optional[QWidget] = None):
+    def show_error(message: str, title: str = "Error", parent: QWidget | None = None) -> None:
         """Show an error message to the user and log it."""
         # Always log the error for AI visibility
         logger.error(f"UI ERROR - {title}: {message}")
-        
+
         # Only show UI dialog if enabled and we have a QApplication
         if SHOW_UI_ERRORS and QApplication.instance():
             # Use non-modal message box
@@ -68,7 +68,7 @@ class ErrorHandler:
             msg_box.setWindowTitle(title)
             msg_box.setText(message)
             msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-            
+
             # Show non-modally if we have a parent
             if parent:
                 msg_box.setWindowModality(Qt.WindowModality.NonModal)
@@ -76,25 +76,30 @@ class ErrorHandler:
             else:
                 # We still need to show modally if no parent to prevent box from being garbage collected
                 msg_box.exec()
-    
+
     @staticmethod
-    def handle_exception(e: Exception, context: str = "", parent: Optional[QWidget] = None, 
-                         title: str = "Application Error", show_ui: bool = True):
+    def handle_exception(
+        e: Exception,
+        context: str = "",
+        parent: QWidget | None = None,
+        title: str = "Application Error",
+        show_ui: bool = True
+    ) -> str:
         """Log an exception and optionally show it to the user."""
         # Log and format the error message
         error_msg = ErrorHandler.log_exception(e, context)
-        
+
         # Show to user if requested
         if show_ui:
             context_prefix = f"{context}: " if context else ""
             ErrorHandler.show_error(f"{context_prefix}{error_msg}", title, parent)
-        
+
         return error_msg
 
 
-def exception_handling_decorator(func: Callable) -> Callable:
+def exception_handling_decorator(func: Callable[..., Any]) -> Callable[..., Any]:
     """Decorator to handle exceptions in any function."""
-    def wrapper(*args, **kwargs) -> Any:
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
         try:
             return func(*args, **kwargs)
         except Exception as e:
@@ -107,26 +112,30 @@ def exception_handling_decorator(func: Callable) -> Callable:
 
 
 # Simple global function for error display without instantiating the class
-def show_error(message: str, title: str = "Error", parent: Optional[QWidget] = None):
+def show_error(message: str, title: str = "Error", parent: QWidget | None = None) -> None:
     """Helper function to show and log an error message."""
     ErrorHandler.show_error(message, title, parent)
 
 
 # Install a global exception hook to catch unhandled exceptions
-def install_global_exception_hook():
+def install_global_exception_hook() -> None:
     """Install a global exception hook to catch unhandled exceptions."""
     original_hook = sys.excepthook
-    
-    def exception_hook(exc_type, exc_value, exc_traceback):
+
+    def exception_hook(
+        exc_type: type[BaseException],
+        exc_value: BaseException,
+        exc_traceback: Any
+    ) -> None:
         # Log the exception
         logger.critical("Unhandled exception:", exc_info=(exc_type, exc_value, exc_traceback))
-        
+
         # Show error to user if UI is available and enabled
         if SHOW_UI_ERRORS and QApplication.instance():
             error_msg = str(exc_value)
             ErrorHandler.show_error(f"Unhandled exception: {error_msg}", "Critical Error")
-        
+
         # Call the original exception hook
         original_hook(exc_type, exc_value, exc_traceback)
-    
+
     sys.excepthook = exception_hook

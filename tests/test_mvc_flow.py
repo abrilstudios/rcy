@@ -5,7 +5,7 @@ import pytest
 import numpy as np
 from PyQt6.QtCore import Qt
 from audio_processor import WavAudioProcessor
-from rcy_controller import RcyController
+from controllers import ApplicationController
 from rcy_view import RcyView
 
 @pytest.fixture
@@ -23,7 +23,7 @@ def app_and_controller(qtbot, monkeypatch):
     monkeypatch.setattr(model, 'get_data', fake_get_data)
 
     # Setup controller and view
-    controller = RcyController(model)
+    controller = ApplicationController(model)
     view = RcyView(controller)
     controller.set_view(view)
     qtbot.addWidget(view)

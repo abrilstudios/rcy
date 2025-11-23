@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any
 import numpy as np
 import librosa
 import pyrubberband as pyrb
@@ -15,12 +16,12 @@ class StretchAlgorithm(ABC):
     Abstract base class for stretch algorithms.
     """
 
-    def __init__(self, audio, sample_rate):
+    def __init__(self, audio: np.ndarray, sample_rate: int) -> None:
         self.audio = audio
         self.sample_rate = sample_rate
 
     @abstractmethod
-    def stretch(self, target_length, **kwargs):
+    def stretch(self, target_length: int, **kwargs: Any) -> np.ndarray:
         """
         Abstract method that must be implemented by subclasses.
         """
@@ -32,7 +33,7 @@ class PhaseVocoderStretch(StretchAlgorithm):
     Phase Vocoder implementation of time-stretching.
     """
 
-    def stretch(self, target_length, **kwargs):
+    def stretch(self, target_length: int, **kwargs: Any) -> np.ndarray:
         # Calculate the stretch ratio
         original_length = len(self.audio)
         stretch_ratio = target_length / original_length
@@ -52,7 +53,7 @@ class RubberbandStretch(StretchAlgorithm):
     Rubberband implementation of time-stretching.
     """
 
-    def stretch(self, target_length, **kwargs):
+    def stretch(self, target_length: int, **kwargs: Any) -> np.ndarray:
         # Calculate the stretch ratio
         original_length = len(self.audio)
         stretch_ratio = target_length / original_length
@@ -66,7 +67,7 @@ class LibrosaTimeStretch(StretchAlgorithm):
     Librosa's time_stretch implementation of time-stretching.
     """
 
-    def stretch(self, target_length, **kwargs):
+    def stretch(self, target_length: int, **kwargs: Any) -> np.ndarray:
         # Calculate the stretch ratio
         original_length = len(self.audio)
         stretch_ratio = target_length / original_length
@@ -81,7 +82,7 @@ class StretchWithGrains(StretchAlgorithm):
     This method breaks the audio into grains (small chunks) and stretches each grain.
     """
 
-    def stretch(self, target_length, **kwargs):
+    def stretch(self, target_length: int, **kwargs: Any) -> np.ndarray:
         grain_size_ms = kwargs.get('grain_size_ms', 50)  # Default grain size is 50ms
 
         # Calculate the stretch ratio
@@ -106,12 +107,12 @@ class TimeStretchManager:
     Manager class to handle different time-stretching algorithms.
     """
 
-    def __init__(self, audio, sample_rate, algorithm=PHASE_VOCODER):
+    def __init__(self, audio: np.ndarray, sample_rate: int, algorithm: str = PHASE_VOCODER) -> None:
         self.audio = audio
         self.sample_rate = sample_rate
         self.algorithm = algorithm
 
-    def stretch(self, target_length, **kwargs):
+    def stretch(self, target_length: int, **kwargs: Any) -> np.ndarray:
         """
         Select and apply the appropriate stretch algorithm based on the specified constant.
         Passes algorithm-specific parameters via kwargs.

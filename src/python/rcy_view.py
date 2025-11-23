@@ -1,12 +1,23 @@
 from PyQt6.QtWidgets import QApplication, QLabel, QLineEdit, QComboBox, QMessageBox, QMainWindow, QFileDialog, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QScrollBar, QSlider, QDialog, QTextBrowser, QInputDialog, QCheckBox
-from PyQt6.QtGui import QAction, QActionGroup, QValidator, QIntValidator, QFont, QDesktopServices
-from PyQt6.QtCore import Qt, pyqtSignal, QSize, QUrl
+from PyQt6.QtGui import QAction, QActionGroup, QValidator, QIntValidator, QFont, QDesktopServices, QKeyEvent
+from PyQt6.QtCore import Qt, pyqtSignal, QSize, QUrl, QObject, QEvent
 import os
+import logging
+from typing import Any
 from config_manager import config
-from waveform_view import create_waveform_view
+from ui.waveform import create_waveform_view
 from error_handler import ErrorHandler
 from segment_manager import get_segment_manager
 import numpy as np
+
+# UI Module imports
+from ui.dialogs import KeyboardShortcutsDialog, AboutDialog, ExportCompletionDialog
+from ui.menu_bar import MenuBarManager
+from ui.shortcuts import KeyboardShortcutHandler
+from ui.control_panel import ControlPanel
+from ui.transport_controls import TransportControls
+
+logger = logging.getLogger(__name__)
 
 class RcyView(QMainWindow):
     measures_changed = pyqtSignal(int)
@@ -26,323 +37,130 @@ class RcyView(QMainWindow):
         Qt.Key.Key_Y: 16, Qt.Key.Key_U: 17, Qt.Key.Key_I: 18, Qt.Key.Key_O: 19, Qt.Key.Key_P: 20
     }
 
-    def __init__(self, controller):
+    def __init__(self, controller: Any) -> None:
         super().__init__()
         self.controller = controller
-        self.start_marker = None
-        self.end_marker = None
-        self.start_marker_handle = None
-        self.end_marker_handle = None
-        self.dragging_marker = None
-        
+        self.start_marker: Any | None = None
+        self.end_marker: Any | None = None
+        self.start_marker_handle: Any | None = None
+        self.end_marker_handle: Any | None = None
+        self.dragging_marker: str | None = None
+
         # Active segment highlight
-        self.active_segment_highlight = None
-        self.active_segment_highlight_right = None
-        self.current_active_segment = (None, None)  
-        
+        self.active_segment_highlight: Any | None = None
+        self.active_segment_highlight_right: Any | None = None
+        self.current_active_segment: tuple[float | None, float | None] = (None, None)
+
         self.init_ui()
-        self.create_menu_bar()
-        
+        self._setup_menu_bar()
+
+        # Set up keyboard shortcut handler
+        self.shortcut_handler = KeyboardShortcutHandler(
+            on_play_pause=self.toggle_playback,
+            on_segment_selected=self._play_segment_by_index
+        )
+
         # Set key press handler for the entire window
         self.keyPressEvent = self.window_key_press
-        
-        # Get triangle dimensions from UI config
-        self.triangle_base = config.get_ui_setting("markerHandles", "width", 16)
-        self.triangle_height = config.get_ui_setting("markerHandles", "height", 10)
-        self.triangle_offset_y = config.get_ui_setting("markerHandles", "offsetY", 0)
-        
-        # Get marker snapping threshold from UI config
-        self.snap_threshold = config.get_ui_setting("markerSnapping", "snapThreshold", 0.025)
-        print(f"Marker snap threshold: {self.snap_threshold}s")
-        
+
+        # Get triangle dimensions from UI config using unified accessor
+        marker_config = config.get_marker_handle_config()
+        self.triangle_base = marker_config.get("width", 8)
+        self.triangle_height = marker_config.get("height", 14)
+        self.triangle_offset_y = marker_config.get("offsetY", 0)
+
+        # Get marker snapping threshold from UI config using unified accessor
+        self.snap_threshold = config.get_snap_threshold(0.025)
+        logger.info("Marker snap threshold: %ss", self.snap_threshold)
+
         # Install event filter to catch key events at application level
         app = QApplication.instance()
         if app:
-            app.installEventFilter(self)
-            
-    def eventFilter(self, obj, event):
-        """Application-wide event filter to catch key events"""
-        if event.type() == event.Type.KeyPress:
-            if event.key() == Qt.Key.Key_Space:
-                print("Spacebar detected via event filter! Toggling playback...")
-                self.toggle_playback()
-                return True
-        return super().eventFilter(obj, event)
-        
-    def toggle_playback_tempo(self, enabled):
+            app.installEventFilter(self.shortcut_handler)
+
+    def toggle_playback_tempo(self, enabled: bool) -> None:
         """Toggle playback tempo adjustment on/off
-        
+
         Args:
             enabled (bool): Whether playback tempo adjustment is enabled
         """
-        print(f"Toggling playback tempo adjustment: {enabled}")
-        
+        logger.debug("Toggling playback tempo adjustment: %s")
+
         # Update menu action
-        self.playback_tempo_action.setChecked(enabled)
+        self.menu_manager.update_playback_tempo_action(enabled)
 
-        # IMPORTANT: Only update the checkbox if it doesn't match the requested state
-        # This prevents toggling loops
-        if self.playback_tempo_checkbox.isChecked() != enabled:
-            # Temporarily block signals to prevent recursion
-            old_state = self.playback_tempo_checkbox.blockSignals(True)
-            self.playback_tempo_checkbox.setChecked(enabled)
-            self.playback_tempo_checkbox.blockSignals(old_state)
-            print(f"Updated checkbox state to {enabled} with signals blocked")
-
-        # Get the current target BPM from the text input
-        target_bpm = None
-        text = self.target_bpm_input.text()
-        if text:
-            try:
-                target_bpm = int(text)
-            except ValueError:
-                pass
+        # Update control panel
+        target_bpm = self.control_panel.get_target_bpm()
+        self.control_panel.set_playback_tempo(enabled, target_bpm)
 
         # Update controller
         self.controller.set_playback_tempo(enabled, target_bpm)
     
-    def set_target_bpm(self, bpm):
+    def set_target_bpm(self, bpm: int) -> None:
         """Set the target BPM for playback tempo adjustment
-        
+
         Args:
             bpm (int): Target BPM value
         """
-        print(f"Setting target BPM to {bpm}")
-        
-        # Update text input
-        self.target_bpm_input.setText(str(bpm))
-        
-        # Get current enabled state from checkbox
-        enabled = self.playback_tempo_checkbox.isChecked()
-        
+        logger.debug("Setting target BPM to %s")
+
+        # Update control panel
+        enabled = self.control_panel.get_playback_tempo_enabled()
+        self.control_panel.set_playback_tempo(enabled, bpm)
+
         # Update controller
         self.controller.set_playback_tempo(enabled, bpm)
-    
-    # Removed on_playback_tempo_changed method as dropdown has been removed
-        
-    def on_target_bpm_input_changed(self):
-        """Handle changes to the custom BPM input field"""
-        text = self.target_bpm_input.text()
-        if not text:
-            return
-            
-        # Validate input
-        validator = self.target_bpm_input.validator()
-        state, _, _ = validator.validate(text, 0)
-        
-        if state == QValidator.State.Acceptable:
-            # Convert to integer
-            bpm = int(text)
-            print(f"Custom BPM set to {bpm}")
-            
-            # Get current enabled state
-            enabled = self.playback_tempo_checkbox.isChecked()
-            print(f"DEBUG: Tempo checkbox is currently {'enabled' if enabled else 'disabled'}")
-            
-            # Always enable the checkbox when user manually enters a BPM
-            if not enabled:
-                print("DEBUG: Enabling tempo checkbox as user entered BPM manually")
-                # Block signals to prevent checkbox change from triggering toggle_playback_tempo
-                old_state = self.playback_tempo_checkbox.blockSignals(True)
-                self.playback_tempo_checkbox.setChecked(True)
-                self.playback_tempo_checkbox.blockSignals(old_state)
-                print("DEBUG: Checkbox enabled with signals blocked")
-                enabled = True
-            
-            # Update controller with the enabled state and BPM
-            print(f"DEBUG: Calling controller.set_playback_tempo(enabled={enabled}, target_bpm={bpm})")
-            self.controller.set_playback_tempo(enabled, bpm)
-        else:
-            # Reset to a default value if invalid
-            print("DEBUG: Invalid BPM value, resetting to 120")
-            # Block signals to prevent recursion
-            old_state = self.target_bpm_input.blockSignals(True)
-            self.target_bpm_input.setText("120")
-            self.target_bpm_input.blockSignals(old_state)
-    
-    def update_playback_tempo_display(self, enabled, target_bpm, ratio):
+
+    def update_playback_tempo_display(self, enabled: bool, target_bpm: int | None, ratio: float) -> None:
         """Update the playback tempo UI display
-        
+
         Args:
             enabled (bool): Whether playback tempo adjustment is enabled
             target_bpm (int): Target tempo in BPM
             ratio (float): The playback ratio
         """
-        print(f"DEBUG: update_playback_tempo_display called with:")
-        print(f"DEBUG: - enabled={enabled}")
-        print(f"DEBUG: - target_bpm={target_bpm}")
-        print(f"DEBUG: - ratio={ratio}")
-        
+        logger.debug("DEBUG: update_playback_tempo_display called with:")
+        logger.debug("DEBUG: - enabled=%s")
+        logger.debug("DEBUG: - target_bpm=%s")
+        logger.debug("DEBUG: - ratio=%s")
+
         # Ensure we have a valid target BPM
         if target_bpm is None:
-            print("DEBUG: Warning - target_bpm is None, defaulting to 120")
+            logger.debug("DEBUG: Warning - target_bpm is None, defaulting to 120")
             target_bpm = 120
-        
-        # Update checkbox - IMPORTANT: Block signals to prevent toggle loops
-        # Only update if the state doesn't match to avoid unnecessary signal blocking
-        if self.playback_tempo_checkbox.isChecked() != enabled:
-            print(f"DEBUG: Setting checkbox to {enabled} with signals blocked")
-            old_state = self.playback_tempo_checkbox.blockSignals(True)
-            self.playback_tempo_checkbox.setChecked(enabled)
-            self.playback_tempo_checkbox.blockSignals(old_state)
-        else:
-            print(f"DEBUG: Checkbox already set to {enabled}, no update needed")
-        
-        # Update custom BPM input - Block signals to prevent onChange triggers
-        current_text = self.target_bpm_input.text()
-        if current_text != str(target_bpm):
-            print(f"DEBUG: Updating target_bpm_input text to {target_bpm} with signals blocked")
-            old_state = self.target_bpm_input.blockSignals(True)
-            self.target_bpm_input.setText(str(target_bpm))
-            self.target_bpm_input.blockSignals(old_state)
-        else:
-            print(f"DEBUG: BPM input already set to {target_bpm}, no update needed")
-        
+
+        # Update control panel
+        self.control_panel.set_playback_tempo(enabled, target_bpm)
+
         # Update menu action
-        self.playback_tempo_action.setChecked(enabled)
+        self.menu_manager.update_playback_tempo_action(enabled)
 
-    def create_menu_bar(self):
-        menubar = self.menuBar()
+    def _setup_menu_bar(self) -> None:
+        """Set up the menu bar using MenuBarManager."""
+        self.menu_manager = MenuBarManager(
+            parent=self,
+            controller=self.controller,
+            on_open_session=self.load_session_file,
+            on_import_audio=self.import_audio_file,
+            on_preset_selected=self.load_preset,
+            on_export=self.export_segments,
+            on_save_as=self.save_as,
+            on_toggle_playback_tempo=self.toggle_playback_tempo,
+            on_playback_mode_changed=self.set_playback_mode,
+            on_show_shortcuts=lambda: KeyboardShortcutsDialog(self).exec(),
+            on_show_about=lambda: AboutDialog(self).exec()
+        )
+        self.setMenuBar(self.menu_manager.create_menu_bar())
 
-        # File menu
-        file_menu = menubar.addMenu(config.get_string("menus", "file"))
-
-        # Open action
-        open_action = QAction("Open Session", self)
-        open_action.setShortcut('Ctrl+O')
-        open_action.setStatusTip('Open a saved session file')
-        open_action.triggered.connect(self.load_session_file)
-        file_menu.addAction(open_action)
-        
-        # Import Audio action
-        import_action = QAction("Import Audio", self)
-        import_action.setShortcut('Ctrl+I')
-        import_action.setStatusTip('Import a new audio file')
-        import_action.triggered.connect(self.import_audio_file)
-        file_menu.addAction(import_action)
-        
-        # Open Preset submenu
-        presets_menu = file_menu.addMenu("Open Preset")
-        self.populate_presets_menu(presets_menu)
-
-        # Export action
-        export_action = QAction(config.get_string("menus", "export"), self)
-        export_action.setShortcut('Ctrl+E')
-        export_action.setStatusTip('Export segments and SFZ file')
-        export_action.triggered.connect(self.export_segments)
-        file_menu.addAction(export_action)
-
-        # Save As action
-        save_as_action = QAction(config.get_string("menus", "saveAs"), self)
-        save_as_action.triggered.connect(self.save_as)
-        file_menu.addAction(save_as_action)
-        
-        # Options menu
-        options_menu = menubar.addMenu("Options")
-        
-        # Playback Tempo submenu
-        playback_tempo_menu = options_menu.addMenu("Playback Tempo")
-        
-        # Enable/disable playback tempo adjustment
-        self.playback_tempo_action = QAction("Enable Tempo Adjustment", self)
-        self.playback_tempo_action.setCheckable(True)
-        self.playback_tempo_action.triggered.connect(self.toggle_playback_tempo)
-        playback_tempo_menu.addAction(self.playback_tempo_action)
-        
-        # Add separator
-        playback_tempo_menu.addSeparator()
-        
-        # Playback Mode submenu
-        playback_mode_menu = options_menu.addMenu("Playback Mode")
-        
-        # Create action group for radio button behavior
-        playback_mode_group = QActionGroup(self)
-        playback_mode_group.setExclusive(True)
-        
-        # Add playback mode options with radio buttons
-        self.one_shot_action = QAction("One-Shot", self)
-        self.one_shot_action.setCheckable(True)
-        self.one_shot_action.triggered.connect(lambda: self.set_playback_mode("one-shot"))
-        playback_mode_group.addAction(self.one_shot_action)
-        playback_mode_menu.addAction(self.one_shot_action)
-        
-        self.loop_action = QAction("Loop", self)
-        self.loop_action.setCheckable(True)
-        self.loop_action.triggered.connect(lambda: self.set_playback_mode("loop"))
-        playback_mode_group.addAction(self.loop_action)
-        playback_mode_menu.addAction(self.loop_action)
-        
-        self.loop_reverse_action = QAction("Loop and Reverse", self)
-        self.loop_reverse_action.setCheckable(True)
-        self.loop_reverse_action.triggered.connect(lambda: self.set_playback_mode("loop-reverse"))
-        playback_mode_group.addAction(self.loop_reverse_action)
-        playback_mode_menu.addAction(self.loop_reverse_action)
-        
-        # Set initial selection to one-shot (default)
-        # The controller will update this later if needed
-        self.one_shot_action.setChecked(True)
-        
-        # Help menu
-        help_menu = menubar.addMenu(config.get_string("menus", "help"))
-        
-        # Keyboard shortcuts action
-        shortcuts_action = QAction(config.get_string("menus", "keyboardShortcuts"), self)
-        shortcuts_action.triggered.connect(self.show_keyboard_shortcuts)
-        help_menu.addAction(shortcuts_action)
-        
-        # About action
-        about_action = QAction(config.get_string("menus", "about"), self)
-        about_action.triggered.connect(self.show_about_dialog)
-        help_menu.addAction(about_action)
-
-    def show_export_completion_dialog(self, export_stats):
+    def show_export_completion_dialog(self, export_stats: dict[str, Any] | None) -> None:
         """Show a dialog with export completion information
-        
+
         Args:
             export_stats: Dictionary with export statistics
         """
-        if not export_stats:
-            return
+        ExportCompletionDialog.show_dialog(export_stats, self)
             
-        # Format time signature for display
-        time_sig = f"{export_stats['time_signature'][0]}/{export_stats['time_signature'][1]}" if export_stats['time_signature'] else "4/4"
-        
-        # Create completion dialog with export statistics
-        msg_box = QMessageBox(self)
-        msg_box.setWindowTitle("Export Complete")
-        msg_box.setIcon(QMessageBox.Icon.Information)
-        
-        # Build the message text
-        message = f"Successfully exported {export_stats['segment_count']} segments.\n\n"
-        message += f"SFZ Instrument: {os.path.basename(export_stats['sfz_path'])}\n"
-        message += f"MIDI Sequence: {os.path.basename(export_stats['midi_path'])}\n\n"
-        message += f"Time Signature: {time_sig}\n"
-        
-        # Show tempo information, accounting for tempo adjustment
-        if export_stats.get('playback_tempo_enabled', False):
-            message += f"Source Tempo: {export_stats['source_bpm']:.1f} BPM\n"
-            message += f"Adjusted Tempo (MIDI): {export_stats['tempo']:.1f} BPM\n"
-        else:
-            message += f"Tempo: {export_stats['tempo']:.1f} BPM\n"
-            
-        message += f"Duration: {export_stats['duration']:.2f} seconds\n"
-        message += f"\nFiles saved to:\n{export_stats['directory']}"
-        
-        msg_box.setText(message)
-        
-        # Add a button to open the export directory
-        open_dir_button = msg_box.addButton("Open Folder", QMessageBox.ButtonRole.ActionRole)
-        close_button = msg_box.addButton(QMessageBox.StandardButton.Close)
-        
-        # Show the dialog
-        msg_box.exec()
-        
-        # Check if the user clicked "Open Folder"
-        if msg_box.clickedButton() == open_dir_button:
-            # Open the directory using the platform's file manager
-            QDesktopServices.openUrl(QUrl.fromLocalFile(export_stats['directory']))
-            
-    def export_segments(self):
+    def export_segments(self) -> None:
         """Export segments to the selected directory"""
         directory = QFileDialog.getExistingDirectory(self,
                                                      config.get_string("dialogs", "exportDirectoryTitle"))
@@ -354,13 +172,13 @@ class RcyView(QMainWindow):
             self.show_export_completion_dialog(export_stats)
         else:
             # User canceled the export
-            print("Export canceled by user")
+            logger.debug("Export canceled by user")
 
-    def save_as(self):
+    def save_as(self) -> None:
         # Implement save as functionality
         pass
 
-    def init_ui(self):
+    def init_ui(self) -> None:
         self.setWindowTitle(config.get_string("ui", "windowTitle"))
         self.setGeometry(100, 100, 800, 600)
         
@@ -388,106 +206,18 @@ class RcyView(QMainWindow):
         
         self.setCentralWidget(main_widget)
 
-        # create top bar info row
-        info_layout = QHBoxLayout()
-        slice_layout = QHBoxLayout()
+        # Create control panel
+        self.control_panel = ControlPanel()
+        main_layout.addWidget(self.control_panel)
 
-        ## Number of Measures Input
-        self.measures_label = QLabel(config.get_string("labels", "numMeasures"))
-        self.measures_input = QLineEdit("1")
-        self.measures_input.setValidator(QIntValidator(1, 1000))
-        self.measures_input.editingFinished.connect(self.on_measures_changed)
-        info_layout.addWidget(self.measures_label)
-        info_layout.addWidget(self.measures_input)
-
-        ## Tempo Display
-        self.tempo_label = QLabel(config.get_string("labels", "tempo"))
-        self.tempo_display = QLineEdit("N/A")
-        self.tempo_display.setReadOnly(True)
-        info_layout.addWidget(self.tempo_label)
-        info_layout.addWidget(self.tempo_display)
-        
-        ## Playback Tempo Controls
-        # Create a horizontal layout for playback tempo
-        playback_tempo_layout = QHBoxLayout()
-        
-        # Create checkbox for enabling/disabling
-        self.playback_tempo_checkbox = QCheckBox("Tempo Adjust:")
-        self.playback_tempo_checkbox.setChecked(False)
-        self.playback_tempo_checkbox.toggled.connect(self.toggle_playback_tempo)
-        playback_tempo_layout.addWidget(self.playback_tempo_checkbox)
-        
-        # Create BPM input field
-        self.target_bpm_input = QLineEdit()
-        self.target_bpm_input.setValidator(QIntValidator(40, 300))  # Reasonable tempo range
-        self.target_bpm_input.setPlaceholderText("BPM")
-        self.target_bpm_input.editingFinished.connect(self.on_target_bpm_input_changed)
-        self.target_bpm_input.setMaximumWidth(80)
-        playback_tempo_layout.addWidget(self.target_bpm_input)
-        
-        # Add the playback tempo layout to the info layout
-        info_layout.addLayout(playback_tempo_layout)
-
-        ## add split buttons
-        self.split_measures_button = QPushButton(config.get_string("buttons", "splitMeasures"))
-        self.split_measures_button.clicked.connect(self.on_split_measures_clicked)
-
-        self.split_transients_button = QPushButton(config.get_string("buttons", "splitTransients"))
-        self.split_transients_button.clicked.connect(
-            lambda: self.controller.execute_command('split_audio', method='transients')
+        # Connect control panel signals
+        self.control_panel.measures_changed.connect(self.measures_changed.emit)
+        self.control_panel.threshold_changed.connect(self.on_threshold_changed)
+        self.control_panel.resolution_changed.connect(
+            lambda res: self.controller.execute_command('set_resolution', resolution=res)
         )
-
-        # Add measure resolution dropdown
-        self.measure_resolution_combo = QComboBox()
-        self.measure_resolutions = config.get_string("labels", "measureResolutions")
-        
-        # Add each resolution option to the dropdown
-        for resolution in self.measure_resolutions:
-            self.measure_resolution_combo.addItem(resolution["label"])
-        
-        # Set default selection to the Quarter Note (4) option
-        default_index = next((i for i, res in enumerate(self.measure_resolutions) if res["value"] == 4), 2)
-        self.measure_resolution_combo.setCurrentIndex(default_index)
-            
-        self.measure_resolution_combo.currentIndexChanged.connect(self.on_measure_resolution_changed)
-        # add to layout
-        slice_layout.addWidget(self.split_measures_button)
-        slice_layout.addWidget(self.split_transients_button)
-        slice_layout.addWidget(self.measure_resolution_combo)
-
-        # add to layout
-        main_layout.addLayout(info_layout)
-        main_layout.addLayout(slice_layout)
-
-        # create the slider and label for transient detection
-        threshold_layout = QHBoxLayout()
-
-        # Create a label for the slider
-        threshold_label = QLabel(config.get_string("labels", "onsetThreshold"))
-        threshold_layout.addWidget(threshold_label)
-
-        # Get default threshold from config
-        td_config = config.get_setting("audio", "transientDetection", {})
-        default_threshold = td_config.get("threshold", 0.2)
-        
-        # Convert the threshold to slider value (multiply by 100)
-        default_slider_value = int(default_threshold * 100)
-        
-        # Create the slider
-        self.threshold_slider = QSlider(Qt.Orientation.Horizontal)
-        self.threshold_slider.setRange(1, 100)  # Range from 0.01 to 1.00
-        self.threshold_slider.setValue(default_slider_value)  # Set from config
-        self.threshold_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
-        self.threshold_slider.setTickInterval(10)
-        self.threshold_slider.valueChanged.connect(self.on_threshold_changed)
-        threshold_layout.addWidget(self.threshold_slider)
-
-        # Create a label to display the current value
-        self.threshold_value_label = QLabel(f"{default_threshold:.2f}")
-        threshold_layout.addWidget(self.threshold_value_label)
-
-        # Add the slider layout to your main layout
-        main_layout.addLayout(threshold_layout)
+        self.control_panel.playback_tempo_toggled.connect(self.toggle_playback_tempo)
+        self.control_panel.target_bpm_changed.connect(self.set_target_bpm)
 
         # Create waveform visualization using PyQtGraph
         self.waveform_view = create_waveform_view()
@@ -514,42 +244,36 @@ class RcyView(QMainWindow):
         self.scroll_bar.valueChanged.connect(self.controller.update_view)
         main_layout.addWidget(self.scroll_bar)
 
-        # Create buttons
-        button_layout = QHBoxLayout()
-        self.zoom_in_button = QPushButton(config.get_string("buttons", "zoomIn"))
-        self.zoom_out_button = QPushButton(config.get_string("buttons", "zoomOut"))
-        self.cut_button = QPushButton(config.get_string("buttons", "cut"))
-        
-        # Style the cut button to stand out
-        self.cut_button.setStyleSheet(f"background-color: {config.get_qt_color('cutButton')}; color: white; font-weight: bold;")
-        
-        # Connect button signals via command dispatcher
-        self.zoom_in_button.clicked.connect(
+        # Create transport controls
+        self.transport_controls = TransportControls()
+        main_layout.addWidget(self.transport_controls)
+
+        # Connect transport control signals
+        self.transport_controls.split_measures_requested.connect(self.on_split_measures_clicked)
+        self.transport_controls.split_transients_requested.connect(
+            lambda: self.controller.execute_command('split_audio', method='transients')
+        )
+        self.transport_controls.cut_requested.connect(self.on_cut_button_clicked)
+        self.transport_controls.zoom_in_requested.connect(
             lambda: self.controller.execute_command('zoom_in')
         )
-        self.zoom_out_button.clicked.connect(
+        self.transport_controls.zoom_out_requested.connect(
             lambda: self.controller.execute_command('zoom_out')
         )
-        self.cut_button.clicked.connect(self.on_cut_button_clicked)
-        
-        button_layout.addWidget(self.zoom_in_button)
-        button_layout.addWidget(self.zoom_out_button)
-        button_layout.addWidget(self.cut_button)
-        main_layout.addLayout(button_layout)
         
 
     def on_plot_click(self, event):
-        print("on_plot_click")
+        logger.debug("on_plot_click")
         # Allow clicks in either waveform (top or bottom) for stereo display
         if event.inaxes not in [self.ax_left, self.ax_right]:
             return
 
         modifiers = QApplication.keyboardModifiers()
-        print(f"    Modifiers value: {modifiers}")
-        print(f"    Is Control: {bool(modifiers & Qt.KeyboardModifier.ControlModifier)}")
-        print(f"    Is Shift: {bool(modifiers & Qt.KeyboardModifier.ShiftModifier)}")
-        print(f"    Is Alt: {bool(modifiers & Qt.KeyboardModifier.AltModifier)}")
-        print(f"    Is Meta: {bool(modifiers & Qt.KeyboardModifier.MetaModifier)}")
+        logger.debug("    Modifiers value: %s")
+        logger.debug("    Is Control: %s")
+        logger.debug("    Is Shift: %s")
+        logger.debug("    Is Alt: %s")
+        logger.debug("    Is Meta: %s")
         
         # Using a more direct approach: if clicking on the first segment area, allow both marker and segment handling
         # Get click position details to help debug
@@ -565,7 +289,7 @@ class RcyView(QMainWindow):
                 total_time = self.controller.model.total_time
                 pos_info = (f"Click at x={event.xdata:.2f}, first_slice={first_slice:.2f}, "
                            f"last_slice={last_slice:.2f}, total={total_time:.2f}")
-                print(pos_info)
+                logger.debug(pos_info)
         
         # PRIORITY 1: Check for keyboard modifiers first
         # ==================================================
@@ -573,33 +297,33 @@ class RcyView(QMainWindow):
         # Shift+Click to force play the first segment (for easier access)
         # This takes precedence over marker handling to ensure it always works
         if modifiers & Qt.KeyboardModifier.ShiftModifier:
-            print(f"### Shift+Click detected - forcing first segment playback")
+            logger.debug("### Shift+Click detected - forcing first segment playback")
             # Always use a very small value to ensure first segment
-            print(f"### Forcing first segment playback (0.01s)")
+            logger.debug("### Forcing first segment playback (0.01s)")
             self.play_segment.emit(0.01)
             return
             
         # Check for Ctrl+Alt (Option) combination for removing segments
         if (modifiers & Qt.KeyboardModifier.ControlModifier) and (modifiers & Qt.KeyboardModifier.AltModifier):
-            print(f"Ctrl+Alt (Option) combination detected - removing segment at {event.xdata}")
+            logger.debug("Ctrl+Alt (Option) combination detected - removing segment at %s")
             self.remove_segment.emit(event.xdata)
             return
             
         # Check for Alt+Cmd (Meta) combination for removing segments
         if (modifiers & Qt.KeyboardModifier.AltModifier) and (modifiers & Qt.KeyboardModifier.MetaModifier):
-            print(f"Alt+Cmd combination detected - removing segment at {event.xdata}")
+            logger.debug("Alt+Cmd combination detected - removing segment at %s")
             self.remove_segment.emit(event.xdata)
             return
             
         # Add segment with Ctrl+Click
         if modifiers & Qt.KeyboardModifier.ControlModifier:
-            print(f"Ctrl detected - adding segment at {event.xdata}")
+            logger.debug("Ctrl detected - adding segment at %s")
             self.add_segment.emit(event.xdata)
             return
             
         # Add segment with Alt+Click
         if modifiers & Qt.KeyboardModifier.AltModifier:
-            print(f"Alt detected - adding segment at {event.xdata}")
+            logger.debug("Alt detected - adding segment at %s")
             self.add_segment.emit(event.xdata)
             return
         
@@ -608,46 +332,46 @@ class RcyView(QMainWindow):
         
         # Check if we're clicking near start marker (with enhanced detection)
         start_marker_x = self.start_marker.get_xdata()[0] if self.start_marker and self.start_marker.get_visible() else None
-        print(f"Start marker at: {start_marker_x}")
+        logger.debug("Start marker at: %s")
         
         # Enhanced detection for start marker dragging - higher priority near the edge of waveform
         if start_marker_x is not None and abs(event.xdata - start_marker_x) < 0.1:
-            print("Starting to drag start marker (enhanced detection)")
+            logger.debug("Starting to drag start marker (enhanced detection)")
             self.dragging_marker = 'start'
             return
             
         # Check if we're clicking near end marker (with enhanced detection)
         end_marker_x = self.end_marker.get_xdata()[0] if self.end_marker and self.end_marker.get_visible() else None
-        print(f"End marker at: {end_marker_x}")
+        logger.debug("End marker at: %s")
         
         # Enhanced detection for end marker dragging
         if end_marker_x is not None and abs(event.xdata - end_marker_x) < 0.1:
-            print("Starting to drag end marker (enhanced detection)")
+            logger.debug("Starting to drag end marker (enhanced detection)")
             self.dragging_marker = 'end'
             return
             
         # Standard marker detection as fallback
         if self.is_near_marker(event.xdata, event.ydata, self.start_marker, self.start_marker_handle):
-            print("Starting to drag start marker (standard detection)")
+            logger.debug("Starting to drag start marker (standard detection)")
             self.dragging_marker = 'start'
             return
         elif self.is_near_marker(event.xdata, event.ydata, self.end_marker, self.end_marker_handle):
-            print("Starting to drag end marker (standard detection)")
+            logger.debug("Starting to drag end marker (standard detection)")
             self.dragging_marker = 'end'
             return
                 
         # No modifiers - play segment at clicked position
-        print(f"### Emitting play_segment signal with click position: {event.xdata}")
+        logger.debug("### Emitting play_segment signal with click position: %s")
         self.play_segment.emit(event.xdata)
             
     def is_near_marker(self, x, y, marker, marker_handle):
         """Check if coordinates are near the marker or its handle"""
         if marker is None or not marker.get_visible():
-            print(f"Marker not visible or None")
+            logger.debug("Marker not visible or None")
             return False
         
         marker_x = marker.get_xdata()[0]  # Vertical lines have the same x for all points
-        print(f"Checking marker at x={marker_x}")
+        logger.debug("Checking marker at x=%s")
         
         # Very simple detection for marker:
         # If we're within a reasonable threshold of the marker, count as near
@@ -657,17 +381,20 @@ class RcyView(QMainWindow):
         
         is_near = abs(x - marker_x) < threshold
         if is_near:
-            print(f"Click near marker (within threshold)")
+            logger.debug("Click near marker (within threshold)")
         return is_near
 
-    def on_threshold_changed(self, value):
-        threshold = value / 100.0
-        self.threshold_value_label.setText(f"{threshold:.2f}")
+    def on_threshold_changed(self, threshold: float) -> None:
+        """Handle threshold changes from control panel.
+
+        Args:
+            threshold: Threshold value (0.0-1.0)
+        """
         # Dispatch via command pattern
         self.controller.execute_command('set_threshold', threshold=threshold)
 
-    def update_slices(self, slices):
-        print("Convert slice points to times")
+    def update_slices(self, slices: list[float]) -> None:
+        logger.debug("Convert slice points to times")
         slice_times = [slice_point / self.controller.model.sample_rate for slice_point in slices]
         
         # Get current marker positions
@@ -682,7 +409,7 @@ class RcyView(QMainWindow):
         if end_pos is None:
             end_pos = total_time
         
-        print(f"Marker positions before update - start: {start_pos}, end: {end_pos}")
+        logger.debug("Marker positions before update - start: %s, end: %s")
         
         # Validate marker positions against current file boundaries
         if start_pos < 0:
@@ -693,7 +420,7 @@ class RcyView(QMainWindow):
             
         # If end marker is too close to start or exceeds file length, adjust it
         if abs(end_pos - start_pos) < 0.1 or end_pos > total_time:
-            print(f"End marker too close to start marker or beyond file end, adjusting: {end_pos} -> {total_time}")
+            logger.debug("End marker too close to start marker or beyond file end, adjusting: %s -> %s")
             end_pos = total_time
         
         # Set marker positions
@@ -710,9 +437,9 @@ class RcyView(QMainWindow):
         
         # Store the current slices in the controller
         self.controller.current_slices = slice_times
-        print(f"Debugging: Updated current_slices in controller: {self.controller.current_slices}")
+        logger.debug("Debugging: Updated current_slices in controller: %s")
 
-    def on_measures_changed(self):
+    def on_measures_changed(self) -> None:
         """Handle changes to the measures input field and update controller"""
         text = self.measures_input.text()
         validator = self.measures_input.validator()
@@ -720,19 +447,24 @@ class RcyView(QMainWindow):
 
         if state == QValidator.State.Acceptable:
             num_measures = int(text)
-            print(f"Measure count changed to {num_measures}")
+            logger.debug("Measure count changed to %s")
             # Emitting signal will trigger controller.on_measures_changed
             self.measures_changed.emit(num_measures)
         else:
             # Reset to controller's current value or default to 1
             current_measures = getattr(self.controller, 'num_measures', 1)
             self.measures_input.setText(str(current_measures))
-            print(f"Invalid measure count, reset to {current_measures}")
+            logger.debug("Invalid measure count, reset to %s")
 
-    def update_tempo(self, tempo):
-        print(f"DEBUG: update_tempo called with tempo={tempo:.2f}")
-        self.tempo_display.setText(f"{tempo:.2f} BPM")
-        print(f"DEBUG: tempo_display updated to '{tempo:.2f} BPM'")
+    def update_tempo(self, tempo: float) -> None:
+        """Update the tempo display.
+
+        Args:
+            tempo: Tempo in BPM
+        """
+        logger.debug("DEBUG: update_tempo called with tempo=%s")
+        self.control_panel.update_tempo_display(tempo)
+        logger.debug("DEBUG: tempo_display updated to '%s BPM'")
 
     def on_button_release(self, event):
         """Handle button release event to stop dragging"""
@@ -768,22 +500,22 @@ class RcyView(QMainWindow):
         
         self.canvas.draw()
     
-    def set_start_marker(self, x_pos):
+    def set_start_marker(self, x_pos: float) -> None:
         """Set the position of the start marker"""
         # Delegate to the waveform view component
         self.waveform_view.set_start_marker(x_pos)
-        
-    def set_end_marker(self, x_pos):
+
+    def set_end_marker(self, x_pos: float) -> None:
         """Set the position of the end marker"""
         # Delegate to the waveform view component
         self.waveform_view.set_end_marker(x_pos)
     
-    def get_marker_positions(self):
+    def get_marker_positions(self) -> tuple[float | None, float | None]:
         """Get the positions of both markers, or None if not visible"""
         # Delegate to the waveform view component
         return self.waveform_view.get_marker_positions()
         
-    def window_key_press(self, event):
+    def window_key_press(self, event: QKeyEvent) -> None:
         """Handle Qt key press events for the entire window"""
         key = event.key()
         
@@ -801,11 +533,11 @@ class RcyView(QMainWindow):
         # Default processing
         super().keyPressEvent(event)
     
-    def _get_segment_index_from_key(self, key):
+    def _get_segment_index_from_key(self, key: Qt.Key) -> int | None:
         """Ultra-fast key to segment index mapping. Returns 1-based index or None."""
         return self.SEGMENT_KEY_MAP.get(key)
     
-    def _play_segment_by_index(self, segment_index):
+    def _play_segment_by_index(self, segment_index: int) -> None:
         """Ultra-fast segment playback using SegmentManager O(1) lookup."""
         segment_manager = get_segment_manager()
         
@@ -822,11 +554,11 @@ class RcyView(QMainWindow):
         # Play the segment
         self.controller.model.play_segment(start_time, end_time)
         
-    def toggle_playback(self):
+    def toggle_playback(self) -> None:
         """Toggle playback between start and stop"""
         if self.controller.model.is_playing:
             # If playing, stop playback
-            print("Toggle: Stopping playback")
+            logger.debug("Toggle: Stopping playback")
             self.controller.stop_playback()
         else:
             # If not playing, find the most appropriate segment to play
@@ -835,7 +567,7 @@ class RcyView(QMainWindow):
             start_pos, end_pos = self.get_marker_positions()
             if start_pos is not None and end_pos is not None:
                 # Use markers if both are set
-                print(f"Toggle: Playing from markers {start_pos} to {end_pos} with mode: {self.controller.get_playback_mode()}")
+                logger.debug("Toggle: Playing from markers %s to %s with mode: %s")
                 
                 # Highlight the active segment in the view
                 self.highlight_active_segment(start_pos, end_pos)
@@ -852,18 +584,18 @@ class RcyView(QMainWindow):
             center_pos = self.waveform_view.get_view_center()
             
             # Emulate a click at the center of the current view
-            print(f"Toggle: Emulating click at center of view: {center_pos}")
+            logger.debug("Toggle: Emulating click at center of view: %s")
             self.controller.play_segment(center_pos)
     
     def on_key_press(self, event):
         """Handle key press events"""
         # Print in detail what key was pressed
-        print(f"Key pressed: {event.key}")
-        print(f"Key modifiers: {QApplication.keyboardModifiers()}")
+        logger.debug("Key pressed: %s")
+        logger.debug("Key modifiers: %s")
         
         # Handle spacebar for play/stop toggle
         if event.key == ' ' or event.key == 'space':
-            print("Spacebar detected! Toggling playback...")
+            logger.debug("Spacebar detected! Toggling playback...")
             self.toggle_playback()
             return
             
@@ -876,19 +608,19 @@ class RcyView(QMainWindow):
         # 'c' key no longer needed for clearing markers
         # Can be repurposed for other functionality
     
-    def on_segment_clicked(self, x_position):
+    def on_segment_clicked(self, x_position: float) -> None:
         """Handle segment click events from waveform view."""
-        print(f"Segment clicked at {x_position:.3f}s")
+        logger.debug("Segment clicked at %ss")
         self.play_segment.emit(x_position)
-        
-    def on_marker_dragged(self, marker_type, position):
+
+    def on_marker_dragged(self, marker_type: str, position: float) -> None:
         """Handle marker drag events from waveform view."""
-        print(f"Marker {marker_type} dragged to {position:.3f}s")
+        logger.debug("Marker %s dragged to %ss")
         self.dragging_marker = marker_type
-        
-    def on_marker_released(self, marker_type, position):
+
+    def on_marker_released(self, marker_type: str, position: float) -> None:
         """Handle marker release events from waveform view."""
-        print(f"Marker {marker_type} released at {position:.3f}s")
+        logger.debug("Marker %s released at %ss")
         if marker_type == 'start':
             self.start_marker_changed.emit(position)
         else:
@@ -960,22 +692,22 @@ class RcyView(QMainWindow):
             try:
                 self.start_marker_handle.remove()
             except:
-                print("Warning: Could not remove existing start marker handle")
+                logger.warning("Warning: Could not remove existing start marker handle")
                 
         self.start_marker_handle = Polygon(empty_triangle, **start_marker_props)
         self.ax.add_patch(self.start_marker_handle)
-        print("Created start marker handle (improved visibility)")
+        logger.debug("Created start marker handle (improved visibility)")
         
         # Create the end marker handle (left-pointing triangle)
         if self.end_marker_handle is not None:
             try:
                 self.end_marker_handle.remove()
             except:
-                print("Warning: Could not remove existing end marker handle")
+                logger.warning("Warning: Could not remove existing end marker handle")
                 
         self.end_marker_handle = Polygon(empty_triangle, **end_marker_props)
         self.ax.add_patch(self.end_marker_handle)
-        print("Created end marker handle (improved visibility)")
+        logger.debug("Created end marker handle (improved visibility)")
 
     def _update_marker_handle(self, marker_type):
         """Update the position of a marker's triangle handle"""
@@ -992,30 +724,30 @@ class RcyView(QMainWindow):
         # Balanced sizes relative to the total audio duration
         triangle_height_data = total_time * 0.02  # 2% of total duration
         triangle_base_half_data = total_time * 0.015  # 1.5% of total duration
-        print(f"Triangle size: height={triangle_height_data}, half-base={triangle_base_half_data}, total_time={total_time}")
+        logger.debug("Triangle size: height=%s, half-base=%s, total_time=%s")
         
         if marker_type == 'start':
             marker = self.start_marker
             handle = self.start_marker_handle
-            print(f"Updating start marker handle")
+            logger.debug("Updating start marker handle")
         else:  # end marker
             marker = self.end_marker
             handle = self.end_marker_handle
-            print(f"Updating end marker handle")
+            logger.debug("Updating end marker handle")
             
         # Ensure marker and handle exist
         if marker is None or handle is None:
-            print(f"Marker or handle is None for {marker_type}")
+            logger.debug("Marker or handle is None for %s")
             return
         
         # Force marker to be visible
         if not marker.get_visible():
-            print(f"Forcing {marker_type} marker to be visible")
+            logger.debug("Forcing %s marker to be visible")
             marker.set_visible(True)
             
         # Get marker position
         marker_x = marker.get_xdata()[0]
-        print(f"{marker_type} marker position: {marker_x}")
+        logger.debug("%s marker position: %s")
         
         # Position triangle at the bottom of the waveform
         # No offset from the bottom - triangles should be aligned with the bottom line
@@ -1043,7 +775,7 @@ class RcyView(QMainWindow):
         handle.set_xy(triangle_coords)
         handle.set_visible(True)
         handle.set_zorder(100)  # Ensure triangles are always on top
-        print(f"Updated {marker_type} marker handle: visible={handle.get_visible()}, zorder={handle.get_zorder()}")
+        logger.debug("Updated %s marker handle: visible=%s, zorder=%s")
     
     def clear_markers(self):
         """Reset markers to file boundaries instead of hiding them"""
@@ -1058,7 +790,7 @@ class RcyView(QMainWindow):
         self.controller.on_start_marker_changed(0.0)
         self.controller.on_end_marker_changed(total_time)
 
-        print(f"Reset markers to file boundaries (0.0s to {total_time:.2f}s)")
+        logger.debug("Reset markers to file boundaries (0.0s to %ss)")
     
     def update_plot(self, time, data_left, data_right=None, is_stereo=False):
         """Update the plot with time and audio data.
@@ -1074,35 +806,35 @@ class RcyView(QMainWindow):
         their triangle handles are updated correctly.
         """
         if start_marker is None or end_marker is None:
-            print("Warning: One of the markers is None in _update_marker_visibility")
+            logger.warning("Warning: One of the markers is None in _update_marker_visibility")
             return
             
         x_min, x_max = ax.get_xlim()
         
         # Always ensure the marker lines themselves are visible
         if not start_marker.get_visible():
-            print("Forcing start marker to be visible")
+            logger.debug("Forcing start marker to be visible")
             start_marker.set_visible(True)
             
         if not end_marker.get_visible():
-            print("Forcing end marker to be visible")
+            logger.debug("Forcing end marker to be visible")
             end_marker.set_visible(True)
             
         # Debug marker positions
         start_pos = start_marker.get_xdata()[0]
         end_pos = end_marker.get_xdata()[0]
-        print(f"Marker positions - start: {start_pos}, end: {end_pos}")
+        logger.debug("Marker positions - start: %s, end: %s")
         
         # Force update triangle handles regardless of view
         if self.start_marker_handle and start_marker == self.start_marker:
             self.start_marker_handle.set_visible(True)
             self._update_marker_handle('start')
-            print("Updated start marker handle")
+            logger.debug("Updated start marker handle")
             
         if self.end_marker_handle and end_marker == self.end_marker:
             self.end_marker_handle.set_visible(True)
             self._update_marker_handle('end')
-            print("Updated end marker handle")
+            logger.debug("Updated end marker handle")
 
     def update_scroll_bar(self, visible_time, total_time):
         # Block signals to prevent recursive updates
@@ -1116,37 +848,25 @@ class RcyView(QMainWindow):
     def get_scroll_position(self):
         return self.scroll_bar.value()
         
-    def highlight_active_segment(self, start_time, end_time):
+    def highlight_active_segment(self, start_time: float, end_time: float) -> None:
         """Highlight the currently playing segment"""
-        print(f"Highlighting active segment: {start_time:.2f}s to {end_time:.2f}s")
-        
+        logger.debug("Highlighting active segment: %ss to %ss")
+
         # Store current segment
         self.current_active_segment = (start_time, end_time)
-        
+
         # Delegate to the waveform view component
         self.waveform_view.highlight_active_segment(start_time, end_time)
-    
-    def clear_active_segment_highlight(self):
+
+    def clear_active_segment_highlight(self) -> None:
         """Remove the active segment highlight"""
         # Delegate to the waveform view component
         self.waveform_view.clear_active_segment_highlight()
-        
+
         # Reset active segment tracking
         self.current_active_segment = (None, None)
 
-    def populate_presets_menu(self, menu):
-        """Populate the presets menu with available presets"""
-        # Get available presets from controller
-        presets = self.controller.get_available_presets()
-        
-        # Add each preset to the menu
-        for preset_id, preset_name in presets:
-            action = QAction(preset_name, self)
-            # Create a lambda with default arguments to avoid late binding issues
-            action.triggered.connect(lambda checked=False, preset=preset_id: self.load_preset(preset))
-            menu.addAction(action)
-            
-    def load_preset(self, preset_id):
+    def load_preset(self, preset_id: str) -> None:
         """Load the selected preset"""
         success = self.controller.load_preset(preset_id)
         if not success:
@@ -1156,49 +876,41 @@ class RcyView(QMainWindow):
                 self
             )
                                 
-    def update_playback_mode_menu(self, mode):
+    def update_playback_mode_menu(self, mode: str) -> None:
         """Update the playback mode menu to reflect the current mode
-        
+
         Args:
             mode (str): The current playback mode
         """
-        if mode == "one-shot":
-            self.one_shot_action.setChecked(True)
-        elif mode == "loop":
-            self.loop_action.setChecked(True)
-        elif mode == "loop-reverse":
-            self.loop_reverse_action.setChecked(True)
-        else:
-            print(f"Warning: Unknown playback mode '{mode}'")
-            self.one_shot_action.setChecked(True)
+        self.menu_manager.update_playback_mode_menu(mode)
     
-    def set_playback_mode(self, mode):
+    def set_playback_mode(self, mode: str) -> None:
         """Set the playback mode in the controller
-        
+
         Args:
             mode (str): The playback mode to set
         """
-        print(f"View set_playback_mode: {mode}")
+        logger.debug("View set_playback_mode: %s")
         if self.controller:
             self.controller.set_playback_mode(mode)
                                 
-    def on_add_segment(self, position):
+    def on_add_segment(self, position: float) -> None:
         """Handle add_segment signal from waveform view"""
-        print(f"RcyView.on_add_segment({position})")
+        logger.debug("RcyView.on_add_segment(%s)")
         try:
             self.add_segment.emit(position)
         except Exception as e:
             ErrorHandler.handle_exception(e, context="Adding segment", parent=self)
-            
-    def on_remove_segment(self, position):
+
+    def on_remove_segment(self, position: float) -> None:
         """Handle remove_segment signal from waveform view"""
-        print(f"RcyView.on_remove_segment({position})")
+        logger.debug("RcyView.on_remove_segment(%s)")
         try:
             self.remove_segment.emit(position)
         except Exception as e:
             ErrorHandler.handle_exception(e, context="Removing segment", parent=self)
     
-    def load_session_file(self):
+    def load_session_file(self) -> None:
         """Load an existing RCY session file"""
         # Note: This is a placeholder for future implementation
         # For now, just show a message that this feature is coming
@@ -1207,7 +919,7 @@ class RcyView(QMainWindow):
                               "Loading session files will be implemented in a future version.\n\n"
                               "Currently, presets are used as sessions.")
     
-    def import_audio_file(self):
+    def import_audio_file(self) -> None:
         """Import a new audio file"""
         filename, _ = QFileDialog.getOpenFileName(self,
             "Import Audio File",
@@ -1227,126 +939,13 @@ class RcyView(QMainWindow):
         """Deprecated - use import_audio_file instead"""
         self.import_audio_file()
 
-    def on_measure_resolution_changed(self, index):
-        # Get the resolution value from the configuration data
-        resolution_value = self.measure_resolutions[index]["value"]
-        # Dispatch via command
-        self.controller.execute_command('set_resolution', resolution=resolution_value)
-        
     def on_split_measures_clicked(self):
         """Handle the Split by Measures button click by using the current dropdown selection"""
-        # Get the current resolution from the dropdown
-        current_index = self.measure_resolution_combo.currentIndex()
-        resolution_value = self.measure_resolutions[current_index]["value"]
-        
+        # Get the current resolution from the control panel
+        resolution_value = self.control_panel.get_resolution()
+
         # Trigger the split with the current resolution
         # Dispatch via command
         self.controller.execute_command(
             'split_audio', method='measures', measure_resolution=resolution_value
         )
-        
-    def show_keyboard_shortcuts(self):
-        """Show a dialog with keyboard shortcuts information"""
-        shortcuts_dialog = QDialog(self)
-        shortcuts_dialog.setWindowTitle(config.get_string("dialogs", "shortcutsTitle"))
-        shortcuts_dialog.setMinimumSize(QSize(500, 400))
-        
-        # Apply styling to dialog
-        shortcuts_dialog.setStyleSheet(f"background-color: {config.get_qt_color('background')}; color: {config.get_qt_color('textColor')};")
-        
-        layout = QVBoxLayout()
-        shortcuts_dialog.setLayout(layout)
-        
-        # Create text browser for shortcuts
-        text_browser = QTextBrowser()
-        text_browser.setOpenExternalLinks(True)
-        text_browser.setStyleSheet(f"background-color: {config.get_qt_color('background')}; color: {config.get_qt_color('textColor')};")
-        
-        # Set font
-        text_browser.setFont(config.get_font('primary'))
-        
-        # Get marker colors for accurate documentation
-        start_marker_color = config.get_qt_color('startMarker')
-        end_marker_color = config.get_qt_color('endMarker')
-        
-        # Prepare HTML content
-        shortcuts_html = f"""
-        <h2>{config.get_string("dialogs", "shortcutsTitle")}</h2>
-        
-        <h3>{config.get_string("shortcuts", "markersSection")}</h3>
-        <ul>
-            <li><b>Click+Drag</b> on marker: {config.get_string("shortcuts", "repositionMarker")}</li>
-        </ul>
-        
-        <h3>{config.get_string("shortcuts", "playbackSection")}</h3>
-        <ul>
-            <li><b>Click</b> on waveform: {config.get_string("shortcuts", "playSegment")}</li>
-            <li><b>Shift+Click</b>: Play first segment (useful if first segment is difficult to click)</li>
-            <li><b>Spacebar</b>: Toggle playback (play/stop)</li>
-            <li><b>Click</b> again during playback: Stop playback</li>
-        </ul>
-        
-        <h3>{config.get_string("shortcuts", "segmentsSection")}</h3>
-        <ul>
-            <li><b>Alt+Click</b> or <b>Ctrl+Click</b>: {config.get_string("shortcuts", "addSegment")}</li>
-            <li><b>Alt+Cmd+Click</b> (Alt+Meta on macOS) or <b>Ctrl+Alt+Click</b>: {config.get_string("shortcuts", "removeSegment")}</li>
-        </ul>
-        
-        <h3>{config.get_string("shortcuts", "fileOperationsSection")}</h3>
-        <ul>
-            <li><b>Ctrl+O</b>: {config.get_string("shortcuts", "openFile")}</li>
-            <li><b>Ctrl+E</b>: {config.get_string("shortcuts", "exportSegments")}</li>
-        </ul>
-        """
-        
-        text_browser.setHtml(shortcuts_html)
-        layout.addWidget(text_browser)
-        
-        # Add close button
-        close_button = QPushButton(config.get_string("buttons", "close"))
-        close_button.setFont(config.get_font('primary'))
-        close_button.clicked.connect(shortcuts_dialog.accept)
-        layout.addWidget(close_button)
-        
-        # Show dialog
-        shortcuts_dialog.setModal(True)
-        shortcuts_dialog.exec()
-        
-    def show_about_dialog(self):
-        """Show information about the application"""
-        # Create custom about dialog to apply styling
-        about_dialog = QDialog(self)
-        about_dialog.setWindowTitle(config.get_string("dialogs", "aboutTitle"))
-        about_dialog.setMinimumSize(QSize(400, 300))
-        about_dialog.setStyleSheet(f"background-color: {config.get_qt_color('background')}; color: {config.get_qt_color('textColor')};")
-        
-        layout = QVBoxLayout()
-        about_dialog.setLayout(layout)
-        
-        # Create text browser for about content
-        text_browser = QTextBrowser()
-        text_browser.setOpenExternalLinks(True)
-        text_browser.setStyleSheet(f"background-color: {config.get_qt_color('background')}; color: {config.get_qt_color('textColor')};")
-        text_browser.setFont(config.get_font('primary'))
-        
-        about_html = f"""
-        <h1>{config.get_string("about", "title")}</h1>
-        <p>{config.get_string("about", "description")}</p>
-        <p>{config.get_string("about", "details")}</p>
-        <p><a href="{config.get_string("about", "repositoryUrl")}">{config.get_string("about", "repository")}</a></p>
-        
-        <p>{config.get_string("about", "design")}</p>
-        """
-        
-        text_browser.setHtml(about_html)
-        layout.addWidget(text_browser)
-        
-        # Add close button
-        close_button = QPushButton(config.get_string("buttons", "close"))
-        close_button.setFont(config.get_font('primary'))
-        close_button.clicked.connect(about_dialog.accept)
-        layout.addWidget(close_button)
-        
-        # Show dialog
-        about_dialog.setModal(True)
-        about_dialog.exec()

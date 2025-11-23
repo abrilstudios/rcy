@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                            QButtonGroup, QGroupBox)
 from PyQt6.QtCore import Qt, QTimer
 
-from waveform_view import create_waveform_view
+from ui.waveform import create_waveform_view
 from config_manager import config
 
 class BenchmarkTest:

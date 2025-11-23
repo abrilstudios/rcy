@@ -130,5 +130,12 @@
       "durationMs": 10,
       "curve": "exponential"
     }
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "logs/rcy.log",
+    "maxBytes": 10485760,
+    "backupCount": 3,
+    "console": true
   }
 }

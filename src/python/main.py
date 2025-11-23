@@ -3,18 +3,23 @@ import logging
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QIcon
 from audio_processor import WavAudioProcessor
-from rcy_controller import RcyController
+from controllers import ApplicationController
 from rcy_view import RcyView
 from config_manager import config
 from error_handler import ErrorHandler, install_global_exception_hook
+from logging_config import setup_logging
 
-# Import but don't use yet until we're ready
-from waveform_view import create_waveform_view
+# Import waveform creation function
+from ui.waveform import create_waveform_view
 
 # Configure logger for main module
 logger = logging.getLogger(__name__)
-  
+
 def main():
+    # Initialize logging first, before any other operations
+    setup_logging()
+
+    logger.info("Starting RCY application")
     # Install global exception hook
     install_global_exception_hook()
     
@@ -35,7 +40,7 @@ def main():
         logger.info(f"Initializing with preset amen_classic, measures={initial_measures}")
         
         # Create controller with correct initial measures
-        controller = RcyController(model)
+        controller = ApplicationController(model)
         controller.num_measures = initial_measures  # Set before view creation
         
         # Create and connect view

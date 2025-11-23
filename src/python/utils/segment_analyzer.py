@@ -5,7 +5,8 @@ This module provides utilities for analyzing segment data in the RCY application
 helping to debug mismatches between the UI, model, and exports.
 """
 
-def visualize_segments(segments, sample_rate, width=80):
+
+def visualize_segments(segments: list[int], sample_rate: int, width: int = 80) -> str:
     """
     Create a visual representation of segments to help debug placement issues
     
@@ -64,57 +65,57 @@ def visualize_segments(segments, sample_rate, width=80):
     
     return "\n".join(result)
 
-def find_zero_length_segments(segments):
+def find_zero_length_segments(segments: list[int]) -> list[int]:
     """
     Identify zero-length segments in the list
-    
+
     Args:
         segments: List of sample positions
-        
+
     Returns:
         List of indices where zero-length segments exist
     """
     zero_segments = []
-    
+
     for i in range(len(segments) - 1):
         if segments[i] == segments[i+1]:
             zero_segments.append(i)
-    
+
     return zero_segments
 
-def analyze_segments(segments, sample_rate):
+def analyze_segments(segments: list[int], sample_rate: int) -> dict[str, any]:
     """
     Perform comprehensive analysis of segment data
-    
+
     Args:
         segments: List of sample positions
         sample_rate: Sample rate of the audio
-        
+
     Returns:
         Dictionary with analysis results
     """
     if not segments:
         return {"error": "No segments provided"}
-    
+
     # Basic stats
     total_segments = len(segments) - 1 if len(segments) > 0 else 0
-    
+
     # Find zero-length segments
     zero_segments = find_zero_length_segments(segments)
     non_zero_segments = total_segments - len(zero_segments)
-    
+
     # Calculate durations
     durations = []
     for i in range(len(segments) - 1):
         duration = (segments[i+1] - segments[i]) / sample_rate
         durations.append(duration)
-    
+
     # Positions in seconds
     positions = [s / sample_rate for s in segments]
-    
+
     # Create visualization
     visualization = visualize_segments(segments, sample_rate)
-    
+
     return {
         "total_boundary_points": len(segments),
         "total_segments": total_segments,
@@ -126,48 +127,48 @@ def analyze_segments(segments, sample_rate):
         "visualization": visualization
     }
 
-def get_segment_report(segments, sample_rate):
+def get_segment_report(segments: list[int], sample_rate: int) -> str:
     """
     Generate a human-readable report for the segments
-    
+
     Args:
         segments: List of sample positions
         sample_rate: Sample rate of the audio
-        
+
     Returns:
         String with the report
     """
     analysis = analyze_segments(segments, sample_rate)
-    
+
     if "error" in analysis:
         return analysis["error"]
-    
+
     lines = []
     lines.append("====== Segment Analysis Report ======")
     lines.append(f"Total boundary points: {analysis['total_boundary_points']}")
     lines.append(f"Total segments: {analysis['total_segments']}")
     lines.append(f"Non-zero segments: {analysis['non_zero_segments']}")
     lines.append(f"Zero-length segments: {analysis['zero_segments']}")
-    
+
     if analysis['zero_segments'] > 0:
         lines.append("\nZero-length segments at indices:")
         for idx in analysis['zero_segment_indices']:
             lines.append(f"  - Between points {idx} and {idx+1} (at {analysis['positions'][idx]:.2f}s)")
-    
+
     lines.append("\nSegment positions (seconds):")
     for i, pos in enumerate(analysis['positions']):
         lines.append(f"  {i}: {pos:.4f}s")
-    
+
     lines.append("\nSegment durations (seconds):")
     for i, dur in enumerate(analysis['durations']):
         if i in analysis['zero_segment_indices']:
             lines.append(f"  {i}: {dur:.4f}s (ZERO LENGTH)")
         else:
             lines.append(f"  {i}: {dur:.4f}s")
-    
+
     lines.append("\nVisualization:")
     lines.append(analysis['visualization'])
-    
+
     return "\n".join(lines)
 
 if __name__ == "__main__":

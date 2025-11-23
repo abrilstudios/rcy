@@ -12,7 +12,7 @@ from PyQt6.QtGui import QMouseEvent, QKeyEvent
 from PyQt6.QtWidgets import QToolTip
 
 # Import the modules using proper python paths (already set in conftest.py)
-from waveform_view import PyQtGraphWaveformView
+from ui.waveform import PyQtGraphWaveformView
 import pyqtgraph as pg
 
 class MockMarker:

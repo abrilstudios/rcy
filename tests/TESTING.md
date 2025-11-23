@@ -2,18 +2,42 @@
 
 This document provides guidance on testing the RCY codebase using our standardized testing infrastructure.
 
+## Test Structure
+
+### Test File Organization
+
+All test files are consolidated in the `tests/` directory, organized as follows:
+
+- **Main test files**: Root level of `tests/` directory for primary test modules
+- **Utility tests**: `tests/utils/` for tests related to utility modules
+- **Waveform tests**: `tests/waveform/` for tests related to waveform-specific functionality
+
+Example test files:
+- `test_audio_processing_pipeline.py` - Tests for audio processing pipeline
+- `test_config_manager.py` - Tests for configuration management
+- `test_waveform_backends.py` - Tests for waveform backend implementations
+- `test_pyqtgraph_minimal.py` - Minimal PyQtGraph visualization tests
+- `utils/test_audio_preview.py` - Tests for audio preview utilities
+- `waveform/test_waveform_imports.py` - Tests for waveform module imports
+
 ## Test Environment Setup
 
 ### PYTHONPATH Configuration
 
-When running tests, you must ensure the Python path includes the `src` directory:
+The pytest configuration in `pytest.ini` automatically handles PYTHONPATH setup. When running tests from the project root, pytest will:
+
+1. Include the project root (`.`) in the Python path
+2. Include `src/python` directory for module imports
 
 ```bash
-# Run tests with properly configured PYTHONPATH
-PYTHONPATH=/path/to/rcy/src pytest
+# Run tests from the project root (pytest.ini handles PYTHONPATH)
+pytest
 
-# Or in the project root:
-PYTHONPATH=./src pytest
+# Run all tests with collection display
+pytest --collect-only
+
+# Or manually specify PYTHONPATH (for direct Python execution)
+PYTHONPATH=./src/python pytest
 ```
 
 ### Running Specific Tests

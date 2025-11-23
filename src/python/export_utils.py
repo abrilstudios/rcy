@@ -4,28 +4,56 @@ import os
 import numpy as np
 import soundfile as sf
 from midiutil import MIDIFile
+from typing import Any
+
 from config_manager import config
 from audio_processor import process_segment_for_output
+from custom_types import ExportStats, SegmentInfo, WavFileSegment, AudioArray
 
+import logging
+
+logger = logging.getLogger(__name__)
 class MIDIFileWithMetadata(MIDIFile):
-    def __init__(self, *args, **kwargs):
+    tempo: float | None
+    time_signature: tuple[int, int] | None
+    total_time: float
+    notes: list[dict[str, Any]]
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.tempo = None
         self.time_signature = None
         self.total_time = 0
         self.notes = []
 
-    def addTempo(self, track, time, tempo):
+    def addTempo(self, track: int, time: float, tempo: float) -> None:
         self.tempo = tempo
         super().addTempo(track, time, tempo)
 
-    def addTimeSignature(self, track, time, numerator, denominator, clocks_per_tick, notes_per_quarter=8):
+    def addTimeSignature(
+        self,
+        track: int,
+        time: float,
+        numerator: int,
+        denominator: int,
+        clocks_per_tick: int,
+        notes_per_quarter: int = 8
+    ) -> None:
         # Store as (numerator, denominator_value) for debugging
         # Where denominator_value is 2^denominator (the actual denominator in the time signature)
         self.time_signature = (numerator, 2**denominator)
         super().addTimeSignature(track, time, numerator, denominator, clocks_per_tick, notes_per_quarter)
 
-    def addNote(self, track, channel, pitch, time, duration, volume, annotation=None):
+    def addNote(
+        self,
+        track: int,
+        channel: int,
+        pitch: int,
+        time: float,
+        duration: float,
+        volume: int,
+        annotation: str | None = None
+    ) -> None:
         self.total_time = max(self.total_time, time + duration)
         # Track each note for debugging
         self.notes.append({
@@ -40,26 +68,26 @@ class MIDIFileWithMetadata(MIDIFile):
 
 class ExportUtils:
     @staticmethod
-    def export_segments(model, tempo, num_measures, directory, start_marker_pos=None, end_marker_pos=None):
+    def export_segments(
+        model: Any,  # WavAudioProcessor type - using Any to avoid circular import
+        tempo: float,
+        num_measures: int,
+        directory: str,
+        start_marker_pos: float | None = None,
+        end_marker_pos: float | None = None
+    ) -> ExportStats:
         """Export segments to WAV files with SFZ instrument and MIDI sequence
-        
+
         Args:
-            model: Audio model with segment data
+            model: Audio model with segment data (WavAudioProcessor)
             tempo: Tempo in BPM
             num_measures: Number of measures
             directory: Directory to export to
             start_marker_pos: Optional start marker position (seconds)
             end_marker_pos: Optional end marker position (seconds)
-            
+
         Returns:
-            dict: Export statistics including:
-                - segment_count: Number of segments exported
-                - sfz_path: Path to the SFZ file
-                - midi_path: Path to the MIDI file
-                - tempo: Tempo used for the export
-                - time_signature: Time signature used
-                - directory: Export directory
-                - duration: Total duration of the audio
+            Export statistics including segment count, file paths, tempo, etc.
         """
         # Get segments from SegmentManager (guaranteed to cover full file)
         all_segments = model.segment_manager.get_all_segments()
@@ -76,10 +104,9 @@ class ExportUtils:
             dir_name = "instrument"
         
         # Debug segments info
-        print("\n==== EXPORT SEGMENTS DEBUG ====")
-        print(f"Debug: Segments from SegmentManager: {all_segments}")
-        print(f"Debug: Number of segments from SegmentManager: {len(all_segments)}")
-        print(f"Debug: Segment time ranges: {all_segments}")
+        logger.debug("\n==== EXPORT SEGMENTS DEBUG ====")
+        logger.debug("Debug: Segments from SegmentManager: %s", len(all_segments))
+        logger.debug("Debug: Segment time ranges: %s", [(s[0], s[1]) for s in all_segments])
         
         # Use left channel for calculations (both channels have same length)
         total_duration = len(data_left) / sample_rate
@@ -96,22 +123,19 @@ class ExportUtils:
         fade_duration_ms = tail_fade_config.get("durationMs", 10)
         fade_curve = tail_fade_config.get("curve", "exponential")
 
-        print(f"Debug: Total duration: {total_duration} seconds")
-        print(f"Debug: Tempo: {tempo} BPM")
-        print(f"Debug: Number of segments: {len(all_segments)}")
-        print(f"Debug: Is stereo: {is_stereo}")
-        print(f"Debug: Playback tempo enabled: {playback_tempo_enabled}")
+        logger.debug("Debug: Number of segments: %s", len(all_segments))
+        logger.debug("Debug: Tempo: %s BPM", tempo)
+        logger.debug("Debug: Is stereo: %s", is_stereo)
         if playback_tempo_enabled:
-            print(f"Debug: Source BPM: {source_bpm}, Target BPM: {target_bpm}")
-        print(f"Debug: Tail fade enabled: {tail_fade_enabled}")
+            logger.debug("Debug: Source BPM: %s, Target BPM: %s", source_bpm, target_bpm)
 
         sfz_content = []
         midi = MIDIFileWithMetadata(1)  # One track
         
         # Use the target BPM for MIDI if playback tempo adjustment is enabled
         midi_tempo = target_bpm if playback_tempo_enabled and target_bpm > 0 else tempo
-        print(f"Debug: Using tempo for MIDI export: {midi_tempo} BPM")
-        
+        logger.debug("Debug: Using tempo for MIDI export: %s BPM", midi_tempo)
+
         midi.addTempo(0, 0, midi_tempo)
         # In the MIDI specification, the time signature denominator is encoded as a power of 2.
         # The parameter represents the exponent rather than the actual denominator value.
@@ -120,34 +144,40 @@ class ExportUtils:
 
         # Handle special cases for segment sources
         if not all_segments and start_marker_pos is not None and end_marker_pos is not None:
-            print(f"No segments defined but markers are set. Using marker positions for export.")
             # Create segments from markers
             all_segments = [(start_marker_pos, end_marker_pos)]
-            print(f"Created segments from markers: {all_segments}")
-            
+            logger.debug("Created segments from markers: %s", all_segments)
+
         # If still no segments, use the entire file
         if not all_segments:
-            print(f"Debug: No segments or markers. Exporting the entire file.")
             all_segments = [(0.0, total_duration)]
-            
-        print(f"Debug: Final segments for export: {all_segments}")
+            logger.debug("No segments defined, using entire file: %s", all_segments)
+
+        logger.debug("Debug: Final segments for export: %s", all_segments)
 
         # Calculate beats per second based on the MIDI tempo we defined earlier
-        beats_per_second = midi_tempo / 60 
-        print(f"Debug: Beats per second for MIDI calculation: {beats_per_second:.2f}")
+        beats_per_second = midi_tempo / 60
+        logger.debug("Debug: Beats per second: %s", beats_per_second)
         
         # Helper function for MIDI timing strategies
-        def _preprocess_segment_pairs(segment_pairs, sample_rate, playback_tempo_enabled, source_bpm, target_bpm, beats_per_second):
+        def _preprocess_segment_pairs(
+            segment_pairs: list[tuple[float, float]],
+            sample_rate: int,
+            playback_tempo_enabled: bool,
+            source_bpm: float,
+            target_bpm: int,
+            beats_per_second: float
+        ) -> list[SegmentInfo]:
             """Pre-process segment pairs to calculate timing information - NO SKIPPING OF ZERO-LENGTH SEGMENTS"""
-            processed_segments = []
-            
+            processed_segments: list[SegmentInfo] = []
+
             # Process each segment pair directly (start_time, end_time)
             for i, (start_time, end_time) in enumerate(segment_pairs):
                 duration_seconds = end_time - start_time
-                
+
                 # Calculate MIDI beat positions and durations
                 start_beat = start_time * beats_per_second
-                
+
                 # If tempo adjustment is applied, adjust duration
                 if playback_tempo_enabled and source_bpm > 0 and target_bpm > 0:
                     # Scale duration based on tempo change
@@ -155,11 +185,11 @@ class ExportUtils:
                     duration_beats = adjusted_duration * beats_per_second
                 else:
                     duration_beats = duration_seconds * beats_per_second
-                
+
                 # Convert back to samples for export processing
                 start_sample = int(start_time * sample_rate)
                 end_sample = int(end_time * sample_rate)
-                
+
                 # Store all information about this segment - INCLUDING ZERO-LENGTH SEGMENTS
                 processed_segments.append({
                     'index': i,
@@ -172,60 +202,60 @@ class ExportUtils:
                     'segment_number': i + 1,  # 1-based indexing matches keyboard shortcuts
                     'midi_note': 60 + i  # MIDI note matches segment index
                 })
-                
-                print(f"Debug: Processed segment {i+1}: {start_time:.3f}s to {end_time:.3f}s "
-                      f"(duration: {duration_seconds:.3f}s)")
-            
+
+                logger.debug("Debug: Processed segment %s: %ss to %ss", i+1, start_time, end_time)
+
             return processed_segments
-        
-        def _apply_continuous_note_timing(midi, segment_info_list):
+
+        def _apply_continuous_note_timing(
+            midi: MIDIFileWithMetadata,
+            segment_info_list: list[SegmentInfo]
+        ) -> None:
             """Apply continuous timing strategy with no gaps between notes"""
-            print(f"\nDebug: Using CONTINUOUS timing strategy (no gaps)")
-            
+            logger.debug("\nDebug: Using CONTINUOUS timing strategy (no gaps)")
+
             # Keep track of the next available beat position
             next_beat_position = 0.0
-            
-            for segment in segment_info_list:
+
+            for i, segment in enumerate(segment_info_list):
                 # Use continuous timing (each note starts right after the previous one)
                 start_beat = next_beat_position
                 duration_beats = segment['duration_beats']
                 midi_note = segment['midi_note']
-                
+
                 # Add note to MIDI file with continuous timing
                 midi.addNote(0, 0, midi_note, start_beat, duration_beats, 100)
-                
+
                 # Update next available position
                 next_beat_position = start_beat + duration_beats
-                
+
                 # Debug output
-                print(f"Debug: Note {segment['segment_number']} (MIDI {midi_note}): " 
-                      f"start_beat={start_beat:.4f}, duration={duration_beats:.4f} beats")
-                
+                logger.debug("Segment %s: start_beat=%s, duration=%s beats",
+                      i, start_beat, duration_beats)
+
                 # Show original vs. continuous timing for comparison
                 original_start = segment['start_beat']
                 if abs(start_beat - original_start) > 0.001:  # Only show if meaningful difference
-                    print(f"       (Original timing would be: start_beat={original_start:.4f})")
+                    logger.debug("       (Original timing would be: start_beat=%s)", original_start)
         
         # Pre-process all segments to calculate timing information
-        print("\n==== PREPROCESSING SEGMENTS ====")
-        all_segment_info = _preprocess_segment_pairs(all_segments, sample_rate, playback_tempo_enabled, 
+        logger.debug("\n==== PREPROCESSING SEGMENTS ====")
+        all_segment_info = _preprocess_segment_pairs(all_segments, sample_rate, playback_tempo_enabled,
                                                     source_bpm, target_bpm, beats_per_second)
-        
-        print(f"Debug: Found {len(all_segment_info)} segments for export (NO zero-length segments skipped)")
+
+        logger.debug("Preprocessing complete: %s segments for export (NO zero-length segments skipped)", len(all_segment_info))
         
         # Detailed segment-to-MIDI mapping report
-        print("\n==== SEGMENT TO MIDI MAPPING ====")
-        print(f"Debug: Tempo: {tempo} BPM, beats per second: {beats_per_second}")
-        
+        logger.debug("\n==== SEGMENT TO MIDI MAPPING ====")
+        logger.debug("Debug: Tempo: %s BPM, beats per second: %s", tempo, beats_per_second)
+
         for segment in all_segment_info:
-            print(f"Debug: Segment {segment['segment_number']} (original {segment['index']+1}):")
-            print(f"  - Samples: {segment['start_sample']} to {segment['end_sample']}")
-            print(f"  - Time: {segment['start_time']:.3f}s to {segment['start_time']+segment['duration_seconds']:.3f}s "
-                  f"(duration: {segment['duration_seconds']:.3f}s)")
-            print(f"  - MIDI: start beat {segment['start_beat']:.3f}, duration {segment['duration_beats']:.3f} beats, "
-                  f"MIDI note {segment['midi_note']}")
+            logger.debug("Segment %s:", segment['segment_number'])
+            logger.debug("  - Samples: %s to %s", segment['start_sample'], segment['end_sample'])
+            logger.debug("  - MIDI: start beat %s, duration %s beats, note %s",
+                  segment['start_beat'], segment['duration_beats'], segment['midi_note'])
         
-        print("\n==== GENERATING SEGMENTS ====")
+        logger.debug("\n==== GENERATING SEGMENTS ====")
         # Counter for actual exported segments
         segment_count = 0
         
@@ -237,8 +267,9 @@ class ExportUtils:
             start = segment['start_sample']
             end = segment['end_sample']
             segment_count = segment['segment_number']
-            
-            print(f"Debug: Processing segment {segment_count} (original index {segment['index']+1}): {start} to {end}")
+
+            logger.debug("Debug: Processing segment %s (original index %s): %s to %s",
+                        segment_count, segment['index'], start, end)
             
             # Process the segment through our pipeline with resampling for export
             segment_data, export_sample_rate = process_segment_for_output(
@@ -261,21 +292,15 @@ class ExportUtils:
             
             # The returned export_sample_rate will be the original sample rate
             # if resampling was performed, or the adjusted rate if not
-            
-            segment_filename = f"segment_{segment_count}.wav"
+
+            segment_filename = f"{segment_count:03d}.wav"
             segment_path = os.path.join(directory, segment_filename)
-            
-            print(f"Debug: Exporting segment with sample rate: {export_sample_rate} Hz")
+
+            logger.debug("Debug: Exporting segment with sample rate: %s Hz", export_sample_rate)
             sf.write(segment_path, segment_data, export_sample_rate)
 
             # Add to SFZ content - reference the WAV file using the segment_filename
-            sfz_content.append(f"""
-<region>
-sample={segment_filename}
-pitch_keycenter={segment['midi_note']}
-lokey={segment['midi_note']}
-hikey={segment['midi_note']}
-""")
+            sfz_content.append(f"<region> sample={segment_filename} key={segment['midi_note']}")
 
             # Store info for debug output
             wavfile_segments.append({
@@ -284,49 +309,43 @@ hikey={segment['midi_note']}
                 'midi_note': segment['midi_note'],
                 'duration': segment['duration_seconds']
             })
-            
-            print(f"Debug: Segment {segment_count} exported: " 
-                  f"start={segment['start_time']:.2f}s, duration={segment['duration_seconds']:.2f}s, "
-                  f"note={segment['midi_note']}")
+
+            logger.debug("Debug: Segment %s exported: %s", segment_count, segment_filename)
         
         # Apply continuous MIDI timing strategy
         _apply_continuous_note_timing(midi, all_segment_info)
 
         # MIDI file debug information
-        print("\n==== MIDI EXPORT SUMMARY ====")
-        print(f"Tempo: {midi.tempo} BPM")
-        print(f"Time Signature: {midi.time_signature[0]}/{midi.time_signature[1]}")
-        print(f"Total MIDI duration (beats): {midi.total_time:.2f}")
-        print(f"Total MIDI duration (seconds): {midi.total_time / beats_per_second:.2f}")
+        logger.debug("\n==== MIDI EXPORT SUMMARY ====")
+        logger.debug("Tempo: %s BPM", midi.tempo)
+        logger.debug("Total MIDI duration (beats): %s", midi.total_time)
+        logger.debug("Total MIDI duration (seconds): %.2f", midi.total_time / beats_per_second)
         
         # Segment counts
         total_segments = len(all_segments)
         non_zero_segments = sum(1 for start_time, end_time in all_segments if start_time != end_time)
         zero_segments = total_segments - non_zero_segments
         
-        print(f"\n==== SEGMENT STATISTICS ====")
-        print(f"Total segments: {total_segments}")
-        print(f"Total segments: {total_segments} (from SegmentManager)")
-        print(f"Non-zero segments: {non_zero_segments}")
-        print(f"Zero-length segments: {zero_segments}")
-        print(f"Exported WAV files: {segment_count}")
-        print(f"MIDI notes count: {len(midi.notes)}")
+        logger.debug("\n==== SEGMENT STATISTICS ====")
+        logger.debug("Total segments: %s (from SegmentManager)", total_segments)
+        logger.debug("Zero-length segments: %s", zero_segments)
+        logger.warning("MIDI notes count: %s", len(midi.notes))
         
         # Sanity checks
         if segment_count != len(midi.notes):
-            print("\n⚠️ WARNING: WAV segment count and MIDI note count don't match!")
-            print(f"  - WAV segments: {segment_count}")
-            print(f"  - MIDI notes: {len(midi.notes)}")
+            logger.warning("\n⚠️ WARNING: WAV segment count and MIDI note count don't match!")
+            logger.debug("  - WAV segments: %s", segment_count)
+            logger.debug("  - MIDI notes: %s", len(midi.notes))
         else:
-            print("\n✅ VALIDATION: WAV segment count and MIDI note count match correctly.")
-        
-        print(f"\n==== MIDI NOTES DETAIL ====")
+            logger.debug("\n✅ VALIDATION: WAV segment count and MIDI note count match correctly.")
+
+        logger.debug("\nMIDI notes (%s total):", len(midi.notes))
         for i, note in enumerate(midi.notes):
-            print(f"  Note {i+1}: pitch={note['pitch']} start={note['time']:.2f} duration={note['duration']:.2f}")
-        
-        print(f"\n==== SEGMENT BOUNDARIES ====")
-        print(f"Segments from SegmentManager: {all_segments}")
-        print(f"Segments durations (seconds): {[end_time - start_time for start_time, end_time in all_segments]}")
+            logger.debug("  Note %s: pitch=%s start=%s duration=%s",
+                        i+1, note['pitch'], note['time'], note['duration'])
+
+        logger.debug("Segments from SegmentManager: %s", len(all_segments))
+        logger.debug("Segment durations: %s", [end_time - start_time for start_time, end_time in all_segments])
 
         # Write SFZ file with directory name
         sfz_filename = f"{dir_name}.sfz"
@@ -340,7 +359,7 @@ hikey={segment['midi_note']}
         with open(midi_path, "wb") as midi_file:
             midi.writeFile(midi_file)
 
-        print(f"Exported {segment_count} segments, SFZ file, and MIDI file to {directory}")
+        logger.debug("Exported %s segments, SFZ file, and MIDI file to %s", segment_count, directory)
         
         # Prepare export statistics to return
         export_stats = {
