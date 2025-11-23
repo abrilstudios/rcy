@@ -3,10 +3,12 @@ Audio Processing Utilities
 
 This module contains shared audio processing functions that can be used
 by both the traditional and high-performance audio engines.
+
+Uses simple linear interpolation for tempo adjustment to create the
+characteristic sound of vintage hardware samplers (Akai S1000 style).
 """
 
 import numpy as np
-import librosa
 from config_manager import config
 
 
@@ -48,6 +50,62 @@ def extract_segment(
     return segment
 
 
+def simple_tempo_resample(
+    segment: np.ndarray,
+    tempo_ratio: float,
+    is_stereo: bool = False
+) -> np.ndarray:
+    """Simple tempo adjustment via linear interpolation (Akai-style).
+
+    Creates characteristic vintage sampler artifacts by using basic sample
+    decimation/interpolation rather than FFT-based reconstruction.
+
+    This matches the behavior of early hardware samplers like the Akai S1000,
+    which did not perform bandlimited reconstruction.
+
+    Args:
+        segment: Audio segment to resample
+        tempo_ratio: target_bpm / source_bpm (e.g., 2.0 for 2x faster)
+        is_stereo: Whether the segment is stereo
+
+    Returns:
+        Resampled audio segment with adjusted tempo
+
+    Examples:
+        120 BPM → 240 BPM (ratio=2.0): Creates half as many samples (decimation)
+        120 BPM → 60 BPM (ratio=0.5): Creates twice as many samples (interpolation)
+    """
+    if abs(tempo_ratio - 1.0) < 0.001:
+        # No change needed
+        return segment
+
+    if is_stereo:
+        # Process stereo channels separately
+        old_length = segment.shape[0]
+        new_length = int(old_length / tempo_ratio)
+
+        # Create interpolation indices
+        old_indices = np.arange(old_length)
+        new_indices = np.linspace(0, old_length - 1, new_length)
+
+        # Linear interpolation for each channel
+        left_resampled = np.interp(new_indices, old_indices, segment[:, 0])
+        right_resampled = np.interp(new_indices, old_indices, segment[:, 1])
+
+        return np.column_stack((left_resampled, right_resampled))
+    else:
+        # Process mono
+        old_length = len(segment)
+        new_length = int(old_length / tempo_ratio)
+
+        # Create interpolation indices
+        old_indices = np.arange(old_length)
+        new_indices = np.linspace(0, old_length - 1, new_length)
+
+        # Linear interpolation
+        return np.interp(new_indices, old_indices, segment)
+
+
 def calculate_tempo_adjusted_sample_rate(
     original_sample_rate: int,
     source_bpm: float | None,
@@ -87,58 +145,38 @@ def resample_to_standard_rate(
     target_sample_rate: int = 44100,
     is_stereo: bool = False
 ) -> np.ndarray:
-    """Resample audio from adjusted sample rate back to standard rate
-    
-    This function resamples audio that has been pitch-shifted via sample rate adjustment
-    back to a standard sample rate (default 44100 Hz), making it compatible with 
-    samplers and DAWs while preserving the pitch shift.
-    
+    """Resample audio from adjusted sample rate back to standard rate (Akai-style).
+
+    Uses simple linear interpolation rather than FFT-based reconstruction to create
+    the characteristic sound of vintage hardware samplers like the Akai S1000.
+
+    This function resamples audio that has been tempo-adjusted via sample rate
+    manipulation back to a standard sample rate (default 44100 Hz), making it
+    compatible with samplers and DAWs.
+
     Args:
         segment: Audio segment data (mono or stereo)
-        adjusted_sample_rate: Current sample rate of the audio (after tempo adjustment)
+        adjusted_sample_rate: Current "fake" sample rate (after tempo adjustment)
         target_sample_rate: Standard sample rate to resample to (default 44100 Hz)
         is_stereo: Whether the segment is stereo (2 channels)
-        
+
     Returns:
         np.ndarray: Resampled audio segment at target_sample_rate
+
+    Examples:
+        Original: 1000 samples at "fake" 88200 Hz (2x tempo)
+        Result: 500 samples at real 44100 Hz (plays 2x faster)
     """
     # No need to resample if rates are nearly identical
     if abs(adjusted_sample_rate - target_sample_rate) < 1.0:
         return segment
-    
-    # Handle stereo audio (resample each channel separately)
-    if is_stereo:
-        # Get left and right channels
-        left_channel = segment[:, 0]
-        right_channel = segment[:, 1]
-        
-        # Resample each channel
-        left_resampled = librosa.resample(
-            left_channel, 
-            orig_sr=adjusted_sample_rate, 
-            target_sr=target_sample_rate,
-            res_type='kaiser_best'  # Higher quality resampling, less aliasing
-        )
-        
-        right_resampled = librosa.resample(
-            right_channel, 
-            orig_sr=adjusted_sample_rate, 
-            target_sr=target_sample_rate,
-            res_type='kaiser_best'
-        )
-        
-        # Recombine channels
-        resampled = np.column_stack((left_resampled, right_resampled))
-    else:
-        # Mono audio resampling
-        resampled = librosa.resample(
-            segment, 
-            orig_sr=adjusted_sample_rate, 
-            target_sr=target_sample_rate,
-            res_type='kaiser_best'  # Higher quality resampling, less aliasing
-        )
-    
-    return resampled
+
+    # Calculate the tempo ratio from the sample rate ratio
+    # This is the inverse of what we did in calculate_tempo_adjusted_sample_rate
+    tempo_ratio = adjusted_sample_rate / target_sample_rate
+
+    # Use simple linear interpolation (Akai-style)
+    return simple_tempo_resample(segment, tempo_ratio, is_stereo)
 
 
 def apply_tail_fade(

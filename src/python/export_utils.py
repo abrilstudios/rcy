@@ -80,14 +80,18 @@ class ExportUtils:
 
         Args:
             model: Audio model with segment data (WavAudioProcessor)
-            tempo: Tempo in BPM
-            num_measures: Number of measures
+            tempo: UNUSED - kept for backward compatibility
+            num_measures: UNUSED - kept for backward compatibility
             directory: Directory to export to
             start_marker_pos: Optional start marker position (seconds)
             end_marker_pos: Optional end marker position (seconds)
 
         Returns:
             Export statistics including segment count, file paths, tempo, etc.
+
+        Note:
+            Tempo is now read directly from model.source_bpm and model.target_bpm
+            rather than being calculated from num_measures.
         """
         # Get segments from SegmentManager (guaranteed to cover full file)
         all_segments = model.segment_manager.get_all_segments()
@@ -110,7 +114,6 @@ class ExportUtils:
         
         # Use left channel for calculations (both channels have same length)
         total_duration = len(data_left) / sample_rate
-        tempo = model.get_tempo(num_measures)
 
         # Get the playback tempo settings from the model
         playback_tempo_enabled = model.playback_tempo_enabled
@@ -124,16 +127,16 @@ class ExportUtils:
         fade_curve = tail_fade_config.get("curve", "exponential")
 
         logger.debug("Debug: Number of segments: %s", len(all_segments))
-        logger.debug("Debug: Tempo: %s BPM", tempo)
+        logger.debug("Debug: Source BPM: %s", source_bpm)
         logger.debug("Debug: Is stereo: %s", is_stereo)
         if playback_tempo_enabled:
-            logger.debug("Debug: Source BPM: %s, Target BPM: %s", source_bpm, target_bpm)
+            logger.debug("Debug: Playback tempo enabled - Target BPM: %s", target_bpm)
 
         sfz_content = []
         midi = MIDIFileWithMetadata(1)  # One track
-        
+
         # Use the target BPM for MIDI if playback tempo adjustment is enabled
-        midi_tempo = target_bpm if playback_tempo_enabled and target_bpm > 0 else tempo
+        midi_tempo = target_bpm if playback_tempo_enabled and target_bpm > 0 else source_bpm
         logger.debug("Debug: Using tempo for MIDI export: %s BPM", midi_tempo)
 
         midi.addTempo(0, 0, midi_tempo)
@@ -247,7 +250,7 @@ class ExportUtils:
         
         # Detailed segment-to-MIDI mapping report
         logger.debug("\n==== SEGMENT TO MIDI MAPPING ====")
-        logger.debug("Debug: Tempo: %s BPM, beats per second: %s", tempo, beats_per_second)
+        logger.debug("Debug: MIDI Tempo: %s BPM, beats per second: %s", midi_tempo, beats_per_second)
 
         for segment in all_segment_info:
             logger.debug("Segment %s:", segment['segment_number'])

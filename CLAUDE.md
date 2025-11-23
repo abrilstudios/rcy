@@ -4,6 +4,27 @@ This document outlines best practices and session setup expectations for contrib
 
 ---
 
+## 🚨 **HOW TO RUN THE APPLICATION**
+
+**IMPORTANT: When asked to "run the app", ALWAYS use this exact command:**
+
+```bash
+just run
+```
+
+**That's it. Just use `just run`. Do not overthink it.**
+
+**DO NOT:**
+- Use `python3 -m main`
+- Use system Python
+- Use full paths to venv/bin/python
+- Try to manually set PYTHONPATH
+- Try to activate the virtual environment
+
+**The Justfile handles everything. Just use `just run`.**
+
+---
+
 ## 📦 Project Structure
 
 RCY uses a modular directory layout with absolute imports and explicit runtime configuration.
