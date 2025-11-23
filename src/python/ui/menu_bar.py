@@ -223,9 +223,39 @@ class MenuBarManager:
         # TODO: Show dialog and implement conversion
 
     def _on_crop_loop(self) -> None:
-        """Handle Crop Loop action."""
+        """Handle Crop Loop action.
+
+        Trims the audio to the region between start and end markers.
+        Resets all slices after cropping.
+        """
         logger.info("Crop Loop requested")
-        # TODO: Implement crop to markers
+
+        # Get marker positions from the view
+        start_pos, end_pos = self.parent.waveform_view.get_marker_positions()
+
+        # Validate markers are set
+        if start_pos is None or end_pos is None:
+            from error_handler import ErrorHandler
+            ErrorHandler.show_error(
+                "Both start and end markers must be set to crop the loop.\n\n"
+                "Use Shift+Click to set the start marker and Ctrl+Click to set the end marker.",
+                "Cannot Crop",
+                self.parent
+            )
+            return
+
+        # Call the controller to perform the crop
+        success = self.controller.crop_to_markers(start_pos, end_pos)
+
+        if success:
+            logger.info("Successfully cropped audio from %ss to %ss", start_pos, end_pos)
+        else:
+            from error_handler import ErrorHandler
+            ErrorHandler.show_error(
+                "Failed to crop audio to marker region.",
+                "Crop Error",
+                self.parent
+            )
 
     def _on_remove_dc(self) -> None:
         """Handle Remove DC action."""

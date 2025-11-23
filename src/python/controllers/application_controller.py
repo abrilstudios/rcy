@@ -651,3 +651,39 @@ class ApplicationController:
             slices: List of segment boundary time positions
         """
         self.playback_ctrl.current_slices = slices
+
+    def crop_to_markers(self, start_time: float, end_time: float) -> bool:
+        """Crop audio to the region between start and end markers.
+
+        This trims the audio file to only include the region between the markers.
+        All segments and slices are reset after cropping.
+
+        Args:
+            start_time: Start marker position in seconds
+            end_time: End marker position in seconds
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        logger.info("Cropping audio from %ss to %ss", start_time, end_time)
+
+        # Perform the crop in the model
+        success = self.model.crop_to_time_range(start_time, end_time)
+
+        if success:
+            # Update tempo calculation based on new file length
+            self.tempo = self.model.get_tempo(self.num_measures)
+
+            # Sync state to all controllers
+            self._sync_state_to_controllers()
+
+            # Update the view
+            self.update_view()
+            self.view.update_scroll_bar(self.visible_time, self.model.total_time)
+
+            # Reset markers to new file boundaries
+            self.view.clear_markers()
+
+            logger.info("Successfully cropped audio, new duration: %ss", self.model.total_time)
+
+        return success

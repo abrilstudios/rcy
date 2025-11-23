@@ -593,8 +593,27 @@ class WavAudioProcessor:
             except TypeError:
                 logger.debug("WARNING: TypeError when printing debug info in cut_audio")
             logger.debug("==== END AUDIO PROCESSOR CUT OPERATION ====\n")
-            
+
             return True
         except Exception as e:
             ErrorHandler.log_exception(e, context="WavAudioProcessor.cut_audio")
             return False
+
+    def crop_to_time_range(self, start_time: float, end_time: float) -> bool:
+        """Crop audio to a time range (convenience wrapper for cut_audio).
+
+        Args:
+            start_time: Start time in seconds
+            end_time: End time in seconds
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        # Convert times to sample indices
+        start_sample = int(start_time * self.sample_rate)
+        end_sample = int(end_time * self.sample_rate)
+
+        logger.info("Cropping audio from %ss to %ss (samples %s to %s)",
+                   start_time, end_time, start_sample, end_sample)
+
+        return self.cut_audio(start_sample, end_sample)
