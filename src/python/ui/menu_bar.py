@@ -74,9 +74,11 @@ class MenuBarManager:
         self.playback_tempo_action: QAction | None = None
         self.one_shot_action: QAction | None = None
         self.loop_action: QAction | None = None
+        self.convert_mono_action: QAction | None = None
         self.mono_left_action: QAction | None = None
         self.mono_right_action: QAction | None = None
         self.mono_mix_action: QAction | None = None
+        self.mono_conversion_method: str = 'mix'  # Default preference
 
     def create_menu_bar(self) -> QMenuBar:
         """Create and configure the complete menu bar.
@@ -165,10 +167,38 @@ class MenuBarManager:
         normalize_action.triggered.connect(self._on_normalize)
         process_menu.addAction(normalize_action)
 
-        # Convert to Mono
-        convert_mono_action = QAction("Convert to Mono...", self.parent)
-        convert_mono_action.triggered.connect(self._on_convert_to_mono)
-        process_menu.addAction(convert_mono_action)
+        # Convert to Mono (actual conversion action)
+        self.convert_mono_action = QAction("Convert to Mono", self.parent)
+        self.convert_mono_action.triggered.connect(self._on_convert_to_mono_action)
+        process_menu.addAction(self.convert_mono_action)
+
+        # Convert to Mono Method (preference submenu with radio buttons)
+        convert_mono_method_menu = process_menu.addMenu("Convert to Mono Method")
+
+        # Create action group for radio button behavior
+        mono_method_group = QActionGroup(self.parent)
+        mono_method_group.setExclusive(True)
+
+        self.mono_left_action = QAction("Left Channel", self.parent)
+        self.mono_left_action.setCheckable(True)
+        self.mono_left_action.triggered.connect(lambda: self._on_mono_method_changed('left'))
+        mono_method_group.addAction(self.mono_left_action)
+        convert_mono_method_menu.addAction(self.mono_left_action)
+
+        self.mono_right_action = QAction("Right Channel", self.parent)
+        self.mono_right_action.setCheckable(True)
+        self.mono_right_action.triggered.connect(lambda: self._on_mono_method_changed('right'))
+        mono_method_group.addAction(self.mono_right_action)
+        convert_mono_method_menu.addAction(self.mono_right_action)
+
+        self.mono_mix_action = QAction("Mix (Blend)", self.parent)
+        self.mono_mix_action.setCheckable(True)
+        self.mono_mix_action.triggered.connect(lambda: self._on_mono_method_changed('mix'))
+        mono_method_group.addAction(self.mono_mix_action)
+        convert_mono_method_menu.addAction(self.mono_mix_action)
+
+        # Set default to Mix
+        self.mono_mix_action.setChecked(True)
 
         # Convert Sample Format
         convert_format_action = QAction("Convert Sample Format...", self.parent)
@@ -217,10 +247,19 @@ class MenuBarManager:
         logger.info("Normalize requested")
         # TODO: Show dialog and implement normalization
 
-    def _on_convert_to_mono(self) -> None:
-        """Handle Convert to Mono action."""
-        logger.info("Convert to Mono requested")
-        # TODO: Show dialog and implement conversion
+    def _on_mono_method_changed(self, method: str) -> None:
+        """Handle Convert to Mono Method preference selection.
+
+        This just stores the preference - actual conversion happens with the action.
+        """
+        self.mono_conversion_method = method
+        logger.info("Mono conversion method preference set to: %s", method)
+
+    def _on_convert_to_mono_action(self) -> None:
+        """Handle Convert to Mono action (performs actual conversion using stored preference)."""
+        logger.info("Convert to Mono action triggered (method=%s)", self.mono_conversion_method)
+        # Call the callback with the stored preference
+        self.on_convert_to_mono(self.mono_conversion_method)
 
     def _on_convert_sample_format(self) -> None:
         """Handle Convert Sample Format action."""
@@ -317,21 +356,6 @@ class MenuBarManager:
         # The controller will update this later if needed
         self.one_shot_action.setChecked(True)
 
-        # Convert to Mono submenu
-        convert_mono_menu = options_menu.addMenu("Convert to Mono")
-
-        self.mono_left_action = QAction("Left Channel", self.parent)
-        self.mono_left_action.triggered.connect(lambda: self.on_convert_to_mono('left'))
-        convert_mono_menu.addAction(self.mono_left_action)
-
-        self.mono_right_action = QAction("Right Channel", self.parent)
-        self.mono_right_action.triggered.connect(lambda: self.on_convert_to_mono('right'))
-        convert_mono_menu.addAction(self.mono_right_action)
-
-        self.mono_mix_action = QAction("Mix (Blend)", self.parent)
-        self.mono_mix_action.triggered.connect(lambda: self.on_convert_to_mono('mix'))
-        convert_mono_menu.addAction(self.mono_mix_action)
-
     def _create_help_menu(self) -> None:
         """Create the Help menu with documentation and about actions."""
         help_menu = self.menu_bar.addMenu(config.get_string("menus", "help"))
@@ -396,14 +420,10 @@ class MenuBarManager:
                 self.one_shot_action.setChecked(True)
 
     def update_convert_mono_menu(self, is_stereo: bool) -> None:
-        """Enable or disable Convert to Mono menu items based on file type.
+        """Enable or disable Convert to Mono action based on file type.
 
         Args:
             is_stereo: True if current file is stereo, False if mono
         """
-        if self.mono_left_action:
-            self.mono_left_action.setEnabled(is_stereo)
-        if self.mono_right_action:
-            self.mono_right_action.setEnabled(is_stereo)
-        if self.mono_mix_action:
-            self.mono_mix_action.setEnabled(is_stereo)
+        if self.convert_mono_action:
+            self.convert_mono_action.setEnabled(is_stereo)
