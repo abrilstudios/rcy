@@ -434,6 +434,9 @@ class RcyView(QMainWindow):
         # This is different from on_start/end_marker_changed which should only be called for user dragging
         self.controller.start_marker_pos = start_pos
         self.controller.end_marker_pos = end_pos
+        # Also update tempo_controller's marker positions so tempo calculations work
+        self.controller.tempo_ctrl.start_marker_pos = start_pos
+        self.controller.tempo_ctrl.end_marker_pos = end_pos
         
         # Store the current slices in the controller
         self.controller.current_slices = slice_times
@@ -538,20 +541,31 @@ class RcyView(QMainWindow):
         return self.SEGMENT_KEY_MAP.get(key)
     
     def _play_segment_by_index(self, segment_index: int) -> None:
-        """Ultra-fast segment playback using SegmentManager O(1) lookup."""
+        """Ultra-fast segment playback using SegmentManager O(1) lookup.
+
+        Respects marker positions (locators) by clamping segment boundaries,
+        similar to ReCycle's locator behavior.
+        """
         segment_manager = get_segment_manager()
-        
+
         # Get segment boundaries directly from SegmentManager
         segment_bounds = segment_manager.get_segment_by_index(segment_index)
         if not segment_bounds:
             return  # Invalid segment index
-        
+
         start_time, end_time = segment_bounds
-        
-        # Highlight the segment in the UI
+
+        # Get marker positions (locators) and clamp segment boundaries
+        marker_start, marker_end = self.get_marker_positions()
+        if marker_start is not None:
+            start_time = max(start_time, marker_start)
+        if marker_end is not None:
+            end_time = min(end_time, marker_end)
+
+        # Highlight the segment in the UI (use clamped boundaries)
         self.highlight_active_segment(start_time, end_time)
-        
-        # Play the segment
+
+        # Play the segment (with clamped boundaries)
         self.controller.model.play_segment(start_time, end_time)
         
     def toggle_playback(self) -> None:

@@ -162,16 +162,25 @@ class SegmentManager:
             self._store.set_internal_boundaries(positions)
             self._notify_observers('split', position_count=len(positions))
 
-    def split_by_measures(self, num_measures: int, measure_resolution: int, total_time: float) -> None:
-        """Split audio into equal divisions based on musical measures using consistent position calculation."""
+    def split_by_measures(self, num_measures: int, measure_resolution: int,
+                          start_time: float, end_time: float) -> None:
+        """Split audio region into equal divisions based on musical measures.
+
+        Args:
+            num_measures: Number of musical measures
+            measure_resolution: Number of divisions per measure
+            start_time: Start time of the region in seconds
+            end_time: End time of the region in seconds
+        """
         with self._lock:
             total_divisions = num_measures * measure_resolution
-            time_per_division = total_time / total_divisions
+            region_duration = end_time - start_time
+            time_per_division = region_duration / total_divisions
 
             # Create internal split positions using consistent time-to-position calculation
             internal_positions: list[int] = []
             for i in range(1, total_divisions):  # Skip start (0) and end (total_divisions)
-                time = i * time_per_division
+                time = start_time + (i * time_per_division)
                 position = self._time_to_position(time)
                 internal_positions.append(position)
 

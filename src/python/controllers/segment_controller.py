@@ -70,7 +70,16 @@ class SegmentController(QObject):
         match method:
             case SplitMethod.MEASURES:
                 resolution = measure_resolution if measure_resolution is not None else self.measure_resolution
-                slices = self.model.split_by_measures(num_measures or 1, resolution)
+                # Get marker positions from view to determine split region
+                start_pos, end_pos = self.view.waveform_view.get_marker_positions()
+                # Use marker region if markers have been moved from defaults
+                if (start_pos is not None and end_pos is not None and
+                    not (start_pos == 0 and abs(end_pos - self.model.total_time) < 0.01)):
+                    logger.debug("Split by measures using marker region: %ss to %ss", start_pos, end_pos)
+                    slices = self.model.split_by_measures(num_measures or 1, resolution, start_pos, end_pos)
+                else:
+                    logger.debug("Split by measures using full file duration")
+                    slices = self.model.split_by_measures(num_measures or 1, resolution)
             case SplitMethod.TRANSIENTS:
                 if threshold is None:
                     raise ValueError("threshold parameter required for transient split method")

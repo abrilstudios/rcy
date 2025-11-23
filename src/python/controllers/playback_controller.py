@@ -88,6 +88,39 @@ class PlaybackController(QObject):
         """
         return self.playback_mode
 
+    def get_segment_boundaries(self, click_time: float) -> tuple[float | None, float | None]:
+        """Get segment boundaries for a given time position.
+
+        Segment boundaries are clamped to the marker positions (locators).
+        This ensures that playback respects the loop region defined by the markers,
+        similar to ReCycle's locator behavior.
+
+        Args:
+            click_time: Time position in seconds
+
+        Returns:
+            Tuple of (start_time, end_time) or (None, None) if no segment found
+        """
+        segment = self.model.segment_manager.get_segment_by_time(click_time)
+        if segment:
+            start_time, end_time = segment
+
+            # Get marker positions (locators) from the view
+            marker_start, marker_end = self.view.waveform_view.get_marker_positions()
+
+            # Clamp segment boundaries to marker positions
+            # This ensures playback stays within the loop region
+            if marker_start is not None:
+                start_time = max(start_time, marker_start)
+            if marker_end is not None:
+                end_time = min(end_time, marker_end)
+
+            logger.debug("Segment boundaries clamped to markers: (%ss, %ss) -> (%ss, %ss)",
+                        segment[0], segment[1], start_time, end_time)
+
+            return start_time, end_time
+        return None, None
+
     def play_segment(self, click_time: float) -> None:
         """Play or stop a segment based on click location.
 
@@ -190,54 +223,6 @@ class PlaybackController(QObject):
             # Emit signal
             self.playback_started.emit(start_marker_pos, end_marker_pos)
 
-    def get_segment_boundaries(self, click_time: float) -> tuple[float, float]:
-        """Get the start and end times for the segment containing the click.
-
-        Determines which segment contains the given time position based on
-        the current slice markers. Handles special cases for first and last
-        segments, and returns the full audio range if no segments are defined.
-
-        Args:
-            click_time: Time position in seconds
-
-        Returns:
-            Tuple of (start_time, end_time) for the segment
-        """
-        # If no slices or empty list, return full audio range
-        if not self.current_slices:
-            logger.debug("No segments defined, using full audio range")
-            return 0, self.model.total_time
-
-        # Special case for before the first segment marker
-        # We use a special threshold for clicks near the start
-        # This allows the start marker to be draggable while still allowing first segment playback
-        first_slice = self.current_slices[0]
-        if click_time <= first_slice:
-            # For clicks very close to start, use first segment
-            logger.debug("### FIRST SEGMENT DETECTED")
-            logger.debug("Click time (%s) <= first slice (%s)", click_time, first_slice)
-            logger.debug("### Returning first segment: 0 to %s", first_slice)
-            return 0, first_slice
-
-        # Special case for after the last segment marker
-        last_slice = self.current_slices[-1]
-        if click_time >= last_slice:
-            logger.debug("### Click time (%s) >= last slice (%s)", click_time, last_slice)
-            return last_slice, self.model.total_time
-
-        # Middle segments
-        for i, slice_time in enumerate(self.current_slices):
-            if click_time < slice_time:
-                if i == 0:  # Should not happen given the above check, but just in case
-                    logger.debug("First segment (fallback): 0 to %s", slice_time)
-                    return 0, slice_time
-                else:
-                    logger.debug("Middle segment %s: %s to %s", i, self.current_slices[i-1], slice_time)
-                    return self.current_slices[i-1], slice_time
-
-        # Fallback for safety - should not reach here
-        logger.debug("Fallback: last segment - %s to %s", last_slice, self.model.total_time)
-        return last_slice, self.model.total_time
 
     def handle_loop_playback(self) -> bool:
         """Handle looping of the current segment according to playback mode.

@@ -97,6 +97,21 @@ class TempoController(QObject):
         # Update measures and recalculate tempo
         self.num_measures = num_measures
         logger.debug("     Recalculating tempo with new measures...")
+
+        # Use marker-based tempo if markers have been explicitly moved from defaults
+        # This allows tempo adjustment based on the selected region
+        if (self.start_marker_pos is not None and self.end_marker_pos is not None and
+            not (self.start_marker_pos == 0 and abs(self.end_marker_pos - self.model.total_time) < 0.01)):
+            # Markers have been moved, use marker span for tempo calculation
+            logger.debug("     Using marker-based tempo calculation (markers at %s to %s)",
+                        self.start_marker_pos, self.end_marker_pos)
+            self._update_tempo_from_markers()
+            # Don't proceed with rest of method since _update_tempo_from_markers handles everything
+            logger.error("===== END DETAILED TEMPO UPDATE FROM MEASURES CHANGE =====\n")
+            self.measures_changed.emit(self.num_measures)
+            return
+
+        # Otherwise, use full file duration
         self.tempo = self.model.get_tempo(self.num_measures)
         logger.debug("     After measure change, tempo changed from %s to %s BPM", old_tempo, self.tempo)
 

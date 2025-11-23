@@ -34,12 +34,9 @@ class AudioEngineObserver(SegmentObserver):
 
     def on_segments_changed(self, operation: str, **kwargs: Any) -> None:
         """Update audio engine when segments change."""
-        try:
-            # Audio engine needs to know about segment changes for playback
-            # This ensures the engine stays synchronized with current segment data
-            self.audio_engine.on_segments_updated(operation, **kwargs)
-        except Exception as e:
-            logger.error("Error updating audio engine on segment change: %s", e)
+        # Audio engine doesn't need segment updates - it plays based on time ranges
+        # Segments are managed by SegmentManager and used by controllers
+        pass
 
 
 class WavAudioProcessor:
@@ -273,18 +270,25 @@ class WavAudioProcessor:
         
         return tempo
 
-    def split_by_measures(self, num_measures: int, measure_resolution: int) -> list[int]:
+    def split_by_measures(self, num_measures: int, measure_resolution: int,
+                         start_time: float | None = None, end_time: float | None = None) -> list[int]:
         """Split audio into equal divisions based on musical measures
 
         Args:
             num_measures: Number of musical measures in the audio
             measure_resolution: Number of divisions per measure
+            start_time: Optional start time in seconds (defaults to 0)
+            end_time: Optional end time in seconds (defaults to total_time)
 
         Returns:
             List of sample positions for the segments
         """
+        # Use provided times or default to full file
+        start = start_time if start_time is not None else 0.0
+        end = end_time if end_time is not None else self.total_time
+
         # Use segment manager's centralized split method with consistent position calculation
-        self.segment_manager.split_by_measures(num_measures, measure_resolution, self.total_time)
+        self.segment_manager.split_by_measures(num_measures, measure_resolution, start, end)
 
         # Return all boundaries for backward compatibility
         return self.segment_manager.get_boundaries()
