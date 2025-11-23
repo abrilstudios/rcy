@@ -81,8 +81,9 @@ class MenuBarManager:
         """
         self.menu_bar = QMenuBar(self.parent)
 
-        # Create the three main menus
+        # Create the main menus
         self._create_file_menu()
+        self._create_process_menu()
         self._create_options_menu()
         self._create_help_menu()
 
@@ -121,6 +122,125 @@ class MenuBarManager:
         save_as_action = QAction(config.get_string("menus", "saveAs"), self.parent)
         save_as_action.triggered.connect(self.on_save_as)
         file_menu.addAction(save_as_action)
+
+    def _create_process_menu(self) -> None:
+        """Create the Process menu with audio processing actions.
+
+        Implements ReCycle-style audio processing features:
+        - Export as One Sample (toggle)
+        - Silence Selected (toggle)
+        - Normalize
+        - Convert to Mono
+        - Convert Sample Format
+        - Crop Loop
+        - Remove DC
+        - Re-Analyze
+        - Add Slices at 1/16ths
+        """
+        process_menu = self.menu_bar.addMenu("Process")
+
+        # Export as One Sample (checkable toggle)
+        export_one_action = QAction("Export as One Sample", self.parent)
+        export_one_action.setCheckable(True)
+        export_one_action.setChecked(False)  # Default: export as individual slices
+        export_one_action.triggered.connect(lambda checked: self._on_export_as_one_toggled(checked))
+        process_menu.addAction(export_one_action)
+
+        # Silence Selected (checkable toggle)
+        silence_selected_action = QAction("Silence Selected", self.parent)
+        silence_selected_action.setCheckable(True)
+        silence_selected_action.setChecked(False)
+        silence_selected_action.triggered.connect(lambda checked: self._on_silence_selected_toggled(checked))
+        process_menu.addAction(silence_selected_action)
+
+        process_menu.addSeparator()
+
+        # Normalize
+        normalize_action = QAction("Normalize...", self.parent)
+        normalize_action.triggered.connect(self._on_normalize)
+        process_menu.addAction(normalize_action)
+
+        # Convert to Mono
+        convert_mono_action = QAction("Convert to Mono...", self.parent)
+        convert_mono_action.triggered.connect(self._on_convert_to_mono)
+        process_menu.addAction(convert_mono_action)
+
+        # Convert Sample Format
+        convert_format_action = QAction("Convert Sample Format...", self.parent)
+        convert_format_action.triggered.connect(self._on_convert_sample_format)
+        process_menu.addAction(convert_format_action)
+
+        process_menu.addSeparator()
+
+        # Crop Loop
+        crop_loop_action = QAction("Crop Loop", self.parent)
+        crop_loop_action.setShortcut('Ctrl+T')  # T for Trim
+        crop_loop_action.setStatusTip('Trim audio to marker boundaries')
+        crop_loop_action.triggered.connect(self._on_crop_loop)
+        process_menu.addAction(crop_loop_action)
+
+        # Remove DC
+        remove_dc_action = QAction("Remove DC", self.parent)
+        remove_dc_action.triggered.connect(self._on_remove_dc)
+        process_menu.addAction(remove_dc_action)
+
+        process_menu.addSeparator()
+
+        # Re-Analyze
+        re_analyze_action = QAction("Re-Analyze", self.parent)
+        re_analyze_action.triggered.connect(self._on_re_analyze)
+        process_menu.addAction(re_analyze_action)
+
+        # Add Slices at 1/16ths
+        add_sixteenths_action = QAction("Add Slices at 1/16ths", self.parent)
+        add_sixteenths_action.triggered.connect(self._on_add_sixteenths)
+        process_menu.addAction(add_sixteenths_action)
+
+    # Process menu callbacks (placeholders for now)
+    def _on_export_as_one_toggled(self, checked: bool) -> None:
+        """Handle Export as One Sample toggle."""
+        logger.info("Export as One Sample: %s", "enabled" if checked else "disabled")
+        # TODO: Update export controller state
+
+    def _on_silence_selected_toggled(self, checked: bool) -> None:
+        """Handle Silence Selected toggle."""
+        logger.info("Silence Selected: %s", "enabled" if checked else "disabled")
+        # TODO: Update export controller state
+
+    def _on_normalize(self) -> None:
+        """Handle Normalize action."""
+        logger.info("Normalize requested")
+        # TODO: Show dialog and implement normalization
+
+    def _on_convert_to_mono(self) -> None:
+        """Handle Convert to Mono action."""
+        logger.info("Convert to Mono requested")
+        # TODO: Show dialog and implement conversion
+
+    def _on_convert_sample_format(self) -> None:
+        """Handle Convert Sample Format action."""
+        logger.info("Convert Sample Format requested")
+        # TODO: Show dialog and implement conversion
+
+    def _on_crop_loop(self) -> None:
+        """Handle Crop Loop action."""
+        logger.info("Crop Loop requested")
+        # TODO: Implement crop to markers
+
+    def _on_remove_dc(self) -> None:
+        """Handle Remove DC action."""
+        logger.info("Remove DC requested")
+        # TODO: Implement DC removal
+
+    def _on_re_analyze(self) -> None:
+        """Handle Re-Analyze action."""
+        logger.info("Re-Analyze requested")
+        # TODO: Re-run transient detection
+
+    def _on_add_sixteenths(self) -> None:
+        """Handle Add Slices at 1/16ths action."""
+        logger.info("Add Slices at 1/16ths requested")
+        # TODO: Add slices at 1/16 note positions
 
     def _create_options_menu(self) -> None:
         """Create the Options menu with playback settings."""

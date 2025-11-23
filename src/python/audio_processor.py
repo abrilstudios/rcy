@@ -163,7 +163,7 @@ class WavAudioProcessor:
             self._initialize_audio_buffers()
             self._set_measures_and_calculate_bpm()
         except Exception as e:
-            logger.error("Error loading audio file %s: %s")
+            logger.error("Error loading audio file %s: %s", filename, e)
             raise
 
     def _load_file_metadata(self, filename: str):

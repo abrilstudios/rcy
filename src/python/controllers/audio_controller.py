@@ -126,9 +126,9 @@ class AudioController(QObject):
 
         # Update the measures display in the UI without triggering the callback
         logger.debug("Updating measures input to %s", num_measures)
-        old_state = self.view.measures_input.blockSignals(True)
-        self.view.measures_input.setText(str(num_measures))
-        self.view.measures_input.blockSignals(old_state)
+        old_state = self.view.control_panel.measures_input.blockSignals(True)
+        self.view.control_panel.measures_input.setText(str(num_measures))
+        self.view.control_panel.measures_input.blockSignals(old_state)
 
         # Update the playback tempo UI elements to match
         self.view.update_playback_tempo_display(
@@ -188,9 +188,9 @@ class AudioController(QObject):
 
             # Update the UI - only block signals if needed
             # Temporarily block signals to avoid recursive updates
-            old_state = self.view.measures_input.blockSignals(True)
-            self.view.measures_input.setText(str(updated_num_measures))
-            self.view.measures_input.blockSignals(old_state)
+            old_state = self.view.control_panel.measures_input.blockSignals(True)
+            self.view.control_panel.measures_input.setText(str(updated_num_measures))
+            self.view.control_panel.measures_input.blockSignals(old_state)
 
             # Update tempo - This will now be calculated with the correct measure count
             tempo = self.model.get_tempo(updated_num_measures)
