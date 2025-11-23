@@ -66,9 +66,14 @@ Homepage = "https://github.com/tnn1t1s/rcy"
 Repository = "https://github.com/tnn1t1s/rcy"
 Issues = "https://github.com/tnn1t1s/rcy/issues"
 
+[project.scripts]
+rcy = "main:main"
+
 [tool.setuptools]
-packages = ["python"]
-package-dir = {"" = "src"}
+packages = {find = {where = ["src/python"]}}
+
+[tool.setuptools.package-data]
+"*" = ["*.json"]
 
 [tool.ruff]
 line-length = 100
