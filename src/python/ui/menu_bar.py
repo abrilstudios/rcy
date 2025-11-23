@@ -36,6 +36,7 @@ class MenuBarManager:
         on_save_as: Callable[[], None],
         on_toggle_playback_tempo: Callable[[bool], None],
         on_playback_mode_changed: Callable[[str], None],
+        on_convert_to_mono: Callable[[str], None],
         on_show_shortcuts: Callable[[], None],
         on_show_about: Callable[[], None]
     ) -> None:
@@ -51,6 +52,7 @@ class MenuBarManager:
             on_save_as: Callback for Save As action
             on_toggle_playback_tempo: Callback for toggling playback tempo (takes enabled: bool)
             on_playback_mode_changed: Callback for playback mode changes (takes mode: str)
+            on_convert_to_mono: Callback for mono conversion (takes method: str)
             on_show_shortcuts: Callback for showing keyboard shortcuts dialog
             on_show_about: Callback for showing about dialog
         """
@@ -63,6 +65,7 @@ class MenuBarManager:
         self.on_save_as = on_save_as
         self.on_toggle_playback_tempo = on_toggle_playback_tempo
         self.on_playback_mode_changed = on_playback_mode_changed
+        self.on_convert_to_mono = on_convert_to_mono
         self.on_show_shortcuts = on_show_shortcuts
         self.on_show_about = on_show_about
 
@@ -71,6 +74,9 @@ class MenuBarManager:
         self.playback_tempo_action: QAction | None = None
         self.one_shot_action: QAction | None = None
         self.loop_action: QAction | None = None
+        self.mono_left_action: QAction | None = None
+        self.mono_right_action: QAction | None = None
+        self.mono_mix_action: QAction | None = None
 
     def create_menu_bar(self) -> QMenuBar:
         """Create and configure the complete menu bar.
@@ -311,6 +317,21 @@ class MenuBarManager:
         # The controller will update this later if needed
         self.one_shot_action.setChecked(True)
 
+        # Convert to Mono submenu
+        convert_mono_menu = options_menu.addMenu("Convert to Mono")
+
+        self.mono_left_action = QAction("Left Channel", self.parent)
+        self.mono_left_action.triggered.connect(lambda: self.on_convert_to_mono('left'))
+        convert_mono_menu.addAction(self.mono_left_action)
+
+        self.mono_right_action = QAction("Right Channel", self.parent)
+        self.mono_right_action.triggered.connect(lambda: self.on_convert_to_mono('right'))
+        convert_mono_menu.addAction(self.mono_right_action)
+
+        self.mono_mix_action = QAction("Mix (Blend)", self.parent)
+        self.mono_mix_action.triggered.connect(lambda: self.on_convert_to_mono('mix'))
+        convert_mono_menu.addAction(self.mono_mix_action)
+
     def _create_help_menu(self) -> None:
         """Create the Help menu with documentation and about actions."""
         help_menu = self.menu_bar.addMenu(config.get_string("menus", "help"))
@@ -373,3 +394,16 @@ class MenuBarManager:
             case _:
                 logger.warning(f"Unknown playback mode '{mode}'")
                 self.one_shot_action.setChecked(True)
+
+    def update_convert_mono_menu(self, is_stereo: bool) -> None:
+        """Enable or disable Convert to Mono menu items based on file type.
+
+        Args:
+            is_stereo: True if current file is stereo, False if mono
+        """
+        if self.mono_left_action:
+            self.mono_left_action.setEnabled(is_stereo)
+        if self.mono_right_action:
+            self.mono_right_action.setEnabled(is_stereo)
+        if self.mono_mix_action:
+            self.mono_mix_action.setEnabled(is_stereo)

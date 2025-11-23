@@ -617,3 +617,47 @@ class WavAudioProcessor:
                    start_time, end_time, start_sample, end_sample)
 
         return self.cut_audio(start_sample, end_sample)
+
+    def convert_to_mono(self, method: str) -> bool:
+        """Convert stereo audio to mono using specified method.
+
+        Args:
+            method: Conversion method - 'left', 'right', or 'mix'
+
+        Returns:
+            bool: True if converted successfully, False if already mono
+        """
+        # Check if already mono
+        if not self.is_stereo:
+            logger.info("Audio is already mono, no conversion needed")
+            return False
+
+        logger.info("Converting stereo to mono using '%s' method", method)
+
+        # Apply conversion based on method
+        if method == 'left':
+            # Use left channel for both channels
+            self.data_right = self.data_left.copy()
+        elif method == 'right':
+            # Use right channel for both channels
+            self.data_left = self.data_right.copy()
+        elif method == 'mix':
+            # Average both channels
+            mixed = (self.data_left + self.data_right) / 2.0
+            self.data_left = mixed
+            self.data_right = mixed.copy()
+        else:
+            logger.error("Invalid mono conversion method: %s", method)
+            return False
+
+        # Update flags
+        self.is_stereo = False
+        self.channels = 1
+
+        # Update audio engine with new data
+        self.audio_engine.set_source_audio(
+            self.data_left, self.data_right, self.sample_rate, self.is_stereo
+        )
+
+        logger.info("Successfully converted to mono (method=%s)", method)
+        return True

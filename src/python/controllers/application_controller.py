@@ -263,6 +263,9 @@ class ApplicationController:
             self.update_view()
             self.view.update_scroll_bar(self.visible_time, self.model.total_time)
 
+            # Update Convert to Mono menu based on file type
+            self.view.menu_manager.update_convert_mono_menu(self.model.is_stereo)
+
         return result
 
     def load_preset(self, preset_id: str) -> bool:
@@ -292,6 +295,9 @@ class ApplicationController:
             # Update view
             self.update_view()
             self.view.update_scroll_bar(self.visible_time, self.model.total_time)
+
+            # Update Convert to Mono menu based on file type
+            self.view.menu_manager.update_convert_mono_menu(self.model.is_stereo)
 
         return result
 
@@ -692,5 +698,30 @@ class ApplicationController:
             self.view.clear_markers()
 
             logger.info("Successfully cropped audio, new duration: %ss", self.model.total_time)
+
+        return success
+
+    def convert_to_mono(self, method: str) -> bool:
+        """Convert stereo audio to mono using specified method.
+
+        Args:
+            method: Conversion method - 'left', 'right', or 'mix'
+
+        Returns:
+            bool: True if successfully converted
+        """
+        logger.info("Convert to mono requested (method=%s)", method)
+
+        # Perform the conversion in the model
+        success = self.model.convert_to_mono(method)
+
+        if success:
+            # Update the view to reflect the new mono waveform
+            self.update_view()
+
+            # Disable Convert to Mono menu items now that file is mono
+            self.view.menu_bar.update_convert_mono_menu(False)
+
+            logger.info("Successfully converted to mono (method=%s)", method)
 
         return success

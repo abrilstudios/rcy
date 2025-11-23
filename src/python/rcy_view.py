@@ -147,6 +147,7 @@ class RcyView(QMainWindow):
             on_save_as=self.save_as,
             on_toggle_playback_tempo=self.toggle_playback_tempo,
             on_playback_mode_changed=self.set_playback_mode,
+            on_convert_to_mono=self.controller.convert_to_mono,
             on_show_shortcuts=lambda: KeyboardShortcutsDialog(self).exec(),
             on_show_about=lambda: AboutDialog(self).exec()
         )
