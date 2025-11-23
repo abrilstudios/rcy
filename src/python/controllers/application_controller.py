@@ -454,7 +454,9 @@ class ApplicationController:
             self.model.playback_just_ended = False
 
             # Handle looping if needed
-            if self.playback_mode in (PlaybackMode.LOOP, PlaybackMode.LOOP_REVERSE):
+            # Get current mode from playback controller to ensure consistency
+            current_mode = self.playback_ctrl.playback_mode
+            if current_mode in (PlaybackMode.LOOP, PlaybackMode.LOOP_REVERSE):
                 if self.handle_loop_playback():
                     return
 
