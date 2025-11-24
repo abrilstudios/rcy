@@ -39,6 +39,7 @@ class ControlPanel(QWidget):
     # Signals
     measures_changed = pyqtSignal(int)
     threshold_changed = pyqtSignal(float)
+    threshold_slider_released = pyqtSignal(float)  # Emitted when slider is released
     split_method_changed = pyqtSignal(str)
     resolution_changed = pyqtSignal(int)
     playback_tempo_toggled = pyqtSignal(bool)
@@ -144,19 +145,21 @@ class ControlPanel(QWidget):
         # Get default threshold from config
         td_config = config.get_setting("audio", "transientDetection", {})
         default_threshold = td_config.get("threshold", 0.2)
-        default_slider_value = int(default_threshold * 100)
+        # Convert threshold to sensitivity (inverted: threshold 0.2 → sensitivity 80)
+        default_slider_value = int((1.0 - default_threshold) * 100)
 
-        # Slider
+        # Slider (0-99 range to match ReCycle)
         self.threshold_slider = QSlider(Qt.Orientation.Horizontal)
-        self.threshold_slider.setRange(1, 100)
+        self.threshold_slider.setRange(0, 99)
         self.threshold_slider.setValue(default_slider_value)
         self.threshold_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
         self.threshold_slider.setTickInterval(10)
         self.threshold_slider.valueChanged.connect(self._on_threshold_slider_changed)
+        self.threshold_slider.sliderReleased.connect(self._on_threshold_slider_released)
         threshold_layout.addWidget(self.threshold_slider)
 
-        # Value display label
-        self.threshold_value_label = QLabel(f"{default_threshold:.2f}")
+        # Value display label - shows sensitivity value (0-99), not internal threshold
+        self.threshold_value_label = QLabel(f"{default_slider_value}")
         threshold_layout.addWidget(self.threshold_value_label)
 
         layout.addLayout(threshold_layout)
@@ -211,12 +214,43 @@ class ControlPanel(QWidget):
         """Handle threshold slider changes.
 
         Args:
-            value: Slider value (1-100)
+            value: Slider value (0-99) representing sensitivity
+
+        Note:
+            Uses strong exponential mapping for precise control:
+            - Higher slider value = higher sensitivity = lower threshold = more slices
+            - Lower slider value = lower sensitivity = higher threshold = fewer slices
+            - Power of 5 gives very aggressive curve, most useful range in upper values
         """
-        threshold = value / 100.0
-        self.threshold_value_label.setText(f"{threshold:.2f}")
-        logger.debug(f"Threshold changed to {threshold:.2f}")
+        # Convert sensitivity (0-99) to normalized value (0.0-1.0)
+        normalized = value / 99.0
+
+        # Apply strong exponential curve: threshold = (1 - sensitivity)^5
+        # This maps:
+        #   sensitivity 0  → threshold 1.0 (no slices)
+        #   sensitivity 50 → threshold ~0.03
+        #   sensitivity 70 → threshold ~0.0024
+        #   sensitivity 90 → threshold ~0.00001 (extremely sensitive)
+        #   sensitivity 99 → threshold ~0.0 (maximum)
+        threshold = (1.0 - normalized) ** 5
+
+        # Display the sensitivity value (0-99), not the internal threshold
+        self.threshold_value_label.setText(f"{value}")
+        logger.debug(f"Sensitivity {value} → threshold {threshold:.6f}")
         self.threshold_changed.emit(threshold)
+
+    def _on_threshold_slider_released(self) -> None:
+        """Handle threshold slider release (mouse button released).
+
+        Emits the threshold_slider_released signal which can trigger
+        auto-update if transients mode is active.
+        """
+        value = self.threshold_slider.value()
+        # Use same exponential mapping as _on_threshold_slider_changed
+        normalized = value / 99.0
+        threshold = (1.0 - normalized) ** 5
+        logger.debug(f"Sensitivity slider released at {value} (threshold {threshold:.6f})")
+        self.threshold_slider_released.emit(threshold)
 
     def _on_resolution_changed(self, index: int) -> None:
         """Handle resolution dropdown changes.
@@ -299,9 +333,17 @@ class ControlPanel(QWidget):
 
         Args:
             value: Threshold value (0.0-1.0)
+
+        Note:
+            Converts threshold to sensitivity using inverse exponential mapping:
+            threshold 0.0 (very sensitive) → sensitivity 99
+            threshold 1.0 (not sensitive) → sensitivity 0
         """
-        slider_value = int(value * 100)
-        self.threshold_slider.setValue(slider_value)
+        # Inverse of exponential mapping: threshold = (1 - normalized)^5
+        # Solve for normalized: normalized = 1 - threshold^(1/5)
+        normalized = 1.0 - (value ** (1.0/5.0))
+        sensitivity = int(normalized * 99)
+        self.threshold_slider.setValue(sensitivity)
 
     def get_threshold(self) -> float:
         """Get the current threshold value.
@@ -309,7 +351,10 @@ class ControlPanel(QWidget):
         Returns:
             Threshold value (0.0-1.0)
         """
-        return self.threshold_slider.value() / 100.0
+        value = self.threshold_slider.value()
+        normalized = value / 99.0
+        threshold = (1.0 - normalized) ** 5
+        return threshold
 
     def set_resolution(self, value: int) -> None:
         """Set the measure resolution.
@@ -380,3 +425,17 @@ class ControlPanel(QWidget):
             tempo: Tempo in BPM
         """
         self.tempo_display.setText(f"{tempo:.2f} BPM")
+
+    def increment_sensitivity(self) -> None:
+        """Increment sensitivity slider by 1 (matches ReCycle + key behavior)."""
+        current = self.threshold_slider.value()
+        if current < 99:  # Max value
+            self.threshold_slider.setValue(current + 1)
+            logger.debug("Incremented sensitivity to %s", current + 1)
+
+    def decrement_sensitivity(self) -> None:
+        """Decrement sensitivity slider by 1 (matches ReCycle - key behavior)."""
+        current = self.threshold_slider.value()
+        if current > 0:  # Min value
+            self.threshold_slider.setValue(current - 1)
+            logger.debug("Decremented sensitivity to %s", current - 1)

@@ -57,7 +57,9 @@ class RcyView(QMainWindow):
         # Set up keyboard shortcut handler
         self.shortcut_handler = KeyboardShortcutHandler(
             on_play_pause=self.toggle_playback,
-            on_segment_selected=self._play_segment_by_index
+            on_segment_selected=self._play_segment_by_index,
+            on_sensitivity_increment=self.control_panel.increment_sensitivity,
+            on_sensitivity_decrement=self.control_panel.decrement_sensitivity
         )
 
         # Set key press handler for the entire window
@@ -212,11 +214,10 @@ class RcyView(QMainWindow):
         main_layout.addWidget(self.control_panel)
 
         # Connect control panel signals
-        self.control_panel.measures_changed.connect(self.measures_changed.emit)
+        self.control_panel.measures_changed.connect(self.on_measures_changed)
         self.control_panel.threshold_changed.connect(self.on_threshold_changed)
-        self.control_panel.resolution_changed.connect(
-            lambda res: self.controller.execute_command('set_resolution', resolution=res)
-        )
+        self.control_panel.threshold_slider_released.connect(self.on_threshold_slider_released)
+        self.control_panel.resolution_changed.connect(self.on_resolution_changed)
         self.control_panel.playback_tempo_toggled.connect(self.toggle_playback_tempo)
         self.control_panel.target_bpm_changed.connect(self.set_target_bpm)
 
@@ -254,6 +255,7 @@ class RcyView(QMainWindow):
         self.transport_controls.split_transients_requested.connect(
             lambda: self.controller.execute_command('split_audio', method='transients')
         )
+        self.transport_controls.clear_segments_requested.connect(self.on_clear_segments)
         self.transport_controls.cut_requested.connect(self.on_cut_button_clicked)
         self.transport_controls.zoom_in_requested.connect(
             lambda: self.controller.execute_command('zoom_in')
@@ -394,6 +396,47 @@ class RcyView(QMainWindow):
         # Dispatch via command pattern
         self.controller.execute_command('set_threshold', threshold=threshold)
 
+    def on_threshold_slider_released(self, threshold: float) -> None:
+        """Handle threshold slider release - auto-update if transients mode active.
+
+        Args:
+            threshold: Threshold value (0.0-1.0)
+        """
+        if self.transport_controls.is_split_transients_active():
+            self.controller.execute_command('split_audio', method='transients')
+
+    def on_measures_changed(self, num_measures: int) -> None:
+        """Handle measures change - auto-update if measures mode active.
+
+        Args:
+            num_measures: Number of measures
+        """
+        self.measures_changed.emit(num_measures)
+        if self.transport_controls.is_split_measures_active():
+            resolution_value = self.control_panel.get_resolution()
+            self.controller.execute_command('split_audio', method='measures', measure_resolution=resolution_value)
+
+    def on_resolution_changed(self, resolution: int) -> None:
+        """Handle resolution change - auto-update if measures mode active.
+
+        Args:
+            resolution: Note resolution value
+        """
+        self.controller.execute_command('set_resolution', resolution=resolution)
+        if self.transport_controls.is_split_measures_active():
+            resolution_value = self.control_panel.get_resolution()
+            self.controller.execute_command('split_audio', method='measures', measure_resolution=resolution_value)
+
+    def on_clear_segments(self) -> None:
+        """Handle clear segments request when split mode is deactivated.
+
+        Clears all segments and returns to single full-file segment.
+        """
+        logger.debug("Clearing all segments")
+        # Reset to single segment spanning entire file
+        total_time = self.controller.model.total_time
+        self.update_slices([0.0, total_time])
+
     def update_slices(self, slices: list[float]) -> None:
         logger.debug("Convert slice points to times")
         slice_times = [slice_point / self.controller.model.sample_rate for slice_point in slices]
@@ -442,23 +485,6 @@ class RcyView(QMainWindow):
         # Store the current slices in the controller
         self.controller.current_slices = slice_times
         logger.debug("Debugging: Updated current_slices in controller: %s")
-
-    def on_measures_changed(self) -> None:
-        """Handle changes to the measures input field and update controller"""
-        text = self.measures_input.text()
-        validator = self.measures_input.validator()
-        state, _, _ = validator.validate(text, 0)
-
-        if state == QValidator.State.Acceptable:
-            num_measures = int(text)
-            logger.debug("Measure count changed to %s")
-            # Emitting signal will trigger controller.on_measures_changed
-            self.measures_changed.emit(num_measures)
-        else:
-            # Reset to controller's current value or default to 1
-            current_measures = getattr(self.controller, 'num_measures', 1)
-            self.measures_input.setText(str(current_measures))
-            logger.debug("Invalid measure count, reset to %s")
 
     def update_tempo(self, tempo: float) -> None:
         """Update the tempo display.

@@ -22,8 +22,9 @@ class TransportControls(QWidget):
     """Transport controls for split, playback, and export operations.
 
     Signals:
-        split_measures_requested: Emitted when Split by Measures is clicked
-        split_transients_requested: Emitted when Split by Transients is clicked
+        split_measures_requested: Emitted when Split by Measures is clicked (checked)
+        split_transients_requested: Emitted when Split by Transients is clicked (checked)
+        clear_segments_requested: Emitted when a split button is unchecked
         cut_requested: Emitted when Cut Selection is clicked
         zoom_in_requested: Emitted when Zoom In is clicked
         zoom_out_requested: Emitted when Zoom Out is clicked
@@ -32,6 +33,7 @@ class TransportControls(QWidget):
     # Signals
     split_measures_requested = pyqtSignal()
     split_transients_requested = pyqtSignal()
+    clear_segments_requested = pyqtSignal()
     cut_requested = pyqtSignal()
     zoom_in_requested = pyqtSignal()
     zoom_out_requested = pyqtSignal()
@@ -47,19 +49,6 @@ class TransportControls(QWidget):
 
     def _init_ui(self) -> None:
         """Initialize the user interface."""
-        # Create horizontal layout for buttons
-        button_layout = QHBoxLayout()
-        self.setLayout(button_layout)
-
-        # Split buttons row
-        self._create_split_buttons(button_layout)
-
-        # Zoom and cut buttons row (separate layout)
-        control_layout = QHBoxLayout()
-        self._create_control_buttons(control_layout)
-
-        # Note: In the original implementation, these were in separate rows
-        # We'll create a vertical layout to maintain that structure
         from PyQt6.QtWidgets import QVBoxLayout
 
         main_layout = QVBoxLayout()
@@ -81,17 +70,19 @@ class TransportControls(QWidget):
         Args:
             layout: Layout to add buttons to
         """
-        # Split by Measures button
+        # Split by Measures button (checkable for toggle behavior)
         self.split_measures_button = QPushButton(
             config.get_string("buttons", "splitMeasures")
         )
+        self.split_measures_button.setCheckable(True)
         self.split_measures_button.clicked.connect(self._on_split_measures_clicked)
         layout.addWidget(self.split_measures_button)
 
-        # Split by Transients button
+        # Split by Transients button (checkable for toggle behavior)
         self.split_transients_button = QPushButton(
             config.get_string("buttons", "splitTransients")
         )
+        self.split_transients_button.setCheckable(True)
         self.split_transients_button.clicked.connect(self._on_split_transients_clicked)
         layout.addWidget(self.split_transients_button)
 
@@ -124,14 +115,26 @@ class TransportControls(QWidget):
     # Signal handlers
 
     def _on_split_measures_clicked(self) -> None:
-        """Handle Split by Measures button click."""
-        logger.debug("Split by Measures button clicked")
-        self.split_measures_requested.emit()
+        """Handle Split by Measures button click (toggle mode)."""
+        if self.split_measures_button.isChecked():
+            # Activate measures mode, deactivate transients
+            self.split_transients_button.setChecked(False)
+            logger.debug("Split by Measures mode activated")
+            self.split_measures_requested.emit()
+        else:
+            logger.debug("Split by Measures mode deactivated - clearing segments")
+            self.clear_segments_requested.emit()
 
     def _on_split_transients_clicked(self) -> None:
-        """Handle Split by Transients button click."""
-        logger.debug("Split by Transients button clicked")
-        self.split_transients_requested.emit()
+        """Handle Split by Transients button click (toggle mode)."""
+        if self.split_transients_button.isChecked():
+            # Activate transients mode, deactivate measures
+            self.split_measures_button.setChecked(False)
+            logger.debug("Split by Transients mode activated")
+            self.split_transients_requested.emit()
+        else:
+            logger.debug("Split by Transients mode deactivated - clearing segments")
+            self.clear_segments_requested.emit()
 
     def _on_cut_clicked(self) -> None:
         """Handle Cut Selection button click."""
@@ -213,3 +216,19 @@ class TransportControls(QWidget):
             text: New button text
         """
         self.split_transients_button.setText(text)
+
+    def is_split_measures_active(self) -> bool:
+        """Check if Split by Measures mode is currently active.
+
+        Returns:
+            True if measures mode is active (button is checked)
+        """
+        return self.split_measures_button.isChecked()
+
+    def is_split_transients_active(self) -> bool:
+        """Check if Split by Transients mode is currently active.
+
+        Returns:
+            True if transients mode is active (button is checked)
+        """
+        return self.split_transients_button.isChecked()
