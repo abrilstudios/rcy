@@ -256,13 +256,6 @@ class RcyView(QMainWindow):
             lambda: self.controller.execute_command('split_audio', method='transients')
         )
         self.transport_controls.clear_segments_requested.connect(self.on_clear_segments)
-        self.transport_controls.cut_requested.connect(self.on_cut_button_clicked)
-        self.transport_controls.zoom_in_requested.connect(
-            lambda: self.controller.execute_command('zoom_in')
-        )
-        self.transport_controls.zoom_out_requested.connect(
-            lambda: self.controller.execute_command('zoom_out')
-        )
         
 
     def on_plot_click(self, event):

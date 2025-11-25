@@ -30,6 +30,8 @@ class KeyboardShortcutHandler(QObject):
         self,
         on_play_pause: Callable[[], None],
         on_segment_selected: Callable[[int], None],
+        on_sensitivity_increment: Callable[[], None] | None = None,
+        on_sensitivity_decrement: Callable[[], None] | None = None,
     ) -> None:
         """Initialize the keyboard shortcut handler.
 
@@ -37,10 +39,14 @@ class KeyboardShortcutHandler(QObject):
             on_play_pause: Callback for spacebar/play-pause toggle
             on_segment_selected: Callback for segment selection by number key
                                  Receives 1-based segment index (1-20)
+            on_sensitivity_increment: Callback for + key to increment sensitivity
+            on_sensitivity_decrement: Callback for - key to decrement sensitivity
         """
         super().__init__()
         self.on_play_pause = on_play_pause
         self.on_segment_selected = on_segment_selected
+        self.on_sensitivity_increment = on_sensitivity_increment
+        self.on_sensitivity_decrement = on_sensitivity_decrement
 
     def eventFilter(self, obj: QObject, event: QEvent) -> bool:
         """Application-wide event filter to catch key events.
@@ -69,6 +75,8 @@ class KeyboardShortcutHandler(QObject):
         - Spacebar: Toggle playback
         - Number keys (1-9, 0): Select segments 1-10
         - Letter keys (Q-P): Select segments 11-20
+        - Plus (+/=): Increment sensitivity
+        - Minus (-/_): Decrement sensitivity
 
         Args:
             event: The key press event
@@ -82,6 +90,18 @@ class KeyboardShortcutHandler(QObject):
         if key == Qt.Key.Key_Space:
             self.on_play_pause()
             return True
+
+        # Plus key - increment sensitivity
+        if key in (Qt.Key.Key_Plus, Qt.Key.Key_Equal):
+            if self.on_sensitivity_increment:
+                self.on_sensitivity_increment()
+                return True
+
+        # Minus key - decrement sensitivity
+        if key in (Qt.Key.Key_Minus, Qt.Key.Key_Underscore):
+            if self.on_sensitivity_decrement:
+                self.on_sensitivity_decrement()
+                return True
 
         # Segment shortcuts - ultra-fast lookup
         segment_index = self._get_segment_index_from_key(key)

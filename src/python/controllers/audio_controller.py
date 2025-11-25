@@ -137,9 +137,9 @@ class AudioController(QObject):
             ratio
         )
 
-        # Now reset markers after everything is updated
-        logger.debug("Resetting markers to file boundaries")
-        self.view.clear_markers()
+        # Reset transport controls to default state
+        logger.debug("Resetting UI controls to default state")
+        self.view.transport_controls.reset_to_default_state()
 
         logger.debug("Final state after loading:")
         logger.debug("- Audio file: %s", filename)
@@ -202,9 +202,6 @@ class AudioController(QObject):
             # Update view
             # Note: view update and scroll bar update are handled by main controller
             self.view.update_tempo(tempo)
-
-            # Reset markers to file boundaries after view update
-            self.view.clear_markers()
 
             # Update playback tempo display
             self.view.update_playback_tempo_display(

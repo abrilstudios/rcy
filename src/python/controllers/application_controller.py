@@ -263,6 +263,9 @@ class ApplicationController:
             self.update_view()
             self.view.update_scroll_bar(self.visible_time, self.model.total_time)
 
+            # Reset markers to file boundaries (after view update so time_data is set)
+            self.view.clear_markers()
+
             # Update Convert to Mono menu based on file type
             self.view.menu_manager.update_convert_mono_menu(self.model.is_stereo)
 
@@ -295,6 +298,9 @@ class ApplicationController:
             # Update view
             self.update_view()
             self.view.update_scroll_bar(self.visible_time, self.model.total_time)
+
+            # Reset markers to file boundaries (after view update so time_data is set)
+            self.view.clear_markers()
 
             # Update Convert to Mono menu based on file type
             self.view.menu_manager.update_convert_mono_menu(self.model.is_stereo)
@@ -566,9 +572,13 @@ class ApplicationController:
 
         Args:
             threshold: New threshold value
+
+        Note:
+            Only stores the threshold value. Actual transient detection
+            is triggered manually via the Split button, matching ReCycle behavior.
         """
         self.threshold = threshold
-        self.split_audio(method=SplitMethod.TRANSIENTS)
+        # Removed auto-trigger: User must press Split button to apply new threshold
 
     # ========== Export ==========
 

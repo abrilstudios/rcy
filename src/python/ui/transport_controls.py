@@ -19,24 +19,18 @@ logger = logging.getLogger(__name__)
 
 
 class TransportControls(QWidget):
-    """Transport controls for split, playback, and export operations.
+    """Transport controls for split operations.
 
     Signals:
         split_measures_requested: Emitted when Split by Measures is clicked (checked)
         split_transients_requested: Emitted when Split by Transients is clicked (checked)
         clear_segments_requested: Emitted when a split button is unchecked
-        cut_requested: Emitted when Cut Selection is clicked
-        zoom_in_requested: Emitted when Zoom In is clicked
-        zoom_out_requested: Emitted when Zoom Out is clicked
     """
 
     # Signals
     split_measures_requested = pyqtSignal()
     split_transients_requested = pyqtSignal()
     clear_segments_requested = pyqtSignal()
-    cut_requested = pyqtSignal()
-    zoom_in_requested = pyqtSignal()
-    zoom_out_requested = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         """Initialize the transport controls.
@@ -49,20 +43,12 @@ class TransportControls(QWidget):
 
     def _init_ui(self) -> None:
         """Initialize the user interface."""
-        from PyQt6.QtWidgets import QVBoxLayout
+        # Use horizontal layout for single row of split buttons
+        button_layout = QHBoxLayout()
+        self.setLayout(button_layout)
 
-        main_layout = QVBoxLayout()
-        self.setLayout(main_layout)
-
-        # First row: Split buttons
-        split_row = QHBoxLayout()
-        self._create_split_buttons(split_row)
-        main_layout.addLayout(split_row)
-
-        # Second row: Control buttons (zoom, cut)
-        control_row = QHBoxLayout()
-        self._create_control_buttons(control_row)
-        main_layout.addLayout(control_row)
+        # Split buttons
+        self._create_split_buttons(button_layout)
 
     def _create_split_buttons(self, layout: QHBoxLayout) -> None:
         """Create the split operation buttons.
@@ -86,31 +72,6 @@ class TransportControls(QWidget):
         self.split_transients_button.clicked.connect(self._on_split_transients_clicked)
         layout.addWidget(self.split_transients_button)
 
-    def _create_control_buttons(self, layout: QHBoxLayout) -> None:
-        """Create the control buttons (zoom, cut).
-
-        Args:
-            layout: Layout to add buttons to
-        """
-        # Zoom In button
-        self.zoom_in_button = QPushButton(config.get_string("buttons", "zoomIn"))
-        self.zoom_in_button.clicked.connect(self._on_zoom_in_clicked)
-        layout.addWidget(self.zoom_in_button)
-
-        # Zoom Out button
-        self.zoom_out_button = QPushButton(config.get_string("buttons", "zoomOut"))
-        self.zoom_out_button.clicked.connect(self._on_zoom_out_clicked)
-        layout.addWidget(self.zoom_out_button)
-
-        # Cut button (styled prominently)
-        self.cut_button = QPushButton(config.get_string("buttons", "cut"))
-        self.cut_button.setStyleSheet(
-            f"background-color: {config.get_qt_color('cutButton')}; "
-            "color: white; "
-            "font-weight: bold;"
-        )
-        self.cut_button.clicked.connect(self._on_cut_clicked)
-        layout.addWidget(self.cut_button)
 
     # Signal handlers
 
@@ -136,20 +97,6 @@ class TransportControls(QWidget):
             logger.debug("Split by Transients mode deactivated - clearing segments")
             self.clear_segments_requested.emit()
 
-    def _on_cut_clicked(self) -> None:
-        """Handle Cut Selection button click."""
-        logger.debug("Cut Selection button clicked")
-        self.cut_requested.emit()
-
-    def _on_zoom_in_clicked(self) -> None:
-        """Handle Zoom In button click."""
-        logger.debug("Zoom In button clicked")
-        self.zoom_in_requested.emit()
-
-    def _on_zoom_out_clicked(self) -> None:
-        """Handle Zoom Out button click."""
-        logger.debug("Zoom Out button clicked")
-        self.zoom_out_requested.emit()
 
     # Public API methods
 
@@ -169,37 +116,6 @@ class TransportControls(QWidget):
         """
         self.split_transients_button.setEnabled(enabled)
 
-    def set_cut_enabled(self, enabled: bool) -> None:
-        """Enable or disable the Cut Selection button.
-
-        Args:
-            enabled: Whether the button should be enabled
-        """
-        self.cut_button.setEnabled(enabled)
-
-    def set_zoom_in_enabled(self, enabled: bool) -> None:
-        """Enable or disable the Zoom In button.
-
-        Args:
-            enabled: Whether the button should be enabled
-        """
-        self.zoom_in_button.setEnabled(enabled)
-
-    def set_zoom_out_enabled(self, enabled: bool) -> None:
-        """Enable or disable the Zoom Out button.
-
-        Args:
-            enabled: Whether the button should be enabled
-        """
-        self.zoom_out_button.setEnabled(enabled)
-
-    def update_cut_button_text(self, text: str) -> None:
-        """Update the text on the Cut Selection button.
-
-        Args:
-            text: New button text
-        """
-        self.cut_button.setText(text)
 
     def update_split_measures_text(self, text: str) -> None:
         """Update the text on the Split by Measures button.
@@ -232,3 +148,23 @@ class TransportControls(QWidget):
             True if transients mode is active (button is checked)
         """
         return self.split_transients_button.isChecked()
+
+    def reset_to_default_state(self) -> None:
+        """Reset all transport controls to their default state.
+
+        This should be called when loading a new audio file to ensure
+        UI state doesn't persist from previous file. Blocks signals
+        to prevent unintended side effects during reset.
+        """
+        logger.debug("Resetting transport controls to default state")
+
+        # Block signals to prevent triggering clear_segments_requested
+        old_measures_state = self.split_measures_button.blockSignals(True)
+        old_transients_state = self.split_transients_button.blockSignals(True)
+
+        try:
+            self.split_measures_button.setChecked(False)
+            self.split_transients_button.setChecked(False)
+        finally:
+            self.split_measures_button.blockSignals(old_measures_state)
+            self.split_transients_button.blockSignals(old_transients_state)

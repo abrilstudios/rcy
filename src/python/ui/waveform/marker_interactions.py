@@ -165,13 +165,18 @@ def set_start_marker(
     """
     # Always print the initial request for debugging
 
+    # Apply snapping FIRST if close to the start (do this before bounds check)
+    if position < snap_threshold:
+        position = 0.0
+
     # Get valid data range from time_data
     if time_data is not None and len(time_data) > 0:
         data_min = time_data[0]
         data_max = time_data[-1]
 
         # Ensure position is within valid range
-        if position < data_min:
+        # Special case: always allow 0.0 (file start) even if time_data doesn't start exactly at 0.0
+        if position != 0.0 and position < data_min:
             position = data_min
 
         if position > data_max:
@@ -190,10 +195,6 @@ def set_start_marker(
             start_marker_right.setValue(position)
 
         return position
-
-    # Apply snapping if close to the start
-    if position < snap_threshold:
-        position = 0.0
 
     # Ensure start marker doesn't go beyond end marker
     if end_marker is not None:
