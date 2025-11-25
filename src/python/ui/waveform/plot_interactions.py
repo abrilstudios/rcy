@@ -19,7 +19,8 @@ def on_plot_clicked(
     start_marker: Any,
     end_marker: Any,
     plot_left: Any,
-    plot_right: Any | None
+    plot_right: Any | None,
+    segment_slices: list[float] | None = None
 ) -> tuple[str, float] | None:
     """
     Handle plot click events with keyboard modifiers.
@@ -34,17 +35,17 @@ def on_plot_clicked(
         end_marker: The end marker InfiniteLine object
         plot_left: The left plot (main plot, always present)
         plot_right: The right plot (stereo only, may be None)
+        segment_slices: List of segment boundary positions for add/remove logic
 
     Returns:
         tuple: (click_type, position) where click_type is one of:
-            - 'add_segment': Segment creation requested (Ctrl+Click or Alt+Click)
-            - 'remove_segment': Segment removal requested (Ctrl+Alt or Alt+Cmd)
+            - 'add_segment': Segment creation requested (Ctrl+Click away from marker)
+            - 'remove_segment': Segment removal requested (Ctrl+Click near marker)
             - 'segment_clicked': Regular click on plot area
-            Or None if click should be ignored (near marker or non-left-button)
+            Or None if click should be ignored (near start/end marker or non-left-button)
 
     Keyboard Modifiers:
-        - Ctrl+Click or Alt+Click: Add segment at click position
-        - Ctrl+Alt+Click or Alt+Cmd+Click: Remove segment at click position
+        - Ctrl+Click: Add segment if not near existing marker, remove if near marker
         - Regular Click: Emit segment_clicked signal
 
     Marker Proximity:
@@ -101,27 +102,30 @@ def on_plot_clicked(
                 logger.debug("Click near end marker at %f, delegating to marker handler", end_pos)
                 return None  # Let the marker's drag handle this
 
-            # Check for keyboard modifiers for removal
+            # Check for keyboard modifiers for segment manipulation
+            # On Mac: Ctrl key maps to AltModifier, Cmd key maps to ControlModifier
+            # We use AltModifier (Ctrl on Mac) for add/remove segment behavior
+            ctrl_or_alt = (modifiers & Qt.KeyboardModifier.ControlModifier) or (modifiers & Qt.KeyboardModifier.AltModifier)
 
-            # Check for Ctrl+Alt (Option) combination for removing segments
-            if (modifiers & Qt.KeyboardModifier.ControlModifier) and (modifiers & Qt.KeyboardModifier.AltModifier):
-                logger.debug("Ctrl+Alt combination detected - remove_segment at %f", x_pos)
-                return ('remove_segment', x_pos)
+            if ctrl_or_alt:
+                # Check if click is near an existing segment slice marker
+                tolerance = 0.1  # seconds
+                near_slice = False
+                if segment_slices:
+                    for slice_pos in segment_slices:
+                        # Skip start (0) and end boundaries - those are file boundaries
+                        if slice_pos <= 0.001:
+                            continue
+                        if abs(x_pos - slice_pos) < tolerance:
+                            near_slice = True
+                            logger.debug("Modifier+Click near segment marker at %.3fs (click at %.3fs) - remove_segment", slice_pos, x_pos)
+                            break
 
-            # Check for Alt+Cmd (Meta) combination for removing segments
-            if (modifiers & Qt.KeyboardModifier.AltModifier) and (modifiers & Qt.KeyboardModifier.MetaModifier):
-                logger.debug("Alt+Cmd combination detected - remove_segment at %f", x_pos)
-                return ('remove_segment', x_pos)
-
-            # Add segment with Ctrl+Click
-            if modifiers & Qt.KeyboardModifier.ControlModifier:
-                logger.debug("Ctrl detected - add_segment at %f", x_pos)
-                return ('add_segment', x_pos)
-
-            # Add segment with Alt+Click
-            if modifiers & Qt.KeyboardModifier.AltModifier:
-                logger.debug("Alt detected - add_segment at %f", x_pos)
-                return ('add_segment', x_pos)
+                if near_slice:
+                    return ('remove_segment', x_pos)
+                else:
+                    logger.debug("Modifier+Click away from any segment marker at %.3fs - add_segment", x_pos)
+                    return ('add_segment', x_pos)
 
             # No modifiers - regular segment click
             logger.debug("Regular click - segment_clicked at %f", x_pos)

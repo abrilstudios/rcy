@@ -205,6 +205,9 @@ class ApplicationController:
             lambda start, end: self.execute_command('cut_audio', start=start, end=end)
         )
 
+        # Connect segment controller's update signal to trigger view refresh
+        self.segment_ctrl.segments_updated.connect(self.update_view)
+
         # Initialize playback tempo UI
         self.view.update_playback_tempo_display(
             self.playback_tempo_enabled,

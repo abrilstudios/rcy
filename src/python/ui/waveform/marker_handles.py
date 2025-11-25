@@ -21,7 +21,8 @@ def update_marker_handle(
     start_marker: Any,
     end_marker: Any,
     stereo_display: bool,
-    marker_handles: dict[str, Any]
+    marker_handles: dict[str, Any],
+    total_time: float | None = None
 ) -> None:
     """Update visual marker handle rectangles.
 
@@ -38,6 +39,7 @@ def update_marker_handle(
         end_marker: The end marker InfiniteLine
         stereo_display: Whether stereo display is enabled
         marker_handles: Dictionary storing marker handle references
+        total_time: Total duration of audio file (for boundary detection)
     """
     # Make sure we have valid time data
     if time_data is None:
@@ -69,21 +71,31 @@ def update_marker_handle(
     except Exception as e:
         return
 
-    # Get valid data range
+    # Get valid data range (visible window)
     min_pos = time_data[0]
     max_pos = time_data[-1]
 
-    # Guard clause: Don't draw handles for markers outside data range
-    if position < min_pos or position > max_pos:
+    # Check if marker is at file boundary (should always show handle)
+    is_at_file_start = abs(position) < 0.001
+    is_at_file_end = total_time is not None and abs(position - total_time) < 0.001
 
-        # Remove existing handle if there is one
-        handle_key = f"{marker_type}_handle"
-        if handle_key in marker_handles:
-            handle = marker_handles[handle_key]
-            if handle is not None and active_plot is not None and handle in active_plot.items:
-                active_plot.removeItem(handle)
-                marker_handles[handle_key] = None
-        return
+    # Guard clause: Don't draw handles for markers outside data range
+    # UNLESS they are at file boundaries (0 or total_time)
+    if position < min_pos or position > max_pos:
+        if not is_at_file_start and not is_at_file_end:
+            # Remove existing handle if there is one
+            handle_key = f"{marker_type}_handle"
+            if handle_key in marker_handles:
+                handle = marker_handles[handle_key]
+                if handle is not None and active_plot is not None and handle in active_plot.items:
+                    active_plot.removeItem(handle)
+                    marker_handles[handle_key] = None
+            return
+        # Clamp position to visible range for file boundary markers
+        if is_at_file_start:
+            position = min_pos
+        elif is_at_file_end:
+            position = max_pos
 
     # Ensure active plot exists
     if active_plot is None:

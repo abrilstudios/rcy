@@ -57,6 +57,7 @@ class PyQtGraphWaveformView(BaseWaveformView):
         self.time_data = None
         self.active_segment_items = []
         self.marker_handles = {}  # Store handles for markers
+        self.segment_slices: list[float] = []  # Store segment boundaries for click detection
 
         # Initialize properties for marker handles
         # Required for consistent visual presentation
@@ -242,7 +243,8 @@ class PyQtGraphWaveformView(BaseWaveformView):
             start_marker=self.start_marker,
             end_marker=self.end_marker,
             stereo_display=self.stereo_display,
-            marker_handles=self.marker_handles
+            marker_handles=self.marker_handles,
+            total_time=self.total_time
         )
 
     def _clamp_markers_to_data_bounds(self) -> None:
@@ -399,6 +401,9 @@ class PyQtGraphWaveformView(BaseWaveformView):
             slices: List of time positions (in seconds) where slices should be rendered
             total_time: Total duration of the audio (optional)
         """
+        # Store slices for click detection (add vs remove logic)
+        self.segment_slices = slices.copy() if slices else []
+
         segment_visualization.update_slices(
             widget=self,
             slices=slices,
@@ -467,7 +472,8 @@ class PyQtGraphWaveformView(BaseWaveformView):
             start_marker=self.start_marker,
             end_marker=self.end_marker,
             plot_left=self.plot_left,
-            plot_right=self.plot_right
+            plot_right=self.plot_right,
+            segment_slices=self.segment_slices
         )
 
         if result is not None:

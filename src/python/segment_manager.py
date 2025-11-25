@@ -203,32 +203,49 @@ class SegmentManager:
             self._store.add_boundary(position)
             self._notify_observers('add', time=time)
     
-    def remove_segment_boundary(self, time: float) -> bool:
-        """Remove boundary closest to time position."""
+    def remove_segment_boundary(self, time: float, tolerance: float = 0.1) -> bool:
+        """Remove boundary closest to time position if within tolerance.
+
+        Args:
+            time: Click time position in seconds
+            tolerance: Maximum distance in seconds to consider a click "on" a marker
+
+        Returns:
+            True if a boundary was removed, False otherwise
+        """
         with self._lock:
             click_position = self._time_to_position(time)
-            
+            tolerance_samples = self._time_to_position(tolerance)
+
             # Find closest boundary to click position (excluding start/end)
             boundaries = self._store.get_boundaries()
+            logger.debug("remove_segment_boundary: time=%.3fs, click_pos=%d, tolerance=%d samples, boundaries=%s",
+                        time, click_position, tolerance_samples, boundaries)
             closest_boundary = None
             min_distance = float('inf')
-            
+
             for boundary in boundaries:
                 # Skip start and end boundaries
                 if boundary == 0 or boundary == self._store._total_samples:
                     continue
-                    
+
                 distance = abs(boundary - click_position)
                 if distance < min_distance:
                     min_distance = distance
                     closest_boundary = boundary
-            
-            if closest_boundary is not None:
+
+            logger.debug("remove_segment_boundary: closest=%s, min_distance=%s, tolerance=%d",
+                        closest_boundary, min_distance, tolerance_samples)
+
+            # Only remove if within tolerance
+            if closest_boundary is not None and min_distance <= tolerance_samples:
                 removed = self._store.remove_boundary(closest_boundary)
                 if removed:
+                    logger.debug("remove_segment_boundary: REMOVED boundary at %d", closest_boundary)
                     self._notify_observers('remove', time=time)
                 return removed
-            
+
+            logger.debug("remove_segment_boundary: NOT removing - outside tolerance or no boundary found")
             return False
     
     def clear_segments(self) -> None:

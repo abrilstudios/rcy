@@ -12,6 +12,7 @@ class SegmentController(QObject):
     """Handles segment creation, removal, and audio splitting operations."""
 
     segments_changed = pyqtSignal(list)
+    segments_updated = pyqtSignal()  # Signal to trigger view update
 
     def __init__(self, model: Any, view: Any) -> None:
         """Initialize SegmentController.
@@ -32,7 +33,7 @@ class SegmentController(QObject):
             click_time: Time position (in seconds) where the segment should be added
         """
         self.model.add_segment(click_time)
-        self.view.update_view()
+        self.segments_updated.emit()
 
     def remove_segment(self, click_time: float) -> None:
         """Remove the segment at the specified time position.
@@ -46,7 +47,7 @@ class SegmentController(QObject):
             logger.debug("Successfully called model.remove_segment")
         except Exception as e:
             logger.error("ERROR in model.remove_segment: %s", e)
-        self.view.update_view()
+        self.segments_updated.emit()
 
     def split_audio(self, method: str | SplitMethod = SplitMethod.MEASURES,
                    measure_resolution: int | None = None,
