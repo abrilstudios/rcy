@@ -18,7 +18,8 @@ from ui.waveform import (
     marker_interactions,
     plot_rendering,
     segment_visualization,
-    plot_interactions
+    plot_interactions,
+    slice_markers
 )
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,7 @@ class PyQtGraphWaveformView(BaseWaveformView):
         self.active_segment_items = []
         self.marker_handles = {}  # Store handles for markers
         self.segment_slices: list[float] = []  # Store segment boundaries for click detection
+        self.slice_scatter_items: dict = {}  # Store triangle scatter items for slice markers
 
         # Initialize properties for marker handles
         # Required for consistent visual presentation
@@ -218,10 +220,25 @@ class PyQtGraphWaveformView(BaseWaveformView):
         # Connect plot click signals
         self.graphics_layout.scene().sigMouseClicked.connect(self._on_plot_clicked)
 
+        # Connect y-range change signals for slice marker repositioning
+        self.plot_left.getViewBox().sigYRangeChanged.connect(self._on_y_range_changed)
+        if self.plot_right is not None:
+            self.plot_right.getViewBox().sigYRangeChanged.connect(self._on_y_range_changed)
+
         # Disable right-click context menu
         for plot in [p for p in [self.plot_left, self.plot_right] if p is not None]:
             # Completely disable right-click menu
             plot.getViewBox().menu = None
+
+    def _on_y_range_changed(self) -> None:
+        """Update slice marker positions when y-range changes.
+
+        Called when zooming or scrolling causes the y-axis range to change.
+        Repositions triangle slice markers to stay at the top of the view.
+        """
+        for plot, scatter in self.slice_scatter_items.items():
+            if scatter is not None:
+                slice_markers.update_slice_markers_position(scatter, plot)
 
     # ========================================================================
     # Marker Handle Methods - Delegate to marker_handles module
@@ -244,7 +261,8 @@ class PyQtGraphWaveformView(BaseWaveformView):
             end_marker=self.end_marker,
             stereo_display=self.stereo_display,
             marker_handles=self.marker_handles,
-            total_time=self.total_time
+            total_time=self.total_time,
+            on_handle_clicked=self._on_handle_clicked
         )
 
     def _clamp_markers_to_data_bounds(self) -> None:
@@ -473,26 +491,127 @@ class PyQtGraphWaveformView(BaseWaveformView):
             end_marker=self.end_marker,
             plot_left=self.plot_left,
             plot_right=self.plot_right,
-            segment_slices=self.segment_slices
+            segment_slices=self.segment_slices,
+            marker_handles=self.marker_handles
         )
 
         if result is not None:
-            click_type, position = result
+            click_type, value = result
 
             if click_type == 'add_segment':
                 try:
-                    self.add_segment.emit(position)
-                    logger.debug("Emitted add_segment signal at %f", position)
+                    self.add_segment.emit(value)
+                    logger.debug("Emitted add_segment signal at %f", value)
                 except Exception as e:
-                    logger.debug("Failed to emit add_segment signal at position %f: %s", position, e)
+                    logger.debug("Failed to emit add_segment signal at position %f: %s", value, e)
             elif click_type == 'remove_segment':
                 try:
-                    self.remove_segment.emit(position)
-                    logger.debug("Emitted remove_segment signal at %f", position)
+                    self.remove_segment.emit(value)
+                    logger.debug("Emitted remove_segment signal at %f", value)
                 except Exception as e:
-                    logger.debug("Failed to emit remove_segment signal at position %f: %s", position, e)
+                    logger.debug("Failed to emit remove_segment signal at position %f: %s", value, e)
             elif click_type == 'segment_clicked':
-                self.segment_clicked.emit(position)
+                self.segment_clicked.emit(value)
+
+    def _on_handle_clicked(self, marker_type: str, scene_pos: Any) -> None:
+        """Handle drag from a marker handle box.
+
+        Called by DraggableHandle during mouse move events with scene position.
+        Converts scene position to data coordinates and updates the marker.
+
+        Args:
+            marker_type: 'start' or 'end' indicating which marker is being dragged
+            scene_pos: QPointF position in scene coordinates, or None when drag finished
+        """
+        # Handle drag finished - update handle position
+        if scene_pos is None:
+            logger.debug("Handle drag finished for %s marker", marker_type)
+            self._update_marker_handle(marker_type)
+            self._on_marker_drag_finished(marker_type)
+            return
+
+        # Convert scene position to data coordinates
+        view_box = self.plot_left.getViewBox()
+        data_pos = view_box.mapSceneToView(scene_pos)
+        x_pos = data_pos.x()
+
+        # Get bounds for clamping
+        min_pos = 0.0
+        max_pos = self.total_time if hasattr(self, 'total_time') and self.total_time else float('inf')
+        if self.time_data is not None:
+            try:
+                if len(self.time_data) > 0:
+                    max_pos = self.time_data[-1]
+            except TypeError:
+                pass
+
+        # Apply constraints based on marker type
+        if marker_type == 'start':
+            # Start marker can't go past end marker
+            end_pos = self.end_marker.value()
+            x_pos = max(min_pos, min(x_pos, end_pos - 0.01))
+            self.set_start_marker(x_pos)
+        elif marker_type == 'end':
+            # End marker can't go before start marker
+            start_pos = self.start_marker.value()
+            x_pos = max(start_pos + 0.01, min(x_pos, max_pos))
+            self.set_end_marker(x_pos)
+
+        # Move the handle box and text to follow the marker during drag
+        self._move_handle_to_position(marker_type, x_pos)
+
+    def _move_handle_to_position(self, marker_type: str, x_pos: float) -> None:
+        """Move handle box and text to a new x position during drag.
+
+        Args:
+            marker_type: 'start' or 'end'
+            x_pos: New x position in data coordinates
+        """
+        handle_key = f"{marker_type}_handle"
+        text_key = f"{marker_type}_text"
+
+        handle = self.marker_handles.get(handle_key)
+        text_item = self.marker_handles.get(text_key)
+
+        if handle is None:
+            return
+
+        # Get current rect and compute offset
+        from config_manager import config
+        box_size_px = config.get_ui_setting("markerHandles", "width", 14)
+
+        view_box = self.active_plot.getViewBox()
+        view_width = view_box.width()
+        x_range = view_box.viewRange()[0]
+        x_min, x_max = x_range
+        x_scale = (x_max - x_min) / view_width if view_width > 0 else 1
+
+        box_offset_x = x_scale * (box_size_px / 2 + 2)
+
+        # Position box beside the marker line
+        if marker_type == 'start':
+            box_x = x_pos + box_offset_x  # Box to the RIGHT of L marker
+        else:
+            box_x = x_pos - box_offset_x  # Box to the LEFT of R marker
+
+        # Get current rect dimensions and y position
+        current_rect = handle.rect()
+        box_width = current_rect.width()
+        box_height = current_rect.height()
+        box_y = current_rect.center().y()
+
+        # Update rect position
+        from PyQt6.QtCore import QRectF
+        handle.setRect(QRectF(
+            box_x - box_width / 2,
+            box_y - box_height / 2,
+            box_width,
+            box_height
+        ))
+
+        # Update text position
+        if text_item is not None:
+            text_item.setPos(box_x, box_y)
 
     # ========================================================================
     # Additional Helper Methods

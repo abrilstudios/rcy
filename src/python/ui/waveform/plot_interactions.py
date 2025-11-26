@@ -20,8 +20,9 @@ def on_plot_clicked(
     end_marker: Any,
     plot_left: Any,
     plot_right: Any | None,
-    segment_slices: list[float] | None = None
-) -> tuple[str, float] | None:
+    segment_slices: list[float] | None = None,
+    marker_handles: dict[str, Any] | None = None
+) -> tuple[str, float] | tuple[str, str] | None:
     """
     Handle plot click events with keyboard modifiers.
 
@@ -36,12 +37,14 @@ def on_plot_clicked(
         plot_left: The left plot (main plot, always present)
         plot_right: The right plot (stereo only, may be None)
         segment_slices: List of segment boundary positions for add/remove logic
+        marker_handles: Dictionary with marker handle bounds for click detection
 
     Returns:
-        tuple: (click_type, position) where click_type is one of:
+        tuple: (click_type, position/marker_type) where click_type is one of:
             - 'add_segment': Segment creation requested (Ctrl+Click away from marker)
             - 'remove_segment': Segment removal requested (Ctrl+Click near marker)
             - 'segment_clicked': Regular click on plot area
+            - 'handle_clicked': Click on L/R handle (returns marker type 'start' or 'end')
             Or None if click should be ignored (near start/end marker or non-left-button)
 
     Keyboard Modifiers:
@@ -87,20 +90,21 @@ def on_plot_clicked(
             x_pos = data_pos.x()
 
             logger.debug("Click detected on %s plot at position: %f", plot_name, x_pos)
+            y_pos = data_pos.y()
 
-            # Check if near a marker (high priority)
+            # Check if near marker lines (let InfiniteLine handle the drag)
+            # Handle boxes now use ScatterPlotItem.sigClicked directly
             start_pos = start_marker.value()
             end_pos = end_marker.value()
 
-            # If near the start marker
+            # If click is near the marker line itself, let InfiniteLine handle it
             if abs(x_pos - start_pos) < 0.1:
-                logger.debug("Click near start marker at %f, delegating to marker handler", start_pos)
-                return None  # Let the marker's drag handle this
+                logger.debug("Click near start marker line at %f, delegating to marker handler", start_pos)
+                return None
 
-            # If near the end marker
             if abs(x_pos - end_pos) < 0.1:
-                logger.debug("Click near end marker at %f, delegating to marker handler", end_pos)
-                return None  # Let the marker's drag handle this
+                logger.debug("Click near end marker line at %f, delegating to marker handler", end_pos)
+                return None
 
             # Check for keyboard modifiers for segment manipulation
             # On Mac: Ctrl key maps to AltModifier, Cmd key maps to ControlModifier
@@ -133,3 +137,5 @@ def on_plot_clicked(
 
     logger.debug("Click outside plot areas, ignoring")
     return None
+
+

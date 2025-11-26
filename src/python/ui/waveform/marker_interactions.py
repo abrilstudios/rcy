@@ -219,9 +219,15 @@ def set_start_marker(
         start_marker_right.blockSignals(old_block_state)
 
 
+    # Check if handle is being dragged - if so, don't remove/recreate it
+    start_handle = marker_handles.get('start_handle')
+    if start_handle is not None and hasattr(start_handle, 'is_dragging') and start_handle.is_dragging():
+        # Handle is being dragged, just update the marker line position
+        return position
+
     # Remove old handle if it exists
-    if 'start_handle' in marker_handles and marker_handles['start_handle'] is not None:
-        active_plot.removeItem(marker_handles['start_handle'])
+    if start_handle is not None:
+        active_plot.removeItem(start_handle)
         marker_handles['start_handle'] = None
 
     # Always update the marker handle to reflect the new position
@@ -310,9 +316,15 @@ def set_end_marker(
         end_marker_right.blockSignals(old_block_state)
 
 
+    # Check if handle is being dragged - if so, don't remove/recreate it
+    end_handle = marker_handles.get('end_handle')
+    if end_handle is not None and hasattr(end_handle, 'is_dragging') and end_handle.is_dragging():
+        # Handle is being dragged, just update the marker line position
+        return position
+
     # Remove old handle if it exists
-    if 'end_handle' in marker_handles and marker_handles['end_handle'] is not None:
-        active_plot.removeItem(marker_handles['end_handle'])
+    if end_handle is not None:
+        active_plot.removeItem(end_handle)
         marker_handles['end_handle'] = None
 
     # Always update the marker handle to reflect the new position

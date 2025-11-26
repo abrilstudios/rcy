@@ -92,10 +92,15 @@
   },
   "ui": {
     "markerHandles": {
-      "type": "rectangle",
-      "width": 8,
-      "height": 14,
+      "type": "flag",
+      "width": 10,
+      "height": 16,
       "offsetY": 0
+    },
+    "sliceMarkers": {
+      "type": "triangle",
+      "width": 12,
+      "height": 10
     },
     "markerSnapping": {
       "snapThreshold": 0.05

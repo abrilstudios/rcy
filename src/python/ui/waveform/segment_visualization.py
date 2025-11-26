@@ -10,6 +10,7 @@ import pyqtgraph as pg
 import logging
 
 from config_manager import config
+from ui.waveform.slice_markers import create_slice_markers
 
 logger = logging.getLogger(__name__)
 
@@ -72,12 +73,15 @@ def update_slices(
     # Clear existing slice markers
     _clear_segment_markers(widget)
 
-    # Add slice markers
+    # Initialize storage for scatter items if not present
+    if not hasattr(widget, 'slice_scatter_items'):
+        widget.slice_scatter_items = {}
+
+    # Add vertical line markers to ALL plots (they visually connect in stereo)
     for plot in [widget.plot_left, widget.plot_right]:
         if plot is None:
             continue
 
-        # Add new slice markers
         for slice_time in slices:
             line = pg.InfiniteLine(
                 pos=slice_time,
@@ -86,6 +90,14 @@ def update_slices(
                 pen=widget._create_pen('sliceActive', width=1)
             )
             plot.addItem(line)
+
+    # Add triangle markers ONLY to plot_left (top plot in stereo mode)
+    # This gives ONE triangle at top with continuous line through both channels
+    if widget.plot_left is not None:
+        scatter = create_slice_markers(widget, slices, widget.plot_left, total_time)
+        if scatter is not None:
+            widget.plot_left.addItem(scatter)
+            widget.slice_scatter_items[widget.plot_left] = scatter
 
     # Get final marker positions after all updates
     final_start_pos = widget.start_marker.value()
@@ -99,16 +111,28 @@ def update_slices(
 def _clear_segment_markers(widget: Any) -> None:
     """Clear all segment markers from the plots.
 
-    Removes all InfiniteLine items from the plots that represent segment
-    markers, while preserving start/end markers.
+    Removes all InfiniteLine items and ScatterPlotItems from the plots that
+    represent segment markers, while preserving start/end markers.
 
     Args:
         widget: The PyQtGraphWaveformView widget instance
 
     Notes:
         - Only removes segment slice markers, not start/end markers
+        - Also removes triangle scatter items for slice markers
         - Operates on both left and right plots if in stereo mode
     """
+    # Clear scatter plot items (triangles at top)
+    if hasattr(widget, 'slice_scatter_items'):
+        for plot, scatter in widget.slice_scatter_items.items():
+            if scatter is not None and plot is not None:
+                try:
+                    if scatter in plot.items:
+                        plot.removeItem(scatter)
+                except Exception:
+                    pass
+        widget.slice_scatter_items = {}
+
     # For each plot
     for plot in [widget.plot_left, widget.plot_right]:
         if plot is None:
