@@ -131,6 +131,38 @@ Available presets after download:
 - **SFZ Export**: Generate SFZ files for samplers
 - **Command History**: Bash-style history with reverse search
 - **Preset System**: Quick access to classic breaks
+- **Agent Architecture**: Extensible command system with Pydantic validation
+
+## Architecture
+
+### Agent System
+
+RCY uses an agent-based architecture for command processing. Commands are validated through Pydantic schemas before execution, enabling:
+
+- **Type-safe command parsing**: Arguments are validated against schemas
+- **Extensible tool registry**: New commands can be added as tool schemas
+- **Future LLM integration**: Architecture supports adding AI agents for natural language interaction
+
+The agent system lives in `src/python/tui/agents/`:
+
+```
+agents/
+├── base.py      # BaseAgent class and ToolRegistry
+├── default.py   # DefaultAgent - dispatches commands without LLM
+├── tools.py     # Pydantic schemas for all commands
+└── factory.py   # Agent factory for selecting agent type
+```
+
+**Default Agent**: Parses commands like `/slice 4` or `/play 1 2 3 --loop`, validates arguments against Pydantic schemas, and dispatches to registered handlers. No API key required.
+
+**Configuration** (`config/config.json`):
+```json
+{
+  "agent": {
+    "type": "default"
+  }
+}
+```
 
 ## Design Philosophy
 
