@@ -228,9 +228,17 @@ class DefaultAgent(BaseAgent):
                 # Positional argument - try to match to first unfilled field
                 # Special case: if arg looks like a list [1,2,3], parse it
                 if arg.startswith("[") and arg.endswith("]"):
-                    # Parse as list
+                    # Parse as list, supporting key notation (q=11, w=12, etc.)
                     list_content = arg[1:-1]
-                    items = [int(x.strip()) for x in list_content.split(",") if x.strip()]
+                    items = []
+                    for x in list_content.split(","):
+                        x = x.strip().lower()
+                        if x in KEY_TO_SEGMENT:
+                            items.append(KEY_TO_SEGMENT[x])
+                        elif x.isdigit():
+                            items.append(int(x))
+                        elif x:  # Skip empty strings
+                            raise ValueError(f"Invalid segment key: {x}")
                     # Find a list field
                     for name, field_info in schema_fields.items():
                         if name not in kwargs:
