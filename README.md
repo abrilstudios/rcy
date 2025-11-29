@@ -65,8 +65,10 @@ Type `/` to enter command mode, then:
 /tempo <bpm>              Set adjusted playback tempo
 /tempo --measures <n>     Calculate source tempo from measures
 
-/play [1,2,3,4]           Play pattern once
-/play --loop [1,4,2,3]    Play pattern looping
+/play 1 2 3 4             Play pattern once (1-0 = segments 1-10)
+/play q w e r             Play segments 11-14 (q-p = segments 11-20)
+/play 1 q 2 w --loop      Mix numbers and keys, loop pattern
+/loop                     Loop all segments (shortcut for /play --loop)
 /stop                     Stop playback
 
 /export <dir>             Export SFZ + samples

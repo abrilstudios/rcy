@@ -378,18 +378,21 @@ class TUIApp:
 
     def _agent_help(self, args) -> str:
         return """Commands (use ! or / prefix):
-  !slice <n>              Slice by measures
-  !preset <id>            Load preset
-  !presets                List presets
-  !set bars <n>           Set bars
-  !markers <s> <e>        Set markers
-  !tempo <bpm>            Set tempo
-  !play [1,2,3,4]         Play pattern
-  !stop                   Stop playback
-  !export <dir>           Export SFZ
-  !zoom in|out            Zoom view
-  !help                   Show help
-  !quit                   Exit"""
+  /slice <n>              Slice by measures
+  /preset <id>            Load preset
+  /presets                List presets
+  /set bars <n>           Set bars
+  /markers <s> <e>        Set markers
+  /tempo <bpm>            Set tempo
+  /play 1 2 3 4           Play pattern (1-0 for 1-10)
+  /play q w e r           Play 11-14 (q-p for 11-20)
+  /play 1 q --loop        Mix keys, loop pattern
+  /loop                   Loop all segments
+  /stop                   Stop playback
+  /export <dir>           Export SFZ
+  /zoom in|out            Zoom view
+  /help                   Show help
+  /quit                   Exit"""
 
     def _agent_presets(self, args) -> str:
         return self._on_presets()

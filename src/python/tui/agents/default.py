@@ -13,6 +13,14 @@ COMMAND_EXPANSIONS = {
     "l": "play --loop",
 }
 
+# Key-to-segment mappings (same as keyboard shortcuts in TUI)
+KEY_TO_SEGMENT = {
+    '1': 1, '2': 2, '3': 3, '4': 4, '5': 5,
+    '6': 6, '7': 7, '8': 8, '9': 9, '0': 10,
+    'q': 11, 'w': 12, 'e': 13, 'r': 14, 't': 15,
+    'y': 16, 'u': 17, 'i': 18, 'o': 19, 'p': 20,
+}
+
 
 class DefaultAgent(BaseAgent):
     """Default agent that dispatches commands without an LLM.
@@ -230,8 +238,8 @@ class DefaultAgent(BaseAgent):
                                 kwargs[name] = items
                                 break
                 else:
-                    # Check if this looks like a number and there's an unfilled list field
-                    if arg.isdigit():
+                    # Check if this is a segment key (1-0, q-p) and there's an unfilled list field
+                    if arg.lower() in KEY_TO_SEGMENT or arg.isdigit():
                         # Check if there's an unfilled list field to collect into
                         list_field_name = None
                         for name, field_info in schema_fields.items():
@@ -240,11 +248,18 @@ class DefaultAgent(BaseAgent):
                                 break
 
                         if list_field_name:
-                            # Collect all remaining numeric args into a list
+                            # Collect all remaining segment key args into a list
                             list_items = []
-                            while i < len(args) and args[i].isdigit():
-                                list_items.append(int(args[i]))
-                                i += 1
+                            while i < len(args):
+                                a = args[i].lower()
+                                if a in KEY_TO_SEGMENT:
+                                    list_items.append(KEY_TO_SEGMENT[a])
+                                    i += 1
+                                elif a.isdigit():
+                                    list_items.append(int(a))
+                                    i += 1
+                                else:
+                                    break
                             kwargs[list_field_name] = list_items
                             continue  # Skip the i += 1 at end since we already advanced
 
