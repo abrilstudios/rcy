@@ -11,6 +11,7 @@
 - **Selection & Trimming**: Trim audio with start/end markers for perfect loop isolation
 - **SFZ Export**: Generate SFZ files with mappings corresponding to the sliced samples for easy import into samplers
 - **Historically-Informed Presets**: Access artist-specific slice patterns based on classic jungle and drum & bass techniques
+- **Terminal Interface (TUI)**: Keyboard-driven interface with ASCII waveform, pattern playback, and command history
 - **Cohesive Design Language**: Distinctive aesthetic based on a consistent color palette and typography
 
 ## Design Philosophy
@@ -64,9 +65,11 @@ RCY follows a Model-View-Controller (MVC) pattern with clear separation of conce
 
 ## Usage
 
+### GUI Application
+
 1. **Launch the Application**:
    ```bash
-   python3 src/python/main.py
+   just run
    ```
 
 2. **Work with Audio**:
@@ -84,6 +87,57 @@ RCY follows a Model-View-Controller (MVC) pattern with clear separation of conce
 4. **Export Results**:
    - Export your sliced samples and SFZ file using File > Export
    - Choose a destination directory for all exported files
+
+### Terminal User Interface (TUI)
+
+RCY also includes a terminal-based interface for keyboard-driven workflow and remote/headless operation.
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│ amen.wav  137.7 BPM  4 bars  4 slices                                │
+├──────────────────────────────────────────────────────────────────────┤
+│L                ▼                ▼                ▼                 R│
+│▇▄▆▁▅▂▂▂▂▂▂▃▅▅▁▂▁▆▃▄▅▁▅▁▁▂▂▂▃▅▅▄▁▂▁▆▂▆▂▅▃▂▁▂▂▂▇▁▃▁▅▂▂▂▃▄▆▅▁▂▂▂▃▇▃▃▂▅▃▃│
+│▇▄▆▁▅▂▂▂▂▂▂▃▅▅▁▂▁▆▃▄▅▁▅▁▁▂▂▂▃▅▅▄▁▂▁▆▂▆▂▅▃▂▁▂▂▂▇▁▃▁▅▂▂▂▃▄▆▅▁▂▂▂▃▇▃▃▂▅▃▃│
+│        1                2                 3                4         │
+│0.00s                            3.49s                           6.97s│
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+**Launch the TUI**:
+```bash
+just tui                    # Load default preset
+just tui-preset think_break # Load specific preset
+```
+
+**Keyboard Controls**:
+- `1-0` - Play segments 1-10
+- `q-p` - Play segments 11-20
+- `Space` - Play L to R selection
+- `Escape` - Stop playback
+- `/` - Enter command mode
+
+**Commands** (type `/help` for full list):
+```
+/open <file.wav>          Load audio file
+/presets                  List available presets
+/preset <id>              Load preset by ID
+/slice --measures <n>     Slice by measure count
+/slice --transients <n>   Slice by transients (0-100)
+/markers <start> <end>    Set L/R markers (seconds)
+/tempo <bpm>              Set adjusted playback tempo
+/tempo --measures <n>     Calculate source tempo from measures
+/play [1,2,3,4]           Play pattern once
+/play --loop [1,4,2,3]    Play pattern looping
+/stop                     Stop playback
+/export <dir>             Export SFZ + samples
+/zoom in|out              Zoom view
+/quit                     Exit
+```
+
+**Command History**:
+- `Up/Down` arrows - Navigate through previous commands
+- `Ctrl-R` - Reverse search through history (bash-style)
 
 ## Historical Presets
 

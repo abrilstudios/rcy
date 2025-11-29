@@ -22,9 +22,17 @@ install:
 install-dev:
     ./venv/bin/pip install -r requirements-dev.txt
 
-# Run the RCY application
+# Run the RCY application (GUI)
 run:
     PYTHONPATH=src/python ./venv/bin/python src/python/main.py
+
+# Run the TUI (Terminal User Interface)
+tui:
+    PYTHONPATH=src/python ./venv/bin/python -m tui.app
+
+# Run the TUI with a specific preset
+tui-preset PRESET:
+    PYTHONPATH=src/python ./venv/bin/python -m tui.app --preset {{PRESET}}
 
 # Run the debug version of the application
 run-debug:
