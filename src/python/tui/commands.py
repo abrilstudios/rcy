@@ -19,6 +19,7 @@ class CommandType(Enum):
     EXPORT = "export"
     MODE = "mode"
     ZOOM = "zoom"
+    SET = "set"
     HELP = "help"
     QUIT = "quit"
     UNKNOWN = "unknown"
@@ -116,6 +117,7 @@ def parse_command(input_str: str) -> ParsedCommand:
         "mode": CommandType.MODE,
         "zoom": CommandType.ZOOM,
         "z": CommandType.ZOOM,
+        "set": CommandType.SET,
         "help": CommandType.HELP,
         "h": CommandType.HELP,
         "?": CommandType.HELP,
@@ -181,6 +183,7 @@ class CommandHandler:
         on_export: Callable[[str, str], None],
         on_mode: Callable[[str], None],
         on_zoom: Callable[[str], None],
+        on_set: Callable[[str, Any], str],
         on_quit: Callable[[], None],
     ):
         """Initialize command handler with callbacks.
@@ -197,6 +200,7 @@ class CommandHandler:
             on_export: Called with (directory, format)
             on_mode: Called with mode string ("loop" or "oneshot")
             on_zoom: Called with direction ("in" or "out")
+            on_set: Called with (setting_name, value), returns status message
             on_quit: Called when user wants to exit
         """
         self.on_open = on_open
@@ -210,6 +214,7 @@ class CommandHandler:
         self.on_export = on_export
         self.on_mode = on_mode
         self.on_zoom = on_zoom
+        self.on_set = on_set
         self.on_quit = on_quit
 
     def execute(self, cmd: ParsedCommand) -> str:
@@ -248,6 +253,8 @@ class CommandHandler:
                     return self._handle_mode(cmd)
                 case CommandType.ZOOM:
                     return self._handle_zoom(cmd)
+                case CommandType.SET:
+                    return self._handle_set(cmd)
                 case CommandType.HELP:
                     return self._handle_help()
                 case CommandType.QUIT:
@@ -391,6 +398,21 @@ class CommandHandler:
         self.on_zoom(direction)
         return f"Zoomed {direction}"
 
+    def _handle_set(self, cmd: ParsedCommand) -> str:
+        if len(cmd.args) < 2:
+            return "Usage: /set bars <n>"
+
+        setting = cmd.args[0].lower()
+        value = cmd.args[1]
+
+        # Try to convert value to int
+        try:
+            value = int(value)
+        except ValueError:
+            pass
+
+        return self.on_set(setting, value)
+
     def _handle_help(self) -> str:
         return """Commands:
   /open <file.wav>          Load audio file
@@ -401,6 +423,7 @@ class CommandHandler:
   /slice --clear            Clear all slices
   /markers <start> <end>    Set L/R markers (seconds)
   /markers --reset          Reset markers to full file
+  /set bars <n>             Set number of bars/measures
   /tempo <bpm>              Set adjusted playback tempo
   /tempo --measures <n>     Calculate source tempo from measures
   /play [1,2,3,4]           Play pattern once

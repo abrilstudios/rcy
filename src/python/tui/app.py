@@ -273,6 +273,10 @@ class TUIApp:
 
             self.status_message = f"Loaded: {os.path.basename(self.model.filename)}"
             return True
+        except SystemExit:
+            self.status_message = f"Error: preset '{self.preset_id}' failed to load"
+            logger.error("SystemExit while loading preset: %s", self.preset_id)
+            return False
         except Exception as e:
             self.status_message = f"Error loading preset: {e}"
             logger.error("Failed to initialize model: %s", e)
@@ -398,18 +402,36 @@ class TUIApp:
 
     def _on_preset(self, preset_id: str) -> None:
         """Handle /preset command - load a preset."""
+        # Validate preset exists first
+        preset_info = config.get_preset_info(preset_id)
+        if not preset_info:
+            self.status_message = f"Unknown preset: {preset_id}"
+            return
+
         # Stop any current playback
         self.pattern_player.stop()
         if self.model:
             self.model.stop_playback()
+
+        # Save old preset_id in case we need to restore
+        old_preset_id = self.preset_id
+
+        # Try to load the new preset
+        self.preset_id = preset_id
+
+        # Stop old stream only after we're about to create new model
+        if self.model:
             self.model.audio_engine.stop_stream()
 
-        # Load the new preset
-        self.preset_id = preset_id
         if self.init_model():
             self.status_message = f"Loaded preset: {preset_id}"
         else:
-            self.status_message = f"Failed to load preset: {preset_id}"
+            # Failed to load - restore old preset
+            self.preset_id = old_preset_id
+            if self.init_model():
+                self.status_message = f"Failed to load {preset_id} (audio file error) - restored {old_preset_id}"
+            else:
+                self.status_message = f"Failed to load preset: {preset_id}"
 
     def _on_export(self, directory: str, fmt: str) -> None:
         """Handle /export command."""
@@ -445,6 +467,30 @@ class TUIApp:
         self.zoom_start = max(0, center - new_duration / 2)
         self.zoom_end = min(self.model.total_time, center + new_duration / 2)
         self.status_message = f"View: {self.zoom_start:.2f}s - {self.zoom_end:.2f}s"
+
+    def _on_set(self, setting: str, value) -> str:
+        """Handle /set command - modify settings.
+
+        Args:
+            setting: Setting name (e.g., 'bars')
+            value: Value to set
+
+        Returns:
+            Status message
+        """
+        if setting in ('bars', 'measures'):
+            if not isinstance(value, int) or value < 1:
+                return "Error: bars must be a positive integer"
+
+            if not self.model:
+                return "No audio loaded"
+
+            self.num_measures = value
+            # Recalculate BPM with new measure count
+            self.model.calculate_source_bpm(value)
+            return f"Set bars={value}, BPM={self.model.source_bpm:.1f}"
+        else:
+            return f"Unknown setting: {setting}. Available: bars"
 
     def _on_quit(self) -> None:
         """Handle /quit command."""
@@ -571,6 +617,7 @@ class TUIApp:
             on_export=self._on_export,
             on_mode=self._on_mode,
             on_zoom=self._on_zoom,
+            on_set=self._on_set,
             on_quit=self._on_quit,
         )
 
@@ -594,12 +641,15 @@ class TUIApp:
                     except curses.error:
                         pass
 
-            # Status line
+            # Status line(s) - can be multi-line
+            status_lines = self.status_message.split('\n')
             status_y = min(len(lines) + 1, height - 2)
-            try:
-                stdscr.addstr(status_y, 0, self.status_message[:width-1])
-            except curses.error:
-                pass
+            max_status_lines = height - status_y - 2  # Leave room for command line
+            for i, status_line in enumerate(status_lines[:max_status_lines]):
+                try:
+                    stdscr.addstr(status_y + i, 0, status_line[:width-1])
+                except curses.error:
+                    pass
 
             # Command line
             cmd_y = height - 1

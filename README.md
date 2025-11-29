@@ -125,6 +125,7 @@ just tui-preset think_break # Load specific preset
 /slice --measures <n>     Slice by measure count
 /slice --transients <n>   Slice by transients (0-100)
 /markers <start> <end>    Set L/R markers (seconds)
+/set bars <n>             Set number of bars (recalculates BPM)
 /tempo <bpm>              Set adjusted playback tempo
 /tempo --measures <n>     Calculate source tempo from measures
 /play [1,2,3,4]           Play pattern once

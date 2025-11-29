@@ -28,5 +28,113 @@
     "name": "Apache (Right Channel)",
     "artist": "Incredible Bongo Band",
     "measures": 2
+  },
+  "rl_hot_pants": {
+    "filepath": "sample-packs/rhythm-lab/audio/20th Century - Hot Pants.wav",
+    "name": "20th Century - Hot Pants",
+    "artist": "20th Century",
+    "measures": 2
+  },
+  "rl_walk_this_way": {
+    "filepath": "sample-packs/rhythm-lab/audio/Aerosmith - Walk This Way.wav",
+    "name": "Aerosmith - Walk This Way",
+    "artist": "Aerosmith",
+    "measures": 2
+  },
+  "rl_black_water_gold": {
+    "filepath": "sample-packs/rhythm-lab/audio/African Music Machine - Black Water Gold.wav",
+    "name": "African Music Machine - Black Water Gold",
+    "artist": "African Music Machine",
+    "measures": 2
+  },
+  "rl_house_rising_funk_1": {
+    "filepath": "sample-packs/rhythm-lab/audio/Afrique - House Of Rising Funk (part1).wav",
+    "name": "Afrique - House Of Rising Funk (part1)",
+    "artist": "Afrique",
+    "measures": 2
+  },
+  "rl_house_rising_funk_2": {
+    "filepath": "sample-packs/rhythm-lab/audio/Afrique - House Of Rising Funk (part2).wav",
+    "name": "Afrique - House Of Rising Funk (part2)",
+    "artist": "Afrique",
+    "measures": 2
+  },
+  "rl_cramp_your_style": {
+    "filepath": "sample-packs/rhythm-lab/audio/All The People - Cramp Your Style.wav",
+    "name": "All The People - Cramp Your Style",
+    "artist": "All The People",
+    "measures": 2
+  },
+  "rl_keep_on_dancing": {
+    "filepath": "sample-packs/rhythm-lab/audio/Alvin Cash - Keep On Dancing.wav",
+    "name": "Alvin Cash - Keep On Dancing",
+    "artist": "Alvin Cash",
+    "measures": 2
+  },
+  "rl_the_get_away": {
+    "filepath": "sample-packs/rhythm-lab/audio/Alvin Cash - The Get Away.wav",
+    "name": "Alvin Cash - The Get Away",
+    "artist": "Alvin Cash",
+    "measures": 2
+  },
+  "rl_no_good": {
+    "filepath": "sample-packs/rhythm-lab/audio/Amy Winehouse - You Know I'm No Good.wav",
+    "name": "Amy Winehouse - You Know I'm No Good",
+    "artist": "Amy Winehouse",
+    "measures": 2
+  },
+  "rl_the_rock": {
+    "filepath": "sample-packs/rhythm-lab/audio/Atomic Rooster - The Rock.wav",
+    "name": "Atomic Rooster - The Rock",
+    "artist": "Atomic Rooster",
+    "measures": 2
+  },
+  "rl_its_moral_issue": {
+    "filepath": "sample-packs/rhythm-lab/audio/Baader Meinhof - It's a Moral Issue.wav",
+    "name": "Baader Meinhof - It's a Moral Issue",
+    "artist": "Baader Meinhof",
+    "measures": 2
+  },
+  "rl_keep_your_distance": {
+    "filepath": "sample-packs/rhythm-lab/audio/Babe Ruth - Keep Your Distance.wav",
+    "name": "Babe Ruth - Keep Your Distance",
+    "artist": "Babe Ruth",
+    "measures": 2
+  },
+  "rl_listen_to_me": {
+    "filepath": "sample-packs/rhythm-lab/audio/Baby Huey & The Babysitters - Listen to Me.wav",
+    "name": "Baby Huey & The Babysitters - Listen to Me",
+    "artist": "Baby Huey & The Babysitters",
+    "measures": 2
+  },
+  "rl_shack_up": {
+    "filepath": "sample-packs/rhythm-lab/audio/Banbarra - Shack Up.wav",
+    "name": "Banbarra - Shack Up",
+    "artist": "Banbarra",
+    "measures": 2
+  },
+  "rl_big_beat": {
+    "filepath": "sample-packs/rhythm-lab/audio/Billy Squier - Big Beat.wav",
+    "name": "Billy Squier - Big Beat",
+    "artist": "Billy Squier",
+    "measures": 2
+  },
+  "rl_blackbyrds_theme": {
+    "filepath": "sample-packs/rhythm-lab/audio/Blackbyrds - Blackbyrds Theme.wav",
+    "name": "Blackbyrds - Blackbyrds Theme",
+    "artist": "Blackbyrds",
+    "measures": 2
+  },
+  "rl_take_me_mardi_gras": {
+    "filepath": "sample-packs/rhythm-lab/audio/Bob James - Take Me To the Mardi Gras.wav",
+    "name": "Bob James - Take Me To the Mardi Gras",
+    "artist": "Bob James",
+    "measures": 2
+  },
+  "rl_i_know_got_soul": {
+    "filepath": "sample-packs/rhythm-lab/audio/Bobby Byrd - I Know You Got Soul.wav",
+    "name": "Bobby Byrd - I Know You Got Soul",
+    "artist": "Bobby Byrd",
+    "measures": 2
   }
 }
