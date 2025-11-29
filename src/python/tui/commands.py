@@ -285,6 +285,13 @@ class CommandHandler:
         measures = cmd.options.get("measures")
         transients = cmd.options.get("transients")
 
+        # Default to measures if a bare number is provided (e.g., /slice 4)
+        if cmd.args and not measures and transients is None:
+            try:
+                measures = int(cmd.args[0])
+            except ValueError:
+                return f"Error: '{cmd.args[0]}' is not a valid number"
+
         if measures:
             self.on_slice(measures, None)
             return f"Sliced by measures: {measures}"
@@ -292,7 +299,7 @@ class CommandHandler:
             self.on_slice(None, transients)
             return f"Sliced by transients (threshold: {transients})"
         else:
-            return "Usage: /slice --measures <n> or /slice --transients <0-100>"
+            return "Usage: /slice <n> or /slice --transients <0-100>"
 
     def _handle_markers(self, cmd: ParsedCommand) -> str:
         if cmd.options.get("reset"):
@@ -418,7 +425,7 @@ class CommandHandler:
   /open <file.wav>          Load audio file
   /presets                  List available presets
   /preset <id>              Load preset by ID
-  /slice --measures <n>     Slice by measure count
+  /slice <n>                Slice by measure count (default)
   /slice --transients <n>   Slice by transients (0-100)
   /slice --clear            Clear all slices
   /markers <start> <end>    Set L/R markers (seconds)
