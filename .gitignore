@@ -18,6 +18,9 @@ venv/
 logs/
 *.log
 
+# Export output directory
+exports/
+
 # Python packaging
 *.egg-info/
 *.egg/
