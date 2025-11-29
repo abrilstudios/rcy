@@ -269,8 +269,7 @@ class TUIApp:
 
     def _init_agent(self) -> None:
         """Initialize the agent from config."""
-        agent_config = config.get_value_from_json_file("config.json", "agent", {})
-        agent_type = agent_config.get("type", "default")
+        agent_type = config.get_setting("agent", "type", "default")
 
         # Create tool registry with handlers
         registry = ToolRegistry()
