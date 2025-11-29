@@ -1,96 +1,6 @@
 # RCY
 
-**RCY** is a tool designed to process breakbeat loops, enabling users to slice and export them in the **SFZ** format for seamless integration with samplers like the **TAL-Sampler**. Inspired by the aesthetics of New Order's Movement, brutalist design, and hauntological software, RCY combines utility with an appreciation for drum break history.
-
-<img width="800" alt="RCY Screenshot" src="screenshots/rcy.png">
-
-## Features
-
-- **Breakbeat Slicing**: Automatically detects transients in breakbeat loops and slices them into individual hits
-- **Manual Editing**: Precisely place slice points for customized break cutting patterns
-- **Selection & Trimming**: Trim audio with start/end markers for perfect loop isolation
-- **SFZ Export**: Generate SFZ files with mappings corresponding to the sliced samples for easy import into samplers
-- **Historically-Informed Presets**: Access artist-specific slice patterns based on classic jungle and drum & bass techniques
-- **Terminal Interface (TUI)**: Keyboard-driven interface with ASCII waveform, pattern playback, and command history
-- **Cohesive Design Language**: Distinctive aesthetic based on a consistent color palette and typography
-
-## Design Philosophy
-
-RCY isn't just a tool—it's a perspective on breakbeat culture. The design references hauntological approaches to music technology, with:
-
-- A color palette inspired by New Order's Movement album artwork
-- Brutalist interface elements that emphasize function and clarity
-- A typography system based on Futura PT Book
-- A careful balance between utility and historical resonance
-
-Read our [Breakbeat Science](docs/breakbeat-science.md) guide to understand the three core workflows that shaped jungle, drum & bass, and big beat, and how they're implemented in RCY. For those interested in the history and techniques of sampling in drum & bass, check out our comprehensive [Drum & Bass Sampling Techniques](docs/drum_and_bass_sample_techniques.md) document.
-
-## Requirements
-
-- **Python 3.11+**: RCY requires Python 3.11 or higher
-- **Dependencies**: Install necessary Python packages using the provided `requirements.txt` file
-  - For Python 3.13+ support, use `requirements-py313.txt` instead
-
-## Installation
-
-1. **Clone the Repository**:
-   ```bash
-   git clone https://github.com/tnn1t1s/rcy.git
-   cd rcy
-   ```
-
-2. **Install Dependencies**:
-   ```bash
-   # For Python 3.11-3.12
-   pip install -r requirements.txt
-
-   # For Python 3.13+
-   pip install -r requirements-py313.txt
-   ```
-
-## Development Setup
-
-RCY uses modern Python development tools:
-
-- **Code Quality**: [ruff](https://github.com/astral-sh/ruff) for linting and formatting
-- **Type Checking**: [mypy](https://www.mypy-lang.org/) for static type analysis
-- **Package Management**: `pyproject.toml` configuration
-- **Testing**: pytest for unit and integration tests
-
-For development details, see [CONTRIBUTING.md](CONTRIBUTING.md) and [CLAUDE.md](CLAUDE.md).
-
-## Architecture
-
-RCY follows a Model-View-Controller (MVC) pattern with clear separation of concerns. For detailed information about the system architecture and modernization phases, see [docs/mvc-current-flow.md](docs/mvc-current-flow.md).
-
-## Usage
-
-### GUI Application
-
-1. **Launch the Application**:
-   ```bash
-   just run
-   ```
-
-2. **Work with Audio**:
-   - The application loads with the Amen break by default
-   - Load custom audio with File > Open
-   - Set slice points automatically with "Split by Transients" or manually with Alt+Click
-   - Adjust the Onset Threshold slider to control automatic transient detection sensitivity
-   - Use the measure-based slicing for rhythmically perfect divisions
-
-3. **Selection and Trimming**:
-   - Set a start marker with Shift+Click (blue)
-   - Set an end marker with Ctrl+Click (blue) 
-   - Click the "Cut Selection" button to trim audio to just the selected region
-
-4. **Export Results**:
-   - Export your sliced samples and SFZ file using File > Export
-   - Choose a destination directory for all exported files
-
-### Terminal User Interface (TUI)
-
-RCY also includes a terminal-based interface for keyboard-driven workflow and remote/headless operation.
+**RCY** is a terminal-based breakbeat slicer for cutting drum loops into samples and exporting them in the **SFZ** format for samplers like **TAL-Sampler**. Inspired by New Order's Movement, brutalist design, and hauntological software.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -104,78 +14,172 @@ RCY also includes a terminal-based interface for keyboard-driven workflow and re
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-**Launch the TUI**:
+## Quick Start
+
 ```bash
-just tui                    # Load default preset
-just tui-preset think_break # Load specific preset
+git clone https://github.com/tnn1t1s/rcy.git
+cd rcy
+pip install -r requirements.txt
+just tui                         # Launch with Amen break
+just tui-preset think_break      # Launch with Think break
 ```
 
-**Keyboard Controls**:
-- `1-0` - Play segments 1-10
-- `q-p` - Play segments 11-20
-- `Space` - Play L to R selection
-- `Escape` - Stop playback
-- `/` - Enter command mode
+## Usage
 
-**Commands** (type `/help` for full list):
+### Launch
+
+```bash
+just tui                    # Load default (Amen break)
+just tui-preset <id>        # Load specific preset
 ```
-/open <file.wav>          Load audio file
-/presets                  List available presets
+
+### Keyboard Controls
+
+| Key | Action |
+|-----|--------|
+| `1-0` | Play segments 1-10 |
+| `q-p` | Play segments 11-20 |
+| `Space` | Play L to R selection |
+| `Escape` | Stop playback |
+| `/` | Enter command mode |
+| `Up/Down` | Navigate command history |
+| `Ctrl-R` | Reverse search history |
+
+### Commands
+
+Type `/` to enter command mode, then:
+
+```
 /preset <id>              Load preset by ID
-/slice --measures <n>     Slice by measure count
+/presets                  List available presets
+/open <file.wav>          Load audio file
+
+/slice <n>                Slice by measure count
 /slice --transients <n>   Slice by transients (0-100)
-/markers <start> <end>    Set L/R markers (seconds)
+/slice --clear            Clear all slices
+
 /set bars <n>             Set number of bars (recalculates BPM)
+/markers <start> <end>    Set L/R markers (seconds)
+/markers --reset          Reset markers to full file
+
 /tempo <bpm>              Set adjusted playback tempo
 /tempo --measures <n>     Calculate source tempo from measures
+
 /play [1,2,3,4]           Play pattern once
 /play --loop [1,4,2,3]    Play pattern looping
 /stop                     Stop playback
+
 /export <dir>             Export SFZ + samples
 /zoom in|out              Zoom view
+/help                     Show help
 /quit                     Exit
 ```
 
-**Command History**:
-- `Up/Down` arrows - Navigate through previous commands
-- `Ctrl-R` - Reverse search through history (bash-style)
+## Presets
 
-## Historical Presets
+RCY includes classic breakbeats ready to slice:
 
-The `presets/` directory contains historically-informed breakbeat slice patterns based on specific artists:
+### Core Breaks
 
-- **Amen Break**: Dillinja and LTJ Bukem cutting styles
-- **Think Break**: Source Direct and Paradox approaches
-- **Apache Break**: Photek-inspired edits
+| ID | Name | Artist | Bars |
+|----|------|--------|------|
+| `amen_classic` | Amen Break | The Winstons | 4 |
+| `think_break` | Think (About It) | Lyn Collins | 1 |
+| `apache_break` | Apache | Incredible Bongo Band | 2 |
+| `apache_L` | Apache (Left Channel) | Incredible Bongo Band | 2 |
+| `apache_R` | Apache (Right Channel) | Incredible Bongo Band | 2 |
 
-Each preset includes documentation about the artistic context and technical approach. For a deeper understanding of the cultural and technical foundations of these presets, see our [Breakbeat Science](docs/breakbeat-science.md) document. To learn about the technical design of RCY's audio processing, check our [Playback and Export Pipelines](designs/playback-export-pipelines.md) documentation.
+### Rhythm Lab Collection
 
-## Sample Packs
-
-RCY supports downloadable sample packs that automatically create presets:
-
-### Rhythm Lab Breakbeats
-
-48 classic breakbeats from [rhythm-lab.com](https://rhythm-lab.com/breakbeats/):
+Download additional breaks from [rhythm-lab.com](https://rhythm-lab.com/breakbeats/):
 
 ```bash
-# List available breakbeats
-./venv/bin/python sample-packs/rhythm-lab/setup.py --list
-
-# Download all and create presets
-./venv/bin/python sample-packs/rhythm-lab/setup.py
-
-# Download specific breaks
-./venv/bin/python sample-packs/rhythm-lab/setup.py --id funky_drummer
-./venv/bin/python sample-packs/rhythm-lab/setup.py --id amen
+./venv/bin/python sample-packs/rhythm-lab/setup.py          # Download all
+./venv/bin/python sample-packs/rhythm-lab/setup.py --list   # List available
 ```
 
-See [sample-packs/rhythm-lab/README.md](sample-packs/rhythm-lab/README.md) for details.
+Available presets after download:
 
-## Contributing
+| ID | Name | Artist |
+|----|------|--------|
+| `rl_hot_pants` | Hot Pants | 20th Century |
+| `rl_walk_this_way` | Walk This Way | Aerosmith |
+| `rl_black_water_gold` | Black Water Gold | African Music Machine |
+| `rl_house_rising_funk_1` | House Of Rising Funk (part1) | Afrique |
+| `rl_house_rising_funk_2` | House Of Rising Funk (part2) | Afrique |
+| `rl_cramp_your_style` | Cramp Your Style | All The People |
+| `rl_keep_on_dancing` | Keep On Dancing | Alvin Cash |
+| `rl_the_get_away` | The Get Away | Alvin Cash |
+| `rl_no_good` | You Know I'm No Good | Amy Winehouse |
+| `rl_the_rock` | The Rock | Atomic Rooster |
+| `rl_its_moral_issue` | It's a Moral Issue | Baader Meinhof |
+| `rl_keep_your_distance` | Keep Your Distance | Babe Ruth |
+| `rl_listen_to_me` | Listen to Me | Baby Huey & The Babysitters |
+| `rl_shack_up` | Shack Up | Banbarra |
+| `rl_big_beat` | Big Beat | Billy Squier |
+| `rl_blackbyrds_theme` | Blackbyrds Theme | Blackbyrds |
+| `rl_take_me_mardi_gras` | Take Me To the Mardi Gras | Bob James |
+| `rl_i_know_got_soul` | I Know You Got Soul | Bobby Byrd |
 
-Contributions are welcome! Please fork the repository and submit a pull request with your enhancements or bug fixes.
+## Features
+
+- **Breakbeat Slicing**: Slice by measures or transient detection
+- **Pattern Playback**: Play segments in custom sequences with looping
+- **ASCII Waveform**: Visual display with L/R markers and slice points
+- **SFZ Export**: Generate SFZ files for samplers
+- **Command History**: Bash-style history with reverse search
+- **Preset System**: Quick access to classic breaks
+
+## Design Philosophy
+
+RCY references hauntological approaches to music technology:
+
+- Color palette inspired by New Order's Movement artwork
+- Brutalist interface emphasizing function and clarity
+- Balance between utility and historical resonance
+
+Read [Breakbeat Science](docs/breakbeat-science.md) for the three core workflows that shaped jungle, drum & bass, and big beat.
+
+## Requirements
+
+- Python 3.11+
+- Dependencies: `pip install -r requirements.txt`
+  - For Python 3.13+: `pip install -r requirements-py313.txt`
+
+## Development
+
+```bash
+just test    # Run tests
+just lint    # Run linter
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+
+---
+
+## GUI Application (Legacy)
+
+RCY originally started as a PyQt6 GUI application. The GUI is still available but the TUI is now the primary interface.
+
+<img width="800" alt="RCY Screenshot" src="screenshots/rcy.png">
+
+### Launch GUI
+
+```bash
+just run
+```
+
+### GUI Features
+
+- Load audio with File > Open
+- Set slice points with "Split by Transients" or Alt+Click
+- Set start marker with Shift+Click, end marker with Ctrl+Click
+- Export with File > Export
+
+The GUI follows an MVC architecture documented in [docs/mvc-current-flow.md](docs/mvc-current-flow.md).
+
+---
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+[MIT License](LICENSE)
