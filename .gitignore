@@ -34,6 +34,9 @@ build/
 tal/
 scratch/
 
+# Sample pack audio files (downloaded separately)
+sample-packs/*/audio/
+
 # Tutorial sample directories
 mp3/
 wav/

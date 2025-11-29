@@ -149,6 +149,28 @@ The `presets/` directory contains historically-informed breakbeat slice patterns
 
 Each preset includes documentation about the artistic context and technical approach. For a deeper understanding of the cultural and technical foundations of these presets, see our [Breakbeat Science](docs/breakbeat-science.md) document. To learn about the technical design of RCY's audio processing, check our [Playback and Export Pipelines](designs/playback-export-pipelines.md) documentation.
 
+## Sample Packs
+
+RCY supports downloadable sample packs that automatically create presets:
+
+### Rhythm Lab Breakbeats
+
+48 classic breakbeats from [rhythm-lab.com](https://rhythm-lab.com/breakbeats/):
+
+```bash
+# List available breakbeats
+./venv/bin/python sample-packs/rhythm-lab/setup.py --list
+
+# Download all and create presets
+./venv/bin/python sample-packs/rhythm-lab/setup.py
+
+# Download specific breaks
+./venv/bin/python sample-packs/rhythm-lab/setup.py --id funky_drummer
+./venv/bin/python sample-packs/rhythm-lab/setup.py --id amen
+```
+
+See [sample-packs/rhythm-lab/README.md](sample-packs/rhythm-lab/README.md) for details.
+
 ## Contributing
 
 Contributions are welcome! Please fork the repository and submit a pull request with your enhancements or bug fixes.
