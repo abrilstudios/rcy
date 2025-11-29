@@ -76,10 +76,10 @@ class PlayTool(BaseModel):
     """Play a pattern of segments.
 
     Args:
-        pattern: List of segment indices to play (1-based)
+        pattern: List of segment indices to play (1-based), or all segments if omitted
         loop: Whether to loop the pattern
     """
-    pattern: list[int] = Field(..., min_length=1, description="Segment indices to play")
+    pattern: Optional[list[int]] = Field(None, min_length=1, description="Segment indices to play (all if omitted)")
     loop: bool = Field(False, description="Loop the pattern")
 
 

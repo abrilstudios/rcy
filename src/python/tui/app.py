@@ -348,9 +348,17 @@ class TUIApp:
         return "Tempo updated"
 
     def _agent_play(self, args) -> str:
-        self._on_play(args.pattern, args.loop)
+        pattern = args.pattern
+        # If no pattern provided, play all segments
+        if pattern is None:
+            boundaries = self.segment_manager.get_boundaries()
+            num_segments = len(boundaries) - 1
+            if num_segments < 1:
+                return "No segments to play"
+            pattern = list(range(1, num_segments + 1))
+        self._on_play(pattern, args.loop)
         loop_str = " (looping)" if args.loop else ""
-        return f"Playing pattern: {args.pattern}{loop_str}"
+        return f"Playing pattern: {pattern}{loop_str}"
 
     def _agent_stop(self, args) -> str:
         self._on_stop()

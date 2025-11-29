@@ -7,6 +7,12 @@ from typing import Any
 from .base import BaseAgent, AgentResponse, ToolRegistry
 from .tools import TOOL_SCHEMAS, TOOL_ALIASES
 
+# Command expansions - commands that expand to other commands with args
+COMMAND_EXPANSIONS = {
+    "loop": "play --loop",
+    "l": "play --loop",
+}
+
 
 class DefaultAgent(BaseAgent):
     """Default agent that dispatches commands without an LLM.
@@ -84,6 +90,13 @@ class DefaultAgent(BaseAgent):
         Returns:
             AgentResponse with result
         """
+        # Check for command expansions first (e.g., "loop" -> "play --loop")
+        first_word = cmd_str.split()[0].lower() if cmd_str.split() else ""
+        if first_word in COMMAND_EXPANSIONS:
+            # Replace the command with its expansion, preserving any additional args
+            rest = cmd_str[len(first_word):].strip()
+            cmd_str = COMMAND_EXPANSIONS[first_word] + (" " + rest if rest else "")
+
         try:
             tokens = shlex.split(cmd_str)
         except ValueError as e:
@@ -213,12 +226,28 @@ class DefaultAgent(BaseAgent):
                     # Find a list field
                     for name, field_info in schema_fields.items():
                         if name not in kwargs:
-                            annotation = field_info.annotation
-                            # Check if it's a list type
-                            if hasattr(annotation, "__origin__") and annotation.__origin__ == list:
+                            if self._is_list_type(field_info.annotation):
                                 kwargs[name] = items
                                 break
                 else:
+                    # Check if this looks like a number and there's an unfilled list field
+                    if arg.isdigit():
+                        # Check if there's an unfilled list field to collect into
+                        list_field_name = None
+                        for name, field_info in schema_fields.items():
+                            if name not in kwargs and self._is_list_type(field_info.annotation):
+                                list_field_name = name
+                                break
+
+                        if list_field_name:
+                            # Collect all remaining numeric args into a list
+                            list_items = []
+                            while i < len(args) and args[i].isdigit():
+                                list_items.append(int(args[i]))
+                                i += 1
+                            kwargs[list_field_name] = list_items
+                            continue  # Skip the i += 1 at end since we already advanced
+
                     # Map to positional field based on schema order
                     for name, field_info in schema_fields.items():
                         if name not in kwargs and not name.startswith("_"):
@@ -226,7 +255,7 @@ class DefaultAgent(BaseAgent):
                             # Skip boolean and list fields for positional
                             if annotation == bool:
                                 continue
-                            if hasattr(annotation, "__origin__") and annotation.__origin__ == list:
+                            if self._is_list_type(annotation):
                                 continue
                             kwargs[name] = self._convert_value(arg, annotation)
                             break
@@ -234,6 +263,19 @@ class DefaultAgent(BaseAgent):
                 i += 1
 
         return kwargs
+
+    def _is_list_type(self, annotation: type) -> bool:
+        """Check if annotation is a list type (including Optional[list[...]])."""
+        origin = getattr(annotation, "__origin__", None)
+        if origin is list:
+            return True
+        # Handle Optional[list[...]] which is Union[list[...], None]
+        if str(origin) == "typing.Union":
+            args = getattr(annotation, "__args__", ())
+            for arg in args:
+                if getattr(arg, "__origin__", None) is list:
+                    return True
+        return False
 
     def _convert_value(self, value: str, target_type: type) -> Any:
         """Convert string value to target type.
