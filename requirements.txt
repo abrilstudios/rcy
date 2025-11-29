@@ -35,6 +35,9 @@ packaging>=23.2
 platformdirs>=4.3.6
 typing_extensions>=4.12.2
 
+# Agent system
+pydantic>=2.0
+
 # Transitive dependencies (pinned for stability)
 certifi>=2024.8.30
 cffi>=1.17.1

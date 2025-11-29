@@ -142,5 +142,12 @@
     "maxBytes": 10485760,
     "backupCount": 3,
     "console": true
+  },
+  "agent": {
+    "type": "default",
+    "openrouter": {
+      "api_key_env": "OPENROUTER_API_KEY",
+      "default_model": "deepseek/deepseek-chat"
+    }
   }
 }

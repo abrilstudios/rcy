@@ -4,6 +4,7 @@ A command-line interface for RCY breakbeat slicer with:
 - ASCII waveform display
 - Keyboard-driven segment playback (1-0, q-p keys)
 - Command input (/open, /slice, /export, etc.)
+- Agent-based interaction (!slice, !preset, etc.)
 """
 
 import sys
@@ -20,6 +21,8 @@ from segment_manager import get_segment_manager
 from config_manager import config
 from tui.waveform import render_waveform, format_display
 from tui.commands import parse_command, CommandHandler, CommandType
+from tui.agents import create_agent, BaseAgent
+from tui.agents.base import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -259,6 +262,149 @@ class TUIApp:
 
         # Curses screen
         self.stdscr = None
+
+        # Agent system
+        self.agent: Optional[BaseAgent] = None
+        self._init_agent()
+
+    def _init_agent(self) -> None:
+        """Initialize the agent from config."""
+        agent_config = config.get_value_from_json_file("config.json", "agent", {})
+        agent_type = agent_config.get("type", "default")
+
+        # Create tool registry with handlers
+        registry = ToolRegistry()
+        self._register_agent_tools(registry)
+
+        try:
+            self.agent = create_agent(agent_type, registry)
+            logger.info(f"Initialized {agent_type} agent")
+        except ValueError as e:
+            logger.warning(f"Failed to create agent: {e}, using default")
+            self.agent = create_agent("default", registry)
+
+    def _register_agent_tools(self, registry: ToolRegistry) -> None:
+        """Register tool handlers with the agent's tool registry."""
+        from tui.agents.tools import (
+            SliceTool, PresetTool, OpenTool, MarkersTool,
+            SetTool, TempoTool, PlayTool, StopTool, ExportTool,
+            ZoomTool, ModeTool, HelpTool, PresetsTool, QuitTool
+        )
+
+        registry.register("slice", SliceTool, self._agent_slice)
+        registry.register("preset", PresetTool, self._agent_preset)
+        registry.register("open", OpenTool, self._agent_open)
+        registry.register("markers", MarkersTool, self._agent_markers)
+        registry.register("set", SetTool, self._agent_set)
+        registry.register("tempo", TempoTool, self._agent_tempo)
+        registry.register("play", PlayTool, self._agent_play)
+        registry.register("stop", StopTool, self._agent_stop)
+        registry.register("export", ExportTool, self._agent_export)
+        registry.register("zoom", ZoomTool, self._agent_zoom)
+        registry.register("mode", ModeTool, self._agent_mode)
+        registry.register("help", HelpTool, self._agent_help)
+        registry.register("presets", PresetsTool, self._agent_presets)
+        registry.register("quit", QuitTool, self._agent_quit)
+
+    # Agent tool handlers - map validated Pydantic models to existing _on_* methods
+    def _agent_slice(self, args) -> str:
+        if args.clear:
+            self._on_slice(None, None)
+            return "Cleared all slices"
+        self._on_slice(args.measures, args.transients)
+        if args.measures:
+            return f"Sliced by {args.measures} measures"
+        elif args.transients is not None:
+            return f"Sliced by transients (threshold: {args.transients})"
+        return "Sliced"
+
+    def _agent_preset(self, args) -> str:
+        self._on_preset(args.preset_id)
+        return f"Loading preset: {args.preset_id}"
+
+    def _agent_open(self, args) -> str:
+        self._on_open(args.filepath, args.preset)
+        if args.preset:
+            return f"Loaded preset: {args.preset}"
+        elif args.filepath:
+            return f"Loaded: {args.filepath}"
+        return "No file or preset specified"
+
+    def _agent_markers(self, args) -> str:
+        if args.reset:
+            self._on_markers(None, None)
+            return "Reset markers to full file"
+        self._on_markers(args.start, args.end)
+        return f"Markers set: L={args.start:.2f}s R={args.end:.2f}s"
+
+    def _agent_set(self, args) -> str:
+        return self._on_set(args.setting, args.value)
+
+    def _agent_tempo(self, args) -> str:
+        self._on_tempo(args.bpm, args.measures)
+        if args.measures:
+            return f"Tempo calculated from {args.measures} measures"
+        elif args.bpm:
+            return f"Tempo set to {args.bpm:.1f} BPM"
+        return "Tempo updated"
+
+    def _agent_play(self, args) -> str:
+        self._on_play(args.pattern, args.loop)
+        loop_str = " (looping)" if args.loop else ""
+        return f"Playing pattern: {args.pattern}{loop_str}"
+
+    def _agent_stop(self, args) -> str:
+        self._on_stop()
+        return "Stopped"
+
+    def _agent_export(self, args) -> str:
+        self._on_export(args.directory, args.format)
+        return f"Exported to {args.directory}"
+
+    def _agent_zoom(self, args) -> str:
+        self._on_zoom(args.direction)
+        return f"Zoomed {args.direction}"
+
+    def _agent_mode(self, args) -> str:
+        self._on_mode(args.mode)
+        return f"Playback mode: {args.mode}"
+
+    def _agent_help(self, args) -> str:
+        return """Commands (use ! or / prefix):
+  !slice <n>              Slice by measures
+  !preset <id>            Load preset
+  !presets                List presets
+  !set bars <n>           Set bars
+  !markers <s> <e>        Set markers
+  !tempo <bpm>            Set tempo
+  !play [1,2,3,4]         Play pattern
+  !stop                   Stop playback
+  !export <dir>           Export SFZ
+  !zoom in|out            Zoom view
+  !help                   Show help
+  !quit                   Exit"""
+
+    def _agent_presets(self, args) -> str:
+        return self._on_presets()
+
+    def _agent_quit(self, args) -> str:
+        self._on_quit()
+        return "Goodbye!"
+
+    def process_agent_input(self, user_input: str) -> str:
+        """Process input through the agent.
+
+        Args:
+            user_input: User input starting with ! or /
+
+        Returns:
+            Status message to display
+        """
+        if not self.agent:
+            return "Agent not initialized"
+
+        response = self.agent.process(user_input)
+        return response.message
 
     def init_model(self) -> bool:
         """Initialize the audio model."""
@@ -622,6 +768,7 @@ class TUIApp:
         )
 
         command_buffer = ""
+        command_prefix = "/"  # Track whether user typed / or !
         in_command_mode = False
         in_search_mode = False
         search_buffer = ""
@@ -660,7 +807,7 @@ class TUIApp:
                 else:
                     prompt = f"(reverse-i-search)`{search_buffer}': "
             elif in_command_mode:
-                prompt = f":{command_buffer}"
+                prompt = f"{command_prefix}{command_buffer}"
             else:
                 prompt = "/ cmd, 1-0/q-p play, Space sel, ^R search"
             try:
@@ -722,8 +869,8 @@ class TUIApp:
                 elif key in (curses.KEY_ENTER, 10, 13):  # Enter - execute command
                     if command_buffer:
                         self.command_history.add(command_buffer)
-                        cmd = parse_command("/" + command_buffer)
-                        result = handler.execute(cmd)
+                        # Route through agent (handles both / and ! prefixes)
+                        result = self.process_agent_input(command_prefix + command_buffer)
                         self.status_message = result
                     in_command_mode = False
                     command_buffer = ""
@@ -745,13 +892,15 @@ class TUIApp:
                 elif 32 <= key <= 126:  # Printable ASCII
                     command_buffer += chr(key)
             else:
-                if key == ord('/'):
+                if key == ord('/') or key == ord('!'):
                     in_command_mode = True
                     command_buffer = ""
+                    command_prefix = chr(key)  # Remember which prefix was used
                     self.command_history.reset_position()
                 elif key == 18:  # Ctrl-R - start search from normal mode
                     in_command_mode = True
                     in_search_mode = True
+                    command_prefix = "/"
                     self.command_history.start_search()
                     search_buffer = ""
                     search_match = ""
