@@ -217,7 +217,7 @@ class ImprovedAudioEngine:
             )
             self.stream.start()
             self.is_streaming = True
-            logger.error("Audio stream started: %sHz, %sch, blocksize=%s")
+            logger.debug("Audio stream started: %sHz, %sch, blocksize=%s", self.sample_rate, self.channels, self.blocksize)
         except Exception as e:
             ErrorHandler.log_exception(e, context="ImprovedAudioEngine.start_stream")
             raise
@@ -249,7 +249,7 @@ class ImprovedAudioEngine:
         self.sample_rate = new_sample_rate
         self.start_stream()
 
-        logger.error("Audio engine restarted: %sHz")
+        logger.debug("Audio engine restarted: %sHz", self.sample_rate)
 
     def _audio_callback(self, outdata: np.ndarray, frames: int, time: Any, status: Any) -> None:
         """

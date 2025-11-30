@@ -1,0 +1,32 @@
+/* RCY TUI Stylesheet - Minimal monochrome design */
+
+Screen {
+    layout: vertical;
+}
+
+WaveformWidget {
+    height: auto;
+    margin: 0;
+    padding: 0;
+}
+
+CommandInput {
+    dock: bottom;
+    height: 1;
+    margin: 0;
+    padding: 0 1;
+    border: none;
+}
+
+#output {
+    height: auto;
+    min-height: 3;
+    max-height: 50%;
+    margin: 0;
+    padding: 0;
+    border-top: solid darkgray;
+}
+
+#output:focus {
+    border-top: solid $accent;
+}
