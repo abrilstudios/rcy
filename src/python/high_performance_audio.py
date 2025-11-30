@@ -364,7 +364,7 @@ class ImprovedAudioEngine:
             reverse: Whether to play the segment in reverse
         """
         if self.source_data_left is None:
-            logger.error("ERROR: No source audio data set")
+            logger.warning("No source audio data set")
             return False
         
         try:

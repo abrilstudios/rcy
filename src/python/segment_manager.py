@@ -287,7 +287,7 @@ class SegmentManager:
             try:
                 observer.on_segments_changed(operation, **kwargs)
             except Exception as e:
-                logger.error("Error notifying observer %s: %s", observer, e)
+                logger.warning("Error notifying observer %s: %s", observer, e)
 
 
 # Global instance for the application

@@ -163,7 +163,7 @@ class WavAudioProcessor:
             self._initialize_audio_buffers()
             self._set_measures_and_calculate_bpm()
         except Exception as e:
-            logger.error("Error loading audio file %s: %s", filename, e)
+            logger.warning("Error loading audio file %s: %s", filename, e)
             raise
 
     def _load_file_metadata(self, filename: str):
@@ -497,7 +497,7 @@ class WavAudioProcessor:
         try:
             # DEBUG: Print detailed information about the cut operation
             if self.data_left is None:
-                logger.error("ERROR: data_left is None or doesn't exist")
+                logger.warning("Error: data_left is None or doesn't exist")
                 return False
                 
             try:
@@ -505,7 +505,7 @@ class WavAudioProcessor:
                 old_time_length = len(self.time) if self.time is not None else 0
                 old_total_time = self.total_time
             except TypeError:
-                logger.error("ERROR: TypeError when accessing data length in cut_audio")
+                logger.warning("Error: TypeError when accessing data length in cut_audio")
                 return False
             
             logger.debug("\n==== AUDIO PROCESSOR CUT OPERATION ====")
@@ -521,7 +521,7 @@ class WavAudioProcessor:
                     logger.debug("DEBUG: Clamping end_sample from %s to %s")
                     end_sample = data_length
             except TypeError:
-                logger.error("ERROR: TypeError when ensuring valid range in cut_audio")
+                logger.warning("Error: TypeError when ensuring valid range in cut_audio")
                 return False
             if start_sample >= end_sample:
                 logger.debug("Invalid cut range: start_sample (%s) >= end_sample (%s)", start_sample, end_sample)
@@ -543,7 +543,7 @@ class WavAudioProcessor:
                 if self.data_left is not None:
                     self.total_time = len(self.data_left) / self.sample_rate
                 else:
-                    logger.error("ERROR: data_left is None when updating total_time")
+                    logger.warning("Error: data_left is None when updating total_time")
                     return False
                 
                 # Update time array
@@ -561,7 +561,7 @@ class WavAudioProcessor:
                     logger.warning("WARNING: TypeError when accessing new_time_max in cut_audio")
                     new_time_max = None
             except TypeError:
-                logger.error("ERROR: TypeError when updating time data in cut_audio")
+                logger.warning("Error: TypeError when updating time data in cut_audio")
                 return False
             
             # Clear segments since they're now invalid - reset to single segment
@@ -647,7 +647,7 @@ class WavAudioProcessor:
             self.data_left = mixed
             self.data_right = mixed.copy()
         else:
-            logger.error("Invalid mono conversion method: %s", method)
+            logger.warning("Invalid mono conversion method: %s", method)
             return False
 
         # Update flags

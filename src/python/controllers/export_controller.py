@@ -58,7 +58,7 @@ class ExportController(QObject):
             logger.debug("Successfully exported %d segments", len(exported_files))
             return exported_files
         except Exception as e:
-            logger.error("Failed to export segments: %s", e)
+            logger.warning("Failed to export segments: %s", e)
             raise
 
     def set_tempo(self, tempo: float) -> None:

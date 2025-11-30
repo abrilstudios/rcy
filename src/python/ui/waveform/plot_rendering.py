@@ -42,7 +42,7 @@ def update_plot(
     # Detect if we need to rebuild the view for different stereo mode
     actual_stereo_display = is_stereo  # Use actual file metadata instead of config
     if actual_stereo_display != widget.stereo_display:
-        logger.error("Stereo mode changed: %s -> %s", widget.stereo_display, actual_stereo_display)
+        logger.warning("Stereo mode changed: %s -> %s", widget.stereo_display, actual_stereo_display)
         logger.debug("Note: This would require rebuilding the view, which is complex.")
         logger.debug("For now, showing stereo layout but will be fixed in single plot architecture.")
 

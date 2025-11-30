@@ -338,11 +338,11 @@ class RCYApp(App):
             return True
         except SystemExit:
             self.update_status(f"Error: preset '{self.preset_id}' failed to load")
-            logger.error("SystemExit while loading preset: %s", self.preset_id)
+            logger.warning("SystemExit while loading preset: %s", self.preset_id)
             return False
         except Exception as e:
             self.update_status(f"Error loading preset: {e}")
-            logger.error("Failed to initialize model: %s", e)
+            logger.warning("Failed to initialize model: %s", e)
             return False
 
     def _on_open(self, filepath: Optional[str], preset_id: Optional[str]) -> None:

@@ -10,12 +10,20 @@ This module provides centralized logging configuration with support for:
 
 import logging
 import logging.handlers
-import os
+import sys
 from pathlib import Path
 from config_manager import config
 
 
-def setup_logging():
+class ErrorRaisingHandler(logging.Handler):
+    """Handler that raises an exception on ERROR or CRITICAL logs."""
+
+    def emit(self, record):
+        if record.levelno >= logging.ERROR:
+            raise RuntimeError(f"Logger error: {record.getMessage()}")
+
+
+def setup_logging(raise_on_error: bool = None):
     """
     Initialize logging configuration for the application.
 
@@ -38,9 +46,15 @@ def setup_logging():
     max_bytes = config.get_logging_setting("maxBytes", 10485760)  # 10MB default
     backup_count = config.get_logging_setting("backupCount", 3)
     console_enabled = config.get_logging_setting("console", True)
+    console_level_str = config.get_logging_setting("consoleLevel", "CRITICAL")
+
+    # Default raise_on_error from config (default True - crash on logger.error)
+    if raise_on_error is None:
+        raise_on_error = config.get_logging_setting("raiseOnError", True)
 
     # Convert log level string to logging constant
     log_level = getattr(logging, log_level_str.upper(), logging.INFO)
+    console_level = getattr(logging, console_level_str.upper(), logging.CRITICAL)
 
     # Create root logger
     root_logger = logging.getLogger()
@@ -55,10 +69,10 @@ def setup_logging():
         datefmt='%Y-%m-%d %H:%M:%S'
     )
 
-    # Add console handler if enabled
+    # Add console handler if enabled (default to CRITICAL to suppress UI noise)
     if console_enabled:
         console_handler = logging.StreamHandler()
-        console_handler.setLevel(log_level)
+        console_handler.setLevel(console_level)
         console_handler.setFormatter(formatter)
         root_logger.addHandler(console_handler)
 
@@ -84,9 +98,12 @@ def setup_logging():
         root_logger.info("Logging initialized - Level: %s, File: %s", log_level_str, log_file)
 
     except Exception as e:
-        # If file handler fails, log to console only
-        root_logger.error("Failed to initialize file logging: %s", e)
-        root_logger.warning("Continuing with console logging only")
+        # If file handler fails, continue without file logging
+        print(f"Warning: Could not initialize file logging: {e}")
+
+    # Add error-raising handler if requested (crashes app on logger.error)
+    if raise_on_error:
+        root_logger.addHandler(ErrorRaisingHandler())
 
 
 def get_logger(name):

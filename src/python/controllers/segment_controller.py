@@ -46,7 +46,7 @@ class SegmentController(QObject):
             self.model.remove_segment(click_time)
             logger.debug("Successfully called model.remove_segment")
         except Exception as e:
-            logger.error("ERROR in model.remove_segment: %s", e)
+            logger.warning("Error in model.remove_segment: %s", e)
         self.segments_updated.emit()
 
     def split_audio(self, method: str | SplitMethod = SplitMethod.MEASURES,

@@ -52,14 +52,14 @@ def update_slices(
         if widget.time_data is not None and len(widget.time_data) > 0:
             data_max = widget.time_data[-1]
     except TypeError:
-        logger.error("TypeError when getting data_max")
+        logger.warning("TypeError when getting data_max")
 
     # Ensure markers are within valid bounds
     try:
         if widget.time_data is not None and len(widget.time_data) > 0:
             widget._clamp_markers_to_data_bounds()
     except TypeError:
-        logger.error("TypeError when clamping markers")
+        logger.warning("TypeError when clamping markers")
 
     # Get positions after clamping
     post_start_pos = widget.start_marker.value()

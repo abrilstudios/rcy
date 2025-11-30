@@ -107,7 +107,7 @@ class TempoController(QObject):
                         self.start_marker_pos, self.end_marker_pos)
             self._update_tempo_from_markers()
             # Don't proceed with rest of method since _update_tempo_from_markers handles everything
-            logger.error("===== END DETAILED TEMPO UPDATE FROM MEASURES CHANGE =====\n")
+            logger.debug("===== END DETAILED TEMPO UPDATE FROM MEASURES CHANGE =====\n")
             self.measures_changed.emit(self.num_measures)
             return
 
@@ -145,7 +145,7 @@ class TempoController(QObject):
         logger.debug("- Measures: %s", self.num_measures)
         logger.debug("- Target BPM: %s", self.target_bpm)
         logger.debug("- Playback tempo enabled: %s", self.playback_tempo_enabled)
-        logger.error("===== END DETAILED TEMPO UPDATE FROM MEASURES CHANGE =====\n")
+        logger.debug("===== END DETAILED TEMPO UPDATE FROM MEASURES CHANGE =====\n")
 
         # Emit signals
         self.tempo_changed.emit(old_tempo, self.tempo)
