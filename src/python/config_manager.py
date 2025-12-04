@@ -3,7 +3,6 @@ import os
 import pathlib
 import sys
 import logging
-from PyQt6.QtGui import QColor, QFont
 from typing import Any
 
 from custom_types import PresetInfo
@@ -107,31 +106,13 @@ class ConfigManager:
     
     # Default-setting methods removed: loading now always requires valid config.json
 
-    def get_color(self, key: str, default: str | None = None) -> QColor:
-        """Get a color from the palette by key"""
-        color_hex = self.colors.get(key, default)
-        if color_hex:
-            return QColor(color_hex)
-        return QColor("#000000")  # Fallback to black
-
-    def get_qt_color(self, key: str, default: str | None = None) -> str:
-        """Get a color as a string for stylesheet use"""
+    def get_color(self, key: str, default: str | None = None) -> str:
+        """Get a color hex string from the palette by key"""
         return self.colors.get(key, default or "#000000")
 
-    def get_font(self, key: str = "primary") -> QFont:
-        """Get a font by key, with system fallbacks"""
-        font_name = self.fonts.get(key, "Arial")
-        font = QFont(font_name)
-
-        # Add fallbacks if Futura PT Book isn't available
-        if key == "primary":
-            # Try common geometric sans-serifs as fallbacks
-            fallbacks = ["Futura", "Century Gothic", "Avant Garde", "Avenir", "Gill Sans", "Arial"]
-            for fallback in fallbacks:
-                if fallback != font_name:  # Don't add the same font twice
-                    font.insertSubstitution(font_name, fallback)
-
-        return font
+    def get_font(self, key: str = "primary") -> str:
+        """Get a font name by key"""
+        return self.fonts.get(key, "Arial")
 
     def get_string(self, category: str, key: str, default: str | None = None) -> str:
         """Get a string resource by category and key"""

@@ -14,11 +14,15 @@ from pathlib import Path
 from typing import Optional
 import logging
 
+# Suppress noisy HTTP client loggers early (before any imports that might trigger them)
+for _logger_name in ('httpx', 'httpcore', 'openai', 'pydantic_ai'):
+    logging.getLogger(_logger_name).setLevel(logging.WARNING)
+
 from textual.app import App, ComposeResult
 from textual.widgets import Static, TextArea
 from textual.binding import Binding
 
-
+from logging_config import setup_logging
 
 from audio_processor import WavAudioProcessor
 from segment_manager import get_segment_manager
@@ -711,8 +715,12 @@ def main():
                         help='Enable debug logging')
     args = parser.parse_args()
 
+    # Initialize centralized logging (suppresses console noise, logs to file)
+    setup_logging()
+
     if args.debug:
-        logging.basicConfig(level=logging.DEBUG)
+        # Override console level for debug mode
+        logging.getLogger().setLevel(logging.DEBUG)
 
     app = RCYApp(preset_id=args.preset)
     app.run()

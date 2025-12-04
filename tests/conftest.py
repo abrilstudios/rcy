@@ -6,7 +6,6 @@ It includes fixtures for:
 - Path setup and Python path configuration
 - Configuration management
 - Sample audio data generation
-- GUI testing support
 - Temporary test directories with predefined files
 """
 import os
@@ -279,35 +278,3 @@ def temp_wav_file(tmp_path, sample_audio_data):
     }
 
 
-# GUI Testing Fixtures
-# ------------------
-
-@pytest.fixture(scope="session")
-def qt_app():
-    """Create a QApplication instance that persists for the test session."""
-    try:
-        from PyQt6.QtWidgets import QApplication
-    except ImportError:
-        pytest.skip("PyQt6 not installed, skipping test")
-    
-    # Check if an instance already exists
-    app = QApplication.instance()
-    if app is None:
-        # Create a new application with dummy arguments
-        app = QApplication([''])
-    
-    yield app
-
-
-@pytest.fixture
-def mock_waveform_view(qt_app):
-    """Create a mocked waveform view for testing."""
-    from unittest.mock import MagicMock
-    
-    mock_view = MagicMock()
-    mock_view.update = MagicMock()
-    mock_view.set_data = MagicMock()
-    mock_view.add_segment = MagicMock()
-    mock_view.clear_segments = MagicMock()
-    
-    return mock_view
