@@ -205,7 +205,15 @@ class RCYApp(App):
         from tui.agents.tools import (
             SliceTool, PresetTool, OpenTool, MarkersTool,
             SetTool, TempoTool, PlayTool, StopTool, ExportTool,
-            ZoomTool, ModeTool, HelpTool, PresetsTool, QuitTool
+            ZoomTool, ModeTool, HelpTool, PresetsTool, QuitTool,
+            EP133ConnectTool, EP133DisconnectTool, EP133StatusTool,
+            EP133ListSoundsTool, EP133UploadTool, EP133AssignTool,
+            EP133UploadBankTool, EP133ClearBankTool
+        )
+        from tui.ep133_handler import (
+            ep133_connect, ep133_disconnect, ep133_status,
+            ep133_list_sounds, ep133_upload, ep133_assign,
+            ep133_upload_bank, ep133_clear_bank
         )
 
         registry.register("slice", SliceTool, self._agent_slice)
@@ -222,6 +230,16 @@ class RCYApp(App):
         registry.register("help", HelpTool, self._agent_help)
         registry.register("presets", PresetsTool, self._agent_presets)
         registry.register("quit", QuitTool, self._agent_quit)
+
+        # EP-133 tools
+        registry.register("ep133_connect", EP133ConnectTool, ep133_connect)
+        registry.register("ep133_disconnect", EP133DisconnectTool, ep133_disconnect)
+        registry.register("ep133_status", EP133StatusTool, ep133_status)
+        registry.register("ep133_list_sounds", EP133ListSoundsTool, ep133_list_sounds)
+        registry.register("ep133_upload", EP133UploadTool, lambda args: ep133_upload(args, self))
+        registry.register("ep133_assign", EP133AssignTool, ep133_assign)
+        registry.register("ep133_upload_bank", EP133UploadBankTool, lambda args: ep133_upload_bank(args, self))
+        registry.register("ep133_clear_bank", EP133ClearBankTool, ep133_clear_bank)
 
     # Agent tool handlers
     def _agent_slice(self, args) -> str:
@@ -314,7 +332,17 @@ class RCYApp(App):
   /export <dir>           Export SFZ
   /zoom in|out            Zoom view
   /help                   Show help
-  /quit                   Exit"""
+  /quit                   Exit
+
+EP-133 Commands:
+  /ep133_connect                Connect to EP-133
+  /ep133_disconnect             Disconnect from EP-133
+  /ep133_status                 Check EP-133 status
+  /ep133_list_sounds            List sounds on device
+  /ep133_upload <slot> <seg>    Upload single segment to slot
+  /ep133_assign                 Assign sound to pad
+  /ep133_upload_bank <bank>     Upload segments to bank & assign pads
+  /ep133_clear_bank <bank>      Clear all pads in a bank"""
 
     def _agent_presets(self, args) -> str:
         return self._on_presets()

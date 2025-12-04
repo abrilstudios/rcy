@@ -132,6 +132,96 @@ class QuitTool(BaseModel):
     pass
 
 
+# EP-133 Tools
+# ------------
+# These tools provide integration with the Teenage Engineering EP-133 K.O. II
+# sampler/drum machine. The EP-133 has:
+# - 9 projects, 4 banks (A-D) per project, 12 pads per bank = 432 total pads
+# - 999 sound slots organized by category (KICK, SNARE, USER1, etc.)
+
+class EP133ConnectTool(BaseModel):
+    """Connect to EP-133 K.O. II device.
+
+    Auto-detects MIDI ports. Use this before any other EP-133 operations.
+    """
+    pass
+
+
+class EP133DisconnectTool(BaseModel):
+    """Disconnect from EP-133 device."""
+    pass
+
+
+class EP133StatusTool(BaseModel):
+    """Get EP-133 connection status and port information."""
+    pass
+
+
+class EP133ListSoundsTool(BaseModel):
+    """List all sounds currently on the EP-133."""
+    pass
+
+
+class EP133UploadTool(BaseModel):
+    """Upload a single segment to an EP-133 sound slot.
+
+    Args:
+        slot: Target sound slot (1-999)
+        segment: Segment number to upload (1-based)
+    """
+    slot: int = Field(..., ge=1, le=999, description="Target sound slot (1-999)")
+    segment: int = Field(..., ge=1, description="Segment number to upload (1-based)")
+
+
+class EP133AssignTool(BaseModel):
+    """Assign a sound to an EP-133 pad.
+
+    Args:
+        project: Project number (1-9)
+        group: Pad group/bank (A, B, C, or D)
+        pad: Pad number within group (1-12)
+        sound_number: Sound slot to assign (1-999)
+    """
+    project: int = Field(..., ge=1, le=9, description="Project number (1-9)")
+    group: str = Field(..., pattern="^[A-Da-d]$", description="Pad group (A-D)")
+    pad: int = Field(..., ge=1, le=12, description="Pad number (1-12)")
+    sound_number: int = Field(..., ge=1, le=999, description="Sound to assign")
+
+
+class EP133UploadBankTool(BaseModel):
+    """Upload segments to an EP-133 bank and assign to pads.
+
+    This is the high-level command for loading a sliced break onto the EP-133.
+    Uploads segments to consecutive sound slots and assigns them to pads 1-12.
+
+    Args:
+        project: Project number (1-9)
+        bank: Bank/group letter (A, B, C, or D)
+        slot_start: Starting sound slot (default: 700 for USER1 category)
+        segment_start: First segment to upload (default: 1)
+        segment_count: Number of segments to upload (default: all, max 12)
+    """
+    project: int = Field(1, ge=1, le=9, description="Project number (1-9)")
+    bank: str = Field(..., pattern="^[A-Da-d]$", description="Bank/group (A-D)")
+    slot_start: int = Field(700, ge=1, le=988, description="Starting sound slot (default: 700)")
+    segment_start: int = Field(1, ge=1, description="First segment to upload (default: 1)")
+    segment_count: Optional[int] = Field(None, ge=1, le=12, description="Number of segments (max 12)")
+
+
+class EP133ClearBankTool(BaseModel):
+    """Clear all pad assignments in an EP-133 bank.
+
+    Resets pads 1-12 in the specified bank to have no sound assigned.
+    Useful for cleanup before/after testing or starting fresh.
+
+    Args:
+        project: Project number (1-9)
+        bank: Bank/group letter (A, B, C, or D)
+    """
+    project: int = Field(1, ge=1, le=9, description="Project number (1-9)")
+    bank: str = Field(..., pattern="^[A-Da-d]$", description="Bank/group (A-D)")
+
+
 # Map of tool names to their schemas
 TOOL_SCHEMAS = {
     "slice": SliceTool,
@@ -148,6 +238,15 @@ TOOL_SCHEMAS = {
     "help": HelpTool,
     "presets": PresetsTool,
     "quit": QuitTool,
+    # EP-133 tools
+    "ep133_connect": EP133ConnectTool,
+    "ep133_disconnect": EP133DisconnectTool,
+    "ep133_status": EP133StatusTool,
+    "ep133_list_sounds": EP133ListSoundsTool,
+    "ep133_upload": EP133UploadTool,
+    "ep133_assign": EP133AssignTool,
+    "ep133_upload_bank": EP133UploadBankTool,
+    "ep133_clear_bank": EP133ClearBankTool,
 }
 
 # Aliases for convenience

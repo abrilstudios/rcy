@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+#
+# RCY Environment Information Tool
+# Provides operating environment details for Claude and developers.
+#
+# Usage: ./tools/bin/env
+#
+
+set -e
+
+PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+
+echo "=== RCY Environment Information ==="
+echo ""
+
+# Project info
+echo "Project: RCY (Breakbeat Loop Slicer)"
+echo "Project Root: $PROJECT_ROOT"
+echo ""
+
+# Python environment
+echo "=== Python Environment ==="
+if [ -d "$PROJECT_ROOT/venv" ]; then
+    echo "Virtual Environment: $PROJECT_ROOT/venv (exists)"
+    PYTHON="$PROJECT_ROOT/venv/bin/python"
+    PIP="$PROJECT_ROOT/venv/bin/pip"
+    PYTEST="$PROJECT_ROOT/venv/bin/pytest"
+    echo "Python: $($PYTHON --version)"
+else
+    echo "Virtual Environment: NOT FOUND"
+    echo "  Run 'just setup' to create the virtual environment"
+    PYTHON="python3.11"
+    PIP="pip"
+    PYTEST="pytest"
+fi
+echo ""
+
+# How to run Python
+echo "=== How to Run Python ==="
+echo ""
+echo "To run Python commands in this project, you MUST use the venv:"
+echo ""
+echo "  Python:  PYTHONPATH=src/python $PROJECT_ROOT/venv/bin/python"
+echo "  Pytest:  PYTHONPATH=src/python $PROJECT_ROOT/venv/bin/pytest"
+echo ""
+echo "Or use just commands:"
+echo "  just run         # Run the TUI application"
+echo "  just test        # Run all tests"
+echo "  just test-file <file>  # Run specific test"
+echo ""
+
+# OS info
+echo "=== Operating System ==="
+echo "Platform: $(uname -s)"
+echo "OS Version: $(uname -r)"
+echo "Architecture: $(uname -m)"
+echo ""
+
+# Git info
+echo "=== Git Information ==="
+if command -v git &> /dev/null && [ -d "$PROJECT_ROOT/.git" ]; then
+    echo "Branch: $(git -C "$PROJECT_ROOT" branch --show-current)"
+    echo "Status: $(git -C "$PROJECT_ROOT" status --short | wc -l | xargs) files changed"
+else
+    echo "Git: Not available or not a git repository"
+fi
+echo ""
+
+# Dependencies status
+echo "=== Key Dependencies ==="
+if [ -f "$PROJECT_ROOT/venv/bin/python" ]; then
+    echo "Checking installed packages..."
+    "$PROJECT_ROOT/venv/bin/pip" show mido python-rtmidi textual pydantic-ai 2>/dev/null | grep -E "^(Name|Version):" || echo "  Some packages not installed"
+else
+    echo "  Cannot check - venv not found"
+fi
+echo ""
+
+echo "=== Summary Commands ==="
+echo "  just run    - Run RCY TUI"
+echo "  just test   - Run tests"
+echo "  just setup  - Set up/reinstall virtual environment"
