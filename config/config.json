@@ -131,8 +131,8 @@
       "targetBpm": 120
     },
     "tailFade": {
-      "enabled": false,
-      "durationMs": 10,
+      "enabled": true,
+      "durationMs": 3,
       "curve": "exponential"
     }
   },
@@ -144,10 +144,12 @@
     "console": true
   },
   "agent": {
-    "type": "default",
+    "type": "openrouter",
     "openrouter": {
       "api_key_env": "OPENROUTER_API_KEY",
-      "default_model": "deepseek/deepseek-chat"
+      "default_model": "anthropic/claude-sonnet-4",
+      "temperature": 0.3,
+      "max_tokens": 1024
     }
   }
 }

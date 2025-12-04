@@ -135,9 +135,13 @@ class CommandInput(Input):
         """Posted when command input is cancelled."""
         pass
 
+    # Mode constants
+    MODE_INSERT = "insert"    # Normal text input mode
+    MODE_SEGMENT = "segment"  # Segment playback mode (vim-like normal mode)
+
     def __init__(
         self,
-        placeholder: str = "Type / for commands, 1-0/q-p to play segments",
+        placeholder: str = "[INSERT] Type for AI, /cmd direct | ESC for segment mode",
         name: str | None = None,
         id: str | None = None,
         classes: str | None = None,
@@ -147,10 +151,11 @@ class CommandInput(Input):
         self._in_search_mode = False
         self._search_query = ""
         self._search_match = ""
+        self._mode = self.MODE_INSERT  # Start in insert mode
 
-    # Keys that trigger segment playback (1-0, q-p)
+    # Keys that trigger segment playback (1-0, q-p except 'i' which is reserved for insert mode)
     SEGMENT_KEYS = {'1', '2', '3', '4', '5', '6', '7', '8', '9', '0',
-                    'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'}
+                    'q', 'w', 'e', 'r', 't', 'y', 'u', 'o', 'p'}
 
     class SegmentKeyPressed(Message):
         """Posted when a segment key is pressed with empty input."""
@@ -158,18 +163,51 @@ class CommandInput(Input):
             self.key = key
             super().__init__()
 
+    def _set_mode(self, mode: str) -> None:
+        """Switch between insert and segment modes."""
+        self._mode = mode
+        if mode == self.MODE_SEGMENT:
+            self.placeholder = "[SEGMENT] 1-0/qwertyuop play | i=insert mode"
+        else:
+            self.placeholder = "[INSERT] Type for AI, /cmd direct | ESC for segment mode"
+
     def on_key(self, event) -> None:
         """Handle special keys for history and search."""
         key = event.key
+        char = event.character if hasattr(event, 'character') else None
 
         if self._in_search_mode:
             self._handle_search_key(event)
             return
 
-        # Post segment keys to app when input is empty
-        if key in self.SEGMENT_KEYS and not self.value:
-            self.post_message(self.SegmentKeyPressed(key))
+        # SEGMENT MODE: keys trigger segment playback
+        if self._mode == self.MODE_SEGMENT:
+            check_key = char if char and len(char) == 1 else key
+
+            if check_key in self.SEGMENT_KEYS:
+                self.post_message(self.SegmentKeyPressed(check_key))
+                event.stop()
+                event.prevent_default()
+                return
+
+            # 'i' or Escape exits segment mode back to insert
+            if key == "escape" or check_key == "i":
+                self._set_mode(self.MODE_INSERT)
+                event.stop()
+                event.prevent_default()
+                return
+
+            # Block all other keys in segment mode
             event.stop()
+            event.prevent_default()
+            return
+
+        # INSERT MODE: normal text input
+        # Escape switches to segment mode (clears input first)
+        if key == "escape":
+            self.value = ""
+            self.history.reset_position()
+            self._set_mode(self.MODE_SEGMENT)
             event.prevent_default()
             return
 
@@ -198,12 +236,6 @@ class CommandInput(Input):
             self._update_search_placeholder()
             event.prevent_default()
 
-        elif key == "escape":
-            # Cancel input
-            self.value = ""
-            self.history.reset_position()
-            event.prevent_default()
-
         elif key == "enter":
             # Add to history before Input clears it
             cmd = self.value.strip()
@@ -217,20 +249,20 @@ class CommandInput(Input):
         key = event.key
 
         if key == "escape":
-            # Cancel search
+            # Cancel search - return to insert mode
             self._in_search_mode = False
             self.history.cancel_search()
-            self.placeholder = "Type / for commands, 1-0/q-p to play segments"
+            self._set_mode(self.MODE_INSERT)
             event.prevent_default()
 
         elif key == "enter":
-            # Accept search result
+            # Accept search result - stay in insert mode
             result = self.history.accept_search()
             self._in_search_mode = False
             if result:
                 self.value = result
                 self.cursor_position = len(result)
-            self.placeholder = "Type / for commands, 1-0/q-p to play segments"
+            self._set_mode(self.MODE_INSERT)
             event.prevent_default()
 
         elif key == "ctrl+r":

@@ -54,11 +54,11 @@ class SetTool(BaseModel):
     """Set a configuration value.
 
     Args:
-        setting: Setting name (e.g., 'bars')
+        setting: Setting name (e.g., 'bars', 'release')
         value: Value to set
     """
     setting: str = Field(..., description="Setting name")
-    value: int = Field(..., description="Value to set")
+    value: int | float = Field(..., description="Value to set")
 
 
 class TempoTool(BaseModel):

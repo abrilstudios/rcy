@@ -105,6 +105,10 @@ def setup_logging(raise_on_error: bool = None):
     if raise_on_error:
         root_logger.addHandler(ErrorRaisingHandler())
 
+    # Suppress noisy HTTP client loggers (used by pydantic-ai/OpenRouter)
+    for logger_name in ('httpx', 'httpcore', 'openai', 'pydantic_ai'):
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
+
 
 def get_logger(name):
     """

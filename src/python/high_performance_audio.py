@@ -163,7 +163,24 @@ class ImprovedAudioEngine:
         self._loop_end_time: float | None = None
         self._loop_reverse: bool = False
 
+        # Cached tail fade config (updated via update_tail_fade_config)
+        self._tail_fade_enabled: bool = False
+        self._tail_fade_duration_ms: int = 3
+        self._tail_fade_curve: str = "exponential"
+        self._load_tail_fade_config()
+
         logger.debug("ImprovedAudioEngine initialized: %sHz, %sch, blocksize=%s", sample_rate, channels, blocksize)
+
+    def _load_tail_fade_config(self) -> None:
+        """Load tail fade config from config manager."""
+        tail_fade_config = config.get_setting("audio", "tailFade", {})
+        self._tail_fade_enabled = tail_fade_config.get("enabled", False)
+        self._tail_fade_duration_ms = tail_fade_config.get("durationMs", 3)
+        self._tail_fade_curve = tail_fade_config.get("curve", "exponential")
+
+    def update_tail_fade_config(self) -> None:
+        """Reload tail fade config (call after /set release)."""
+        self._load_tail_fade_config()
     
     def set_source_audio(self, data_left: np.ndarray, data_right: np.ndarray,
                         sample_rate: int, is_stereo: bool) -> None:
@@ -369,17 +386,8 @@ class ImprovedAudioEngine:
         
         try:
             # Convert times to sample positions
-            logger.debug("queue_segment: start_time=%s, end_time=%s, source_sample_rate=%s, source_data_left length=%s",
-                        start_time, end_time, self.source_sample_rate, len(self.source_data_left))
             start_sample = int(start_time * self.source_sample_rate)
             end_sample = int(end_time * self.source_sample_rate)
-            logger.debug("queue_segment: start_sample=%s, end_sample=%s", start_sample, end_sample)
-            
-            # Get tail fade settings from config
-            tail_fade_config = config.get_setting("audio", "tailFade", {})
-            tail_fade_enabled = tail_fade_config.get("enabled", False)
-            fade_duration_ms = tail_fade_config.get("durationMs", 10)
-            fade_curve = tail_fade_config.get("curve", "exponential")
             
             # Process the segment through the lightweight playback pipeline
             processed_data = process_segment_for_playback(
@@ -392,9 +400,9 @@ class ImprovedAudioEngine:
                 self.playback_tempo_enabled,
                 self.source_bpm,
                 self.target_bpm,
-                tail_fade_enabled,
-                fade_duration_ms,
-                fade_curve,
+                self._tail_fade_enabled,
+                self._tail_fade_duration_ms,
+                self._tail_fade_curve,
                 for_export=False,
                 resample_on_export=True
             )
@@ -414,7 +422,6 @@ class ImprovedAudioEngine:
             
             # Add to buffer
             self.segment_buffer.add_segment(segment)
-            logger.debug("Queued segment: %ss to %ss, reverse=%s, frames=%s", start_time, end_time, reverse, segment.frame_count)
             return True
             
         except Exception as e:
@@ -450,7 +457,6 @@ class ImprovedAudioEngine:
 
         # Start playback
         self.is_playing = True
-        logger.debug("Started playback: %ss to %ss, reverse=%s", start_time, end_time, reverse)
         return True
 
     def _queue_loop_segments(self, start_time: float, end_time: float, initial_reverse: bool) -> None:
@@ -471,8 +477,6 @@ class ImprovedAudioEngine:
         self._loop_start_time = None
         self._loop_end_time = None
         self._loop_reverse = False
-
-        logger.debug("Playback stopped")
 
     def is_playing_audio(self) -> bool:
         """Check if audio is currently playing"""

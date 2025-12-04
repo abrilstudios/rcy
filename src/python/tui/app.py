@@ -17,13 +17,13 @@ import logging
 from textual.app import App, ComposeResult
 from textual.widgets import Static, TextArea
 from textual.binding import Binding
-from textual import events
 
 
 
 from audio_processor import WavAudioProcessor
 from segment_manager import get_segment_manager
 from config_manager import config
+from export_utils import ExportUtils
 from tui.widgets import WaveformWidget, CommandInput
 from tui.agents import create_agent, BaseAgent
 from tui.agents.base import ToolRegistry
@@ -168,7 +168,9 @@ class RCYApp(App):
     def compose(self) -> ComposeResult:
         """Create the application layout."""
         yield WaveformWidget(id="waveform")
-        yield TextArea(id="output", read_only=True, soft_wrap=True)
+        output = TextArea(id="output", read_only=True, soft_wrap=True)
+        output.can_focus = False
+        yield output
         yield CommandInput(id="command")
 
     def on_mount(self) -> None:
@@ -181,18 +183,18 @@ class RCYApp(App):
         self.query_one("#command", CommandInput).focus()
 
     def _init_agent(self) -> None:
-        """Initialize the agent from config."""
-        agent_type = config.get_setting("agent", "type", "default")
+        """Initialize default agent. LLM agent is lazy-loaded on first use."""
+        self._tool_registry = ToolRegistry()
+        self._register_agent_tools(self._tool_registry)
 
-        registry = ToolRegistry()
-        self._register_agent_tools(registry)
+        # Create default agent for fast /command processing
+        self.default_agent = create_agent("default", self._tool_registry)
 
-        try:
-            self.agent = create_agent(agent_type, registry)
-            logger.info(f"Initialized {agent_type} agent")
-        except ValueError as e:
-            logger.warning(f"Failed to create agent: {e}, using default")
-            self.agent = create_agent("default", registry)
+        # LLM agent loaded lazily on first natural language input
+        self._llm_agent = None
+        self._llm_agent_initialized = False
+
+        logger.info("Initialized default agent for /commands")
 
     def _register_agent_tools(self, registry: ToolRegistry) -> None:
         """Register tool handlers with the agent's tool registry."""
@@ -297,6 +299,7 @@ class RCYApp(App):
   /preset <id>            Load preset
   /presets                List presets
   /set bars <n>           Set bars
+  /set release <ms>       Tail decay to zero crossing (default: 3ms)
   /markers <s> <e>        Set markers
   /tempo <bpm>            Set tempo
   /play 1 2 3 4           Play pattern (1-0 for 1-10)
@@ -316,11 +319,38 @@ class RCYApp(App):
         self.exit()
         return "Goodbye!"
 
-    def process_agent_input(self, user_input: str) -> str:
-        """Process input through the agent."""
-        if not self.agent:
+    def process_command(self, command: str) -> str:
+        """Process /command through default agent (fast path)."""
+        if not self.default_agent:
             return "Agent not initialized"
-        response = self.agent.process(user_input)
+        response = self.default_agent.process(command)
+        return response.message
+
+    def _get_llm_agent(self):
+        """Lazy-load LLM agent on first use."""
+        if not self._llm_agent_initialized:
+            self._llm_agent_initialized = True
+            openrouter_cfg = config.get_setting("agent", "openrouter", {})
+            try:
+                self._llm_agent = create_agent(
+                    "openrouter",
+                    self._tool_registry,
+                    model=openrouter_cfg.get("default_model", "anthropic/claude-sonnet-4"),
+                    temperature=openrouter_cfg.get("temperature", 0.3),
+                    max_tokens=openrouter_cfg.get("max_tokens", 1024),
+                )
+                logger.info(f"Initialized LLM agent: {self._llm_agent.name}")
+            except ValueError as e:
+                logger.warning(f"LLM agent not available: {e}")
+                self._llm_agent = None
+        return self._llm_agent
+
+    def process_natural_language(self, text: str) -> str:
+        """Process natural language through LLM agent."""
+        llm_agent = self._get_llm_agent()
+        if not llm_agent:
+            return "LLM agent not available. Use /commands or set OPENROUTER_API_KEY."
+        response = llm_agent.process(text)
         return response.message
 
     # Model initialization and handlers
@@ -376,6 +406,9 @@ class RCYApp(App):
         elif transients is not None:
             threshold = transients / 100.0
             self.model.split_by_transients(threshold)
+
+        # Invalidate segment cache after slicing
+        self._cached_segment_times = None
         self._update_waveform()
 
     def _on_markers(self, start: Optional[float], end: Optional[float]) -> None:
@@ -474,7 +507,22 @@ class RCYApp(App):
         if not self.model:
             self.update_status("No audio loaded")
             return
-        self.update_status(f"Export to {directory} (format: {fmt}) - not yet implemented")
+
+        # Create directory if it doesn't exist
+        os.makedirs(directory, exist_ok=True)
+
+        try:
+            stats = ExportUtils.export_segments(
+                model=self.model,
+                tempo=self.model.source_bpm,
+                num_measures=self.num_measures,
+                directory=directory,
+                start_marker_pos=self.start_marker,
+                end_marker_pos=self.end_marker
+            )
+            self.update_status(f"Exported {stats['segment_count']} segments to {directory}")
+        except Exception as e:
+            self.update_status(f"Export failed: {e}")
 
     def _on_mode(self, mode: str) -> None:
         self.playback_mode = mode
@@ -513,8 +561,24 @@ class RCYApp(App):
             self.model.calculate_source_bpm(value)
             self._update_waveform()
             return f"Set bars={value}, BPM={self.model.source_bpm:.1f}"
+        elif setting == 'release':
+            if not isinstance(value, (int, float)) or value < 0:
+                return "Error: release must be a positive number (ms)"
+
+            # Update config in memory
+            config.set_setting("audio", "tailFade", {
+                "enabled": value > 0,
+                "durationMs": int(value),
+                "curve": "exponential"
+            })
+
+            # Update cached config in audio engine
+            if self.model:
+                self.model.audio_engine.update_tail_fade_config()
+
+            return f"Set release={value}ms"
         else:
-            return f"Unknown setting: {setting}. Available: bars"
+            return f"Unknown setting: {setting}. Available: bars, release"
 
     # UI update methods
     def _append_output(self, message: str) -> None:
@@ -557,29 +621,40 @@ class RCYApp(App):
         except Exception:
             pass  # Widget may not exist yet
 
-    # Segment playback
+    # Segment playback - optimized for low latency key response
     def play_segment_by_index(self, index: int) -> None:
-        """Play a segment by its 1-based index."""
+        """Play a segment by its 1-based index. Optimized for fast key response."""
         if not self.model:
-            self.update_status("No audio loaded")
             return
 
+        # Use cached segment times if available
+        if not hasattr(self, '_cached_segment_times') or self._cached_segment_times is None:
+            self._update_segment_cache()
+
+        if self._cached_segment_times is None or len(self._cached_segment_times) < 2:
+            return
+
+        num_segments = len(self._cached_segment_times) - 1
+        if index < 1 or index > num_segments:
+            return
+
+        start_time = self._cached_segment_times[index - 1]
+        end_time = self._cached_segment_times[index]
+
+        # Direct call to audio engine - skip status update for speed
+        self.model.play_segment(start_time, end_time)
+
+    def _update_segment_cache(self) -> None:
+        """Update cached segment times for fast playback."""
+        if not self.model:
+            self._cached_segment_times = None
+            return
         boundaries = self.segment_manager.get_boundaries()
         if len(boundaries) < 2:
-            self.update_status("No segments defined")
+            self._cached_segment_times = None
             return
-
-        times = [b / self.model.sample_rate for b in boundaries]
-
-        if index < 1 or index > len(times) - 1:
-            self.update_status(f"Segment {index} out of range (1-{len(times)-1})")
-            return
-
-        start_time = times[index - 1]
-        end_time = times[index]
-
-        self.model.play_segment(start_time, end_time)
-        self.update_status(f"Playing segment {index}: {start_time:.2f}s - {end_time:.2f}s")
+        sample_rate = self.model.sample_rate
+        self._cached_segment_times = [b / sample_rate for b in boundaries]
 
     # Actions
     def action_play_selection(self) -> None:
@@ -602,14 +677,18 @@ class RCYApp(App):
 
     def on_input_submitted(self, event) -> None:
         """Handle command submission from Input widget."""
-        command = event.value.strip()
-        if not command:
+        text = event.value.strip()
+        if not text:
             return
-        if command.startswith('/') or command.startswith('!'):
-            result = self.process_agent_input(command)
-            self.update_status(result)
+
+        if text.startswith('/') or text.startswith('!'):
+            # Fast path: direct command processing (no LLM)
+            result = self.process_command(text)
         else:
-            self.update_status(f"Unknown input. Use /help for commands.")
+            # Natural language: route to LLM
+            result = self.process_natural_language(text)
+
+        self.update_status(result)
         # Clear the input
         event.input.value = ""
 

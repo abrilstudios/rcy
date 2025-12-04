@@ -6,6 +6,7 @@ This is the main documentation directory for RCY. Below is an organized index of
 
 - **[ARCHITECTURE.md](../ARCHITECTURE.md)** - System architecture, MVC pattern, and component descriptions
 - **[README.md](../README.md)** - Project overview, installation, and basic usage
+- **[TUI User Guide](tui-guide.md)** - Complete guide to the terminal user interface
 - **[CONTRIBUTING.md](../CONTRIBUTING.md)** - Contribution guidelines and development workflow
 - **[CLAUDE.md](../CLAUDE.md)** - Coding standards and AI assistant guidelines
 
@@ -65,6 +66,7 @@ Historical issue documentation and resolution details are stored in [`issues/`](
 ```
 docs/
 ├── INDEX.md (this file)
+├── tui-guide.md
 ├── ARCHITECTURE.md (linked from root)
 ├── README.md (linked from root)
 ├── CONTRIBUTING.md (linked from root)
@@ -97,6 +99,7 @@ docs/
 
 ## Quick Links
 
+- **For New Users**: Start with the [TUI User Guide](tui-guide.md)
 - **For New Contributors**: Start with [CONTRIBUTING.md](../CONTRIBUTING.md)
 - **For Understanding RCY**: Read [README.md](../README.md) and [Breakbeat Science](breakbeat-science.md)
 - **For Architecture Details**: See [ARCHITECTURE.md](../ARCHITECTURE.md) and modernization phases

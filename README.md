@@ -33,17 +33,39 @@ just tui                    # Load default (Amen break)
 just tui-preset <id>        # Load specific preset
 ```
 
+### Modal Input System
+
+RCY uses a **vim-style modal input** with two modes:
+
+| Mode | Status Bar | Description |
+|------|------------|-------------|
+| **INSERT** | `[INSERT]` | Type commands (`/slice 4`) or natural language queries |
+| **SEGMENT** | `[SEGMENT]` | Keys directly trigger segment playback |
+
+**Mode switching:**
+- **ESC** (in INSERT) → SEGMENT mode
+- **i** (in SEGMENT) → INSERT mode
+
 ### Keyboard Controls
+
+**SEGMENT Mode** (direct playback):
 
 | Key | Action |
 |-----|--------|
 | `1-0` | Play segments 1-10 |
-| `q-p` | Play segments 11-20 |
-| `Space` | Play L to R selection |
-| `Escape` | Stop playback |
-| `/` | Enter command mode |
+| `qwertyuop` | Play segments 11-19 (`i` reserved for mode switch) |
+| `i` | Switch to INSERT mode |
+| `ESC` | Switch to INSERT mode |
+
+**INSERT Mode** (text input):
+
+| Key | Action |
+|-----|--------|
+| `/` | Start a command |
 | `Up/Down` | Navigate command history |
 | `Ctrl-R` | Reverse search history |
+| `Enter` | Submit command |
+| `ESC` | Switch to SEGMENT mode |
 
 ### Commands
 
@@ -59,6 +81,7 @@ Type `/` to enter command mode, then:
 /slice --clear            Clear all slices
 
 /set bars <n>             Set number of bars (recalculates BPM)
+/set release <ms>         Set tail fade duration (default: 3ms)
 /markers <start> <end>    Set L/R markers (seconds)
 /markers --reset          Reset markers to full file
 
@@ -141,28 +164,43 @@ RCY uses an agent-based architecture for command processing. Commands are valida
 
 - **Type-safe command parsing**: Arguments are validated against schemas
 - **Extensible tool registry**: New commands can be added as tool schemas
-- **Future LLM integration**: Architecture supports adding AI agents for natural language interaction
+- **LLM integration**: Natural language commands via OpenRouter
 
 The agent system lives in `src/python/tui/agents/`:
 
 ```
 agents/
-├── base.py      # BaseAgent class and ToolRegistry
-├── default.py   # DefaultAgent - dispatches commands without LLM
-├── tools.py     # Pydantic schemas for all commands
-└── factory.py   # Agent factory for selecting agent type
+├── base.py        # BaseAgent class and ToolRegistry
+├── default.py     # DefaultAgent - dispatches commands without LLM
+├── openrouter.py  # OpenRouterAgent - LLM-powered natural language
+├── tools.py       # Pydantic schemas for all commands
+└── factory.py     # Agent factory for selecting agent type
 ```
 
 **Default Agent**: Parses commands like `/slice 4` or `/play 1 2 3 --loop`, validates arguments against Pydantic schemas, and dispatches to registered handlers. No API key required.
+
+**OpenRouter Agent**: Enables natural language interaction (e.g., "slice this into 8 pieces"). Uses Claude Sonnet via OpenRouter API. Requires API key.
 
 **Configuration** (`config/config.json`):
 ```json
 {
   "agent": {
-    "type": "default"
+    "type": "openrouter",
+    "openrouter": {
+      "default_model": "anthropic/claude-sonnet-4",
+      "temperature": 0.3,
+      "max_tokens": 1024
+    }
   }
 }
 ```
+
+To use the OpenRouter agent, create a `.env` file:
+```
+OPENROUTER_API_KEY=your-key-here
+```
+
+**Routing**: Commands starting with `/` always use the fast DefaultAgent. Natural language input is routed to the LLM agent when configured.
 
 ## Design Philosophy
 
@@ -173,6 +211,8 @@ RCY references hauntological approaches to music technology:
 - Balance between utility and historical resonance
 
 Read [Breakbeat Science](docs/breakbeat-science.md) for the three core workflows that shaped jungle, drum & bass, and big beat.
+
+For comprehensive TUI documentation, see the [TUI User Guide](docs/tui-guide.md).
 
 ## Requirements
 

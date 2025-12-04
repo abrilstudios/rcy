@@ -177,6 +177,18 @@ class ConfigManager:
         except Exception:
             return default
 
+    def set_setting(self, section: str, key: str, value: Any) -> None:
+        """Set a setting in memory (does not persist to file).
+
+        Args:
+            section: Configuration section (e.g., 'audio', 'ui')
+            key: Setting key within the section
+            value: Value to set
+        """
+        if section not in self._cfg:
+            self._cfg[section] = {}
+        self._cfg[section][key] = value
+
     def get_logging_setting(self, key: str, default: Any = None) -> Any:
         """Get a logging configuration setting"""
         try:
