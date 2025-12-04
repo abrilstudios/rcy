@@ -202,17 +202,10 @@ OPENROUTER_API_KEY=your-key-here
 
 **Routing**: Commands starting with `/` always use the fast DefaultAgent. Natural language input is routed to the LLM agent when configured.
 
-## Design Philosophy
+## Documentation
 
-RCY references hauntological approaches to music technology:
-
-- Color palette inspired by New Order's Movement artwork
-- Brutalist interface emphasizing function and clarity
-- Balance between utility and historical resonance
-
-Read [Breakbeat Science](docs/breakbeat-science.md) for the three core workflows that shaped jungle, drum & bass, and big beat.
-
-For comprehensive TUI documentation, see the [TUI User Guide](docs/tui-guide.md).
+- [TUI User Guide](docs/tui-guide.md) - Complete guide to the terminal interface
+- [Breakbeat Science](docs/breakbeat-science.md) - Core workflows that shaped jungle, drum & bass, and big beat
 
 ## Requirements
 
