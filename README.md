@@ -146,12 +146,57 @@ Available presets after download:
 | `rl_take_me_mardi_gras` | Take Me To the Mardi Gras | Bob James |
 | `rl_i_know_got_soul` | I Know You Got Soul | Bobby Byrd |
 
+## Sampler Support
+
+### Teenage Engineering EP-133 K.O. II
+
+RCY includes direct integration with the EP-133 sampler via MIDI SysEx. Slice a break and upload it directly to your EP-133's pads.
+
+**Setup**: Connect EP-133 via USB. No additional configuration needed.
+
+**Commands**:
+```
+/ep133_connect              Connect to EP-133
+/ep133_status               Check connection status
+/ep133_upload_bank A        Upload segments to bank A, assign to pads 1-12
+/ep133_upload_bank B --slot 750   Upload to bank B starting at slot 750
+/ep133_clear_bank A         Clear all pad assignments in bank A
+/ep133_disconnect           Disconnect from EP-133
+```
+
+**Workflow example**:
+```
+/preset amen_classic        # Load the Amen break
+/slice 8                    # Slice into 8 segments
+/ep133_connect              # Connect to EP-133
+/ep133_upload_bank A        # Upload segments 1-8 to project 1, bank A
+```
+
+The agent also understands natural language: "slice into 16 pieces and upload the first 12 to bank A"
+
+**EP-133 Structure**:
+- 9 projects (1-9)
+- 4 banks per project (A, B, C, D)
+- 12 pads per bank
+- 999 sound slots (USER1: 700-799 used by default)
+
+### SFZ Export
+
+Export sliced samples to SFZ format for software samplers like TAL-Sampler:
+
+```
+/export ~/Desktop/my_break
+```
+
+Creates an SFZ file with all sliced samples mapped chromatically starting at C3.
+
 ## Features
 
 - **Breakbeat Slicing**: Slice by measures or transient detection
 - **Pattern Playback**: Play segments in custom sequences with looping
 - **ASCII Waveform**: Visual display with L/R markers and slice points
-- **SFZ Export**: Generate SFZ files for samplers
+- **Hardware Integration**: Direct upload to EP-133 K.O. II
+- **SFZ Export**: Generate SFZ files for software samplers
 - **Command History**: Bash-style history with reverse search
 - **Preset System**: Quick access to classic breaks
 - **Agent Architecture**: Extensible command system with Pydantic validation
