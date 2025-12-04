@@ -21,13 +21,6 @@ mido>=1.3.2
 pyFluidSynth>=1.3.3
 sf2utils>=1.0.0
 
-# Visualization and UI
-matplotlib>=3.9.2
-PyQt6>=6.7.1
-PyQt6-Qt6>=6.7.3
-PyQt6_sip>=13.8.0
-pyqtgraph>=0.13.3
-
 # Utilities
 requests>=2.32.3
 python-dateutil>=2.9.0

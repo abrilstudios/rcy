@@ -222,31 +222,6 @@ just lint    # Run linter
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
----
-
-## GUI Application (Legacy)
-
-RCY originally started as a PyQt6 GUI application. The GUI is still available but the TUI is now the primary interface.
-
-<img width="800" alt="RCY Screenshot" src="screenshots/rcy.png">
-
-### Launch GUI
-
-```bash
-just run
-```
-
-### GUI Features
-
-- Load audio with File > Open
-- Set slice points with "Split by Transients" or Alt+Click
-- Set start marker with Shift+Click, end marker with Ctrl+Click
-- Export with File > Export
-
-The GUI follows an MVC architecture documented in [docs/mvc-current-flow.md](docs/mvc-current-flow.md).
-
----
-
 ## License
 
 [MIT License](LICENSE)
