@@ -1,6 +1,7 @@
 """Command input widget with history and search for Textual TUI."""
 
 from textual.widgets import Input
+from textual.suggester import Suggester
 from textual.message import Message
 from typing import Optional
 
@@ -145,8 +146,15 @@ class CommandInput(Input):
         name: str | None = None,
         id: str | None = None,
         classes: str | None = None,
+        suggester: Suggester | None = None,
     ) -> None:
-        super().__init__(placeholder=placeholder, name=name, id=id, classes=classes)
+        super().__init__(
+            placeholder=placeholder,
+            name=name,
+            id=id,
+            classes=classes,
+            suggester=suggester,
+        )
         self.history = CommandHistory()
         self._in_search_mode = False
         self._search_query = ""

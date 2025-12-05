@@ -2,5 +2,6 @@
 
 from .waveform import WaveformWidget
 from .command_input import CommandInput
+from .command_suggester import CommandSuggester
 
-__all__ = ["WaveformWidget", "CommandInput"]
+__all__ = ["WaveformWidget", "CommandInput", "CommandSuggester"]

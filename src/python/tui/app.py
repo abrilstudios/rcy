@@ -28,7 +28,7 @@ from audio_processor import WavAudioProcessor
 from segment_manager import get_segment_manager
 from config_manager import config
 from export_utils import ExportUtils
-from tui.widgets import WaveformWidget, CommandInput
+from tui.widgets import WaveformWidget, CommandInput, CommandSuggester
 from tui.agents import create_agent, BaseAgent
 from tui.agents.base import ToolRegistry
 
@@ -175,7 +175,8 @@ class RCYApp(App):
         output = TextArea(id="output", read_only=True, soft_wrap=True)
         output.can_focus = False
         yield output
-        yield CommandInput(id="command")
+        suggester = CommandSuggester(config_manager=config)
+        yield CommandInput(id="command", suggester=suggester)
 
     def on_mount(self) -> None:
         """Initialize when app is mounted."""
