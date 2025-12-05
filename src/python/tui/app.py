@@ -775,6 +775,20 @@ EP-133 Commands:
         if event.key in SEGMENT_KEYS:
             self.play_segment_by_index(SEGMENT_KEYS[event.key])
 
+    def on_command_input_marker_nudge(self, event: CommandInput.MarkerNudge) -> None:
+        """Handle marker nudge from CommandInput."""
+        if event.direction == "left":
+            self.action_nudge_left()
+        else:
+            self.action_nudge_right()
+
+    def on_command_input_marker_cycle_focus(self, event: CommandInput.MarkerCycleFocus) -> None:
+        """Handle marker focus cycle from CommandInput."""
+        if event.reverse:
+            self.action_cycle_focus_prev()
+        else:
+            self.action_cycle_focus_next()
+
     def on_input_submitted(self, event) -> None:
         """Handle command submission from Input widget."""
         text = event.value.strip()

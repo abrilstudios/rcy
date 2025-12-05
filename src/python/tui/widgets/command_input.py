@@ -175,11 +175,23 @@ class CommandInput(Input):
             self.key = key
             super().__init__()
 
+    class MarkerNudge(Message):
+        """Posted when marker nudge key is pressed."""
+        def __init__(self, direction: str) -> None:
+            self.direction = direction  # "left" or "right"
+            super().__init__()
+
+    class MarkerCycleFocus(Message):
+        """Posted when marker focus cycle key is pressed."""
+        def __init__(self, reverse: bool = False) -> None:
+            self.reverse = reverse
+            super().__init__()
+
     def _set_mode(self, mode: str) -> None:
         """Switch between insert and segment modes."""
         self._mode = mode
         if mode == self.MODE_SEGMENT:
-            self.placeholder = "[SEGMENT] 1-0/qwertyuop play | i=insert mode"
+            self.placeholder = "[SEGMENT] 1-0/qwerty play | [/] focus | ←→ nudge | i=insert"
         else:
             self.placeholder = "[INSERT] Type for AI, /cmd direct | ESC for segment mode"
 
@@ -205,6 +217,30 @@ class CommandInput(Input):
             # 'i' or Escape exits segment mode back to insert
             if key == "escape" or check_key == "i":
                 self._set_mode(self.MODE_INSERT)
+                event.stop()
+                event.prevent_default()
+                return
+
+            # Arrow keys nudge the focused marker
+            if key == "left":
+                self.post_message(self.MarkerNudge("left"))
+                event.stop()
+                event.prevent_default()
+                return
+            if key == "right":
+                self.post_message(self.MarkerNudge("right"))
+                event.stop()
+                event.prevent_default()
+                return
+
+            # [ and ] cycle marker focus
+            if check_key == "[":
+                self.post_message(self.MarkerCycleFocus(reverse=True))
+                event.stop()
+                event.prevent_default()
+                return
+            if check_key == "]":
+                self.post_message(self.MarkerCycleFocus(reverse=False))
                 event.stop()
                 event.prevent_default()
                 return
