@@ -470,6 +470,10 @@ EP-133 Commands:
             threshold = transients / 100.0
             self.model.split_by_transients(threshold)
 
+        # Sync segment boundaries to MarkerManager for unified focus/nudge
+        boundaries = self.segment_manager.get_boundaries()
+        self.marker_manager.sync_from_boundaries(boundaries)
+
         # Invalidate segment cache after slicing
         self._cached_segment_times = None
         self._update_waveform()
@@ -748,6 +752,11 @@ EP-133 Commands:
     def _on_marker_nudged(self) -> None:
         """Handle marker position change after nudge."""
         self._sync_markers_from_manager()
+
+        # Sync marker boundaries back to segment_manager for playback
+        new_boundaries = self.marker_manager.get_boundaries()
+        self.segment_manager.set_boundaries(new_boundaries)
+
         self._cached_segment_times = None  # Invalidate cache
         self._update_waveform()
         focused = self.marker_manager.focused_marker

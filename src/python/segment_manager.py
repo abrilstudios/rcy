@@ -46,6 +46,36 @@ class SegmentStore:
             # Initialize with single segment covering entire file
             self._boundaries = [0, total_samples]
     
+    def set_boundaries(self, boundaries: list[int], sample_rate: float) -> None:
+        """Set all boundaries and sample rate.
+
+        Args:
+            boundaries: Full list of boundary positions including start (0) and end
+            sample_rate: Sample rate in Hz
+
+        Raises:
+            ValueError: If any boundary is negative
+        """
+        with self._lock:
+            if not boundaries:
+                self._boundaries = []
+                return
+
+            # Validate no negative boundaries
+            for b in boundaries:
+                if b < 0:
+                    raise ValueError(f"Boundary {b} cannot be negative")
+
+            self._sample_rate = sample_rate
+            self._total_samples = boundaries[-1]  # Last boundary is end
+            self._boundaries = sorted(set(boundaries))
+
+    def clear_boundaries(self) -> None:
+        """Clear all boundaries."""
+        with self._lock:
+            self._boundaries = []
+            self._total_samples = 0
+
     def set_internal_boundaries(self, internal_positions: list[int]) -> None:
         """Set internal boundaries (automatically adds start/end boundaries)."""
         with self._lock:
@@ -270,6 +300,23 @@ class SegmentManager:
     def get_boundaries(self) -> list[int]:
         """Get boundary positions (for backward compatibility)."""
         return self._store.get_boundaries()
+
+    def set_boundaries(self, boundaries: list[int], sample_rate: float = None) -> None:
+        """Set all boundaries directly (including start/end).
+
+        Args:
+            boundaries: Full list of boundary positions including 0 and total_samples
+            sample_rate: Optional sample rate (uses existing if not provided)
+        """
+        with self._lock:
+            if sample_rate is not None:
+                # Use store's set_boundaries which sets sample_rate too
+                self._store.set_boundaries(boundaries, sample_rate)
+            else:
+                # Filter out start/end and use set_internal_boundaries
+                internal = [b for b in boundaries if b != 0 and b != self._store._total_samples]
+                self._store.set_internal_boundaries(internal)
+            self._notify_observers('set_boundaries', boundary_count=len(boundaries))
 
     # Observer management
     def add_observer(self, observer: SegmentObserver) -> None:
