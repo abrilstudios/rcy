@@ -136,5 +136,185 @@
     "name": "Bobby Byrd - I Know You Got Soul",
     "artist": "Bobby Byrd",
     "measures": 2
+  },
+  "rl_amen_winstons": {
+    "filepath": "sample-packs/rhythm-lab/audio/The Winstons - Amen Brother.wav",
+    "name": "The Winstons - Amen Brother",
+    "artist": "The Winstons",
+    "measures": 4
+  },
+  "rl_think_lyn_collins": {
+    "filepath": "sample-packs/rhythm-lab/audio/Lyn Collins - Think (About It).wav",
+    "name": "Lyn Collins - Think (About It)",
+    "artist": "Lyn Collins",
+    "measures": 1
+  },
+  "rl_apache_incredible": {
+    "filepath": "sample-packs/rhythm-lab/audio/Incredible Bongo Band - Apache.wav",
+    "name": "Incredible Bongo Band - Apache",
+    "artist": "Incredible Bongo Band",
+    "measures": 2
+  },
+  "rl_funky_drummer": {
+    "filepath": "sample-packs/rhythm-lab/audio/James Brown - Funky Drummer.wav",
+    "name": "James Brown - Funky Drummer",
+    "artist": "James Brown",
+    "measures": 2
+  },
+  "rl_impeach_president": {
+    "filepath": "sample-packs/rhythm-lab/audio/The Honey Drippers - Impeach The President.wav",
+    "name": "The Honey Drippers - Impeach The President",
+    "artist": "The Honey Drippers",
+    "measures": 2
+  },
+  "rl_synthetic_sub": {
+    "filepath": "sample-packs/rhythm-lab/audio/Synthetic Substitution - Melvin Bliss.wav",
+    "name": "Melvin Bliss - Synthetic Substitution",
+    "artist": "Melvin Bliss",
+    "measures": 2
+  },
+  "rl_soul_pride": {
+    "filepath": "sample-packs/rhythm-lab/audio/James Brown - Soul Pride.wav",
+    "name": "James Brown - Soul Pride",
+    "artist": "James Brown",
+    "measures": 2
+  },
+  "rl_kissing_my_love_cd": {
+    "filepath": "sample-packs/rhythm-lab/audio/Al Jarreau - Kissing My Love (CD).wav",
+    "name": "Al Jarreau - Kissing My Love (CD)",
+    "artist": "Al Jarreau",
+    "measures": 2
+  },
+  "rl_kissing_my_love_vinyl": {
+    "filepath": "sample-packs/rhythm-lab/audio/Al Jarreau - Kissing My Love (vinyl).wav",
+    "name": "Al Jarreau - Kissing My Love (vinyl)",
+    "artist": "Al Jarreau",
+    "measures": 2
+  },
+  "rl_landlord": {
+    "filepath": "sample-packs/rhythm-lab/audio/Al Kooper - The Landlord.wav",
+    "name": "Al Kooper - The Landlord",
+    "artist": "Al Kooper",
+    "measures": 2
+  },
+  "rl_school_boy_crush": {
+    "filepath": "sample-packs/rhythm-lab/audio/Average White Band - School Boy Crush.wav",
+    "name": "Average White Band - School Boy Crush",
+    "artist": "Average White Band",
+    "measures": 2
+  },
+  "rl_do_it_til_satisfied": {
+    "filepath": "sample-packs/rhythm-lab/audio/B.T.Express - Do It ('Til You're Satisfied).wav",
+    "name": "B.T. Express - Do It ('Til You're Satisfied)",
+    "artist": "B.T. Express",
+    "measures": 2
+  },
+  "rl_soul_drums_1": {
+    "filepath": "sample-packs/rhythm-lab/audio/Bernard Purdie - Soul Drums (part1).wav",
+    "name": "Bernard Purdie - Soul Drums (part1)",
+    "artist": "Bernard Purdie",
+    "measures": 2
+  },
+  "rl_soul_drums_2": {
+    "filepath": "sample-packs/rhythm-lab/audio/Bernard Purdie - Soul Drums (part2).wav",
+    "name": "Bernard Purdie - Soul Drums (part2)",
+    "artist": "Bernard Purdie",
+    "measures": 2
+  },
+  "rl_funky_donkey_1": {
+    "filepath": "sample-packs/rhythm-lab/audio/Bernard Purdie - Funky Donkey (part1).wav",
+    "name": "Bernard Purdie - Funky Donkey (part1)",
+    "artist": "Bernard Purdie",
+    "measures": 2
+  },
+  "rl_scorpio_cd": {
+    "filepath": "sample-packs/rhythm-lab/audio/Dennis Coffey - Scorpio (cd).wav",
+    "name": "Dennis Coffey - Scorpio (CD)",
+    "artist": "Dennis Coffey",
+    "measures": 2
+  },
+  "rl_scorpio_1": {
+    "filepath": "sample-packs/rhythm-lab/audio/Dennis Coffey - Scorpio (part1).wav",
+    "name": "Dennis Coffey - Scorpio (part1)",
+    "artist": "Dennis Coffey",
+    "measures": 2
+  },
+  "rl_let_woman_be_woman": {
+    "filepath": "sample-packs/rhythm-lab/audio/Dyke & The Blazers Let A Woman Be A Woman Let A Man Be A Man.wav",
+    "name": "Dyke & The Blazers - Let A Woman Be A Woman",
+    "artist": "Dyke & The Blazers",
+    "measures": 2
+  },
+  "rl_funky_broadway": {
+    "filepath": "sample-packs/rhythm-lab/audio/Dyke And The Blazers - Funky Broadway Time.wav",
+    "name": "Dyke And The Blazers - Funky Broadway Time",
+    "artist": "Dyke And The Blazers",
+    "measures": 2
+  },
+  "rl_soul_heart_transplant": {
+    "filepath": "sample-packs/rhythm-lab/audio/Ebony Rhythm Band - Soul Heart Transplant.wav",
+    "name": "Ebony Rhythm Band - Soul Heart Transplant",
+    "artist": "Ebony Rhythm Band",
+    "measures": 2
+  },
+  "rl_hook_and_sling_1": {
+    "filepath": "sample-packs/rhythm-lab/audio/Eddie Bo - Hook And Sling (ver.1) (part1).wav",
+    "name": "Eddie Bo - Hook And Sling (ver.1) (part1)",
+    "artist": "Eddie Bo",
+    "measures": 2
+  },
+  "rl_kool_is_back": {
+    "filepath": "sample-packs/rhythm-lab/audio/Funk Inc. - Kool Is Back.wav",
+    "name": "Funk Inc. - Kool Is Back",
+    "artist": "Funk Inc.",
+    "measures": 2
+  },
+  "rl_good_old_music_1": {
+    "filepath": "sample-packs/rhythm-lab/audio/Funkadelic - Good Old Music (part1).wav",
+    "name": "Funkadelic - Good Old Music (part1)",
+    "artist": "Funkadelic",
+    "measures": 2
+  },
+  "rl_ill_bet_you": {
+    "filepath": "sample-packs/rhythm-lab/audio/Funkadelic - I'll Bet You.wav",
+    "name": "Funkadelic - I'll Bet You",
+    "artist": "Funkadelic",
+    "measures": 2
+  },
+  "rl_blow_your_head": {
+    "filepath": "sample-packs/rhythm-lab/audio/Fred Wesley & Jb's - Blow Your Head.wav",
+    "name": "Fred Wesley & JB's - Blow Your Head",
+    "artist": "Fred Wesley & JB's",
+    "measures": 2
+  },
+  "rl_assembly_line_1": {
+    "filepath": "sample-packs/rhythm-lab/audio/Commodores - Assembly Line (part1).wav",
+    "name": "Commodores - Assembly Line (part1)",
+    "artist": "Commodores",
+    "measures": 2
+  },
+  "rl_assembly_line_2": {
+    "filepath": "sample-packs/rhythm-lab/audio/Commodores - Assembly Line (part2).wav",
+    "name": "Commodores - Assembly Line (part2)",
+    "artist": "Commodores",
+    "measures": 2
+  },
+  "rl_cold_sweat_1": {
+    "filepath": "sample-packs/rhythm-lab/audio/Black Pearl - Cold Sweat (part1).wav",
+    "name": "Black Pearl - Cold Sweat (part1)",
+    "artist": "Black Pearl",
+    "measures": 2
+  },
+  "rl_mr_big_1": {
+    "filepath": "sample-packs/rhythm-lab/audio/Free - Mr Big (ver.1).wav",
+    "name": "Free - Mr Big (ver.1)",
+    "artist": "Free",
+    "measures": 2
+  },
+  "rl_mr_big_2": {
+    "filepath": "sample-packs/rhythm-lab/audio/Free - Mr Big (ver.2).wav",
+    "name": "Free - Mr Big (ver.2)",
+    "artist": "Free",
+    "measures": 2
   }
 }
