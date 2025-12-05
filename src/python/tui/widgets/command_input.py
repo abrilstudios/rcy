@@ -258,11 +258,20 @@ class CommandInput(Input):
 
         elif key == "tab":
             # Tab cycles through completion matches
-            self._handle_tab_completion()
+            self._handle_tab_completion(reverse=False)
             event.prevent_default()
 
-    def _handle_tab_completion(self) -> None:
-        """Handle Tab key for cycling through completions."""
+        elif key == "shift+tab":
+            # Shift+Tab cycles backwards through completion matches
+            self._handle_tab_completion(reverse=True)
+            event.prevent_default()
+
+    def _handle_tab_completion(self, reverse: bool = False) -> None:
+        """Handle Tab key for cycling through completions.
+
+        Args:
+            reverse: If True, cycle backwards (Shift+Tab)
+        """
         from tui.widgets.command_suggester import CommandSuggester
 
         # Get the suggester if it exists and is a CommandSuggester
@@ -279,17 +288,21 @@ class CommandInput(Input):
         # Check if we're continuing from a previous Tab cycle
         # We're cycling if the current value is one of our matches
         if self._tab_matches and current_value in self._tab_matches:
-            # Cycle to next match
-            self._tab_index = (self._tab_index + 1) % len(self._tab_matches)
+            # Cycle to next/previous match
+            if reverse:
+                self._tab_index = (self._tab_index - 1) % len(self._tab_matches)
+            else:
+                self._tab_index = (self._tab_index + 1) % len(self._tab_matches)
             self.value = self._tab_matches[self._tab_index]
             self.cursor_position = len(self.value)
         else:
             # Get new matches for current input
             self._tab_matches = suggester.get_all_matches(current_value)
             if self._tab_matches:
-                self._tab_index = 0
+                # Start at end if reverse, otherwise start at beginning
+                self._tab_index = len(self._tab_matches) - 1 if reverse else 0
                 self._tab_prefix = current_value
-                self.value = self._tab_matches[0]
+                self.value = self._tab_matches[self._tab_index]
                 self.cursor_position = len(self.value)
             elif self._suggestion:
                 # Fall back to inline suggestion
