@@ -738,22 +738,25 @@ EP-133 Commands:
     def action_nudge_left(self) -> None:
         """Nudge focused marker left."""
         if self.marker_manager.nudge_left():
-            self._sync_markers_from_manager()
-            self._update_waveform()
-            focused = self.marker_manager.focused_marker
-            if focused and self.model:
-                pos_sec = focused.position / self.model.sample_rate
-                self.update_status(f"[{focused.id}] → {pos_sec:.3f}s")
+            self._on_marker_nudged()
 
     def action_nudge_right(self) -> None:
         """Nudge focused marker right."""
         if self.marker_manager.nudge_right():
-            self._sync_markers_from_manager()
-            self._update_waveform()
-            focused = self.marker_manager.focused_marker
-            if focused and self.model:
-                pos_sec = focused.position / self.model.sample_rate
-                self.update_status(f"[{focused.id}] → {pos_sec:.3f}s")
+            self._on_marker_nudged()
+
+    def _on_marker_nudged(self) -> None:
+        """Handle marker position change after nudge."""
+        self._sync_markers_from_manager()
+        self._cached_segment_times = None  # Invalidate cache
+        self._update_waveform()
+        focused = self.marker_manager.focused_marker
+        if focused and self.model:
+            pos_sec = focused.position / self.model.sample_rate
+            # Show region for context
+            self.update_status(
+                f"[{focused.id}] {pos_sec:.3f}s | Region: {self.start_marker:.3f}s - {self.end_marker:.3f}s"
+            )
 
     def action_cycle_focus_next(self) -> None:
         """Cycle focus to next marker (by position)."""

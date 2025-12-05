@@ -245,6 +245,10 @@ class CommandInput(Input):
                 event.prevent_default()
                 return
 
+            # Space plays the L-R region - let it bubble up to app binding
+            if key == "space":
+                return  # Don't block, let app handle it
+
             # Block all other keys in segment mode
             event.stop()
             event.prevent_default()
