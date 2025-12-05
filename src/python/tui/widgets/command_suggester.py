@@ -29,12 +29,11 @@ class CommandSuggester(Suggester):
             "ep133_upload_bank": self._complete_bank,
         }
 
-    async def get_suggestion(self, value: str, cursor_position: int) -> str | None:
+    async def get_suggestion(self, value: str) -> str | None:
         """Get a suggestion for the current input.
 
         Args:
             value: Current input text
-            cursor_position: Position of cursor (not currently used)
 
         Returns:
             Suggested completion or None if no suggestion

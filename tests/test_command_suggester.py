@@ -38,39 +38,39 @@ class TestCommandCompletion:
 
     def test_complete_partial_command(self, suggester):
         """Test completing a partial command name."""
-        result = _run(suggester.get_suggestion("/pre", 4))
+        result = _run(suggester.get_suggestion("/pre"))
         assert result == "/preset"
 
     def test_complete_slice_command(self, suggester):
         """Test completing /sl to /slice."""
-        result = _run(suggester.get_suggestion("/sl", 3))
+        result = _run(suggester.get_suggestion("/sl"))
         assert result == "/slice"
 
     def test_complete_export(self, suggester):
         """Test completing /exp to /export."""
-        result = _run(suggester.get_suggestion("/exp", 4))
+        result = _run(suggester.get_suggestion("/exp"))
         assert result == "/export"
 
     def test_no_completion_for_unknown(self, suggester):
         """Test no completion for unknown prefix."""
-        result = _run(suggester.get_suggestion("/xyz", 4))
+        result = _run(suggester.get_suggestion("/xyz"))
         assert result is None
 
     def test_no_completion_without_slash(self, suggester):
         """Test no completion for input not starting with /."""
-        result = _run(suggester.get_suggestion("preset", 6))
+        result = _run(suggester.get_suggestion("preset"))
         assert result is None
 
     def test_no_completion_for_just_slash(self, suggester):
         """Test no completion for just /."""
-        result = _run(suggester.get_suggestion("/", 1))
+        result = _run(suggester.get_suggestion("/"))
         assert result is None
 
     def test_alias_completion(self, suggester):
         """Test that aliases are also completed."""
         # Check that some aliases exist in TOOL_ALIASES
         assert "p" in TOOL_ALIASES  # p -> preset
-        result = _run(suggester.get_suggestion("/p", 2))
+        result = _run(suggester.get_suggestion("/p"))
         # Could complete to 'p' (alias), 'preset', 'play', or 'presets'
         assert result is not None
         assert result.startswith("/p")
@@ -85,31 +85,31 @@ class TestPresetCompletion:
 
     def test_complete_preset_with_prefix(self, suggester):
         """Test completing preset with prefix."""
-        result = _run(suggester.get_suggestion("/preset rl_", 11))
+        result = _run(suggester.get_suggestion("/preset rl_"))
         assert result is not None
         assert result.startswith("/preset rl_")
 
     def test_complete_preset_empty_prefix(self, suggester):
         """Test completing preset with empty prefix."""
-        result = _run(suggester.get_suggestion("/preset ", 8))
+        result = _run(suggester.get_suggestion("/preset "))
         assert result is not None
         # Should suggest first preset alphabetically
         assert result.startswith("/preset ")
 
     def test_complete_preset_no_match(self, suggester):
         """Test no completion when no presets match."""
-        result = _run(suggester.get_suggestion("/preset xyz", 11))
+        result = _run(suggester.get_suggestion("/preset xyz"))
         assert result is None
 
     def test_complete_preset_amen(self, suggester):
         """Test completing /preset amen."""
-        result = _run(suggester.get_suggestion("/preset amen", 12))
+        result = _run(suggester.get_suggestion("/preset amen"))
         assert result == "/preset amen_classic"
 
     def test_no_preset_completion_without_config(self):
         """Test no preset completion when config is None."""
         suggester = CommandSuggester(config_manager=None)
-        result = _run(suggester.get_suggestion("/preset rl_", 11))
+        result = _run(suggester.get_suggestion("/preset rl_"))
         assert result is None
 
 
@@ -122,22 +122,22 @@ class TestBankCompletion:
 
     def test_complete_bank_empty(self, suggester):
         """Test completing bank with empty prefix."""
-        result = _run(suggester.get_suggestion("/ep133_upload_bank ", 19))
+        result = _run(suggester.get_suggestion("/ep133_upload_bank "))
         assert result == "/ep133_upload_bank A"
 
     def test_complete_bank_b(self, suggester):
         """Test completing bank B."""
-        result = _run(suggester.get_suggestion("/ep133_upload_bank B", 20))
+        result = _run(suggester.get_suggestion("/ep133_upload_bank B"))
         assert result == "/ep133_upload_bank B"
 
     def test_complete_bank_lowercase(self, suggester):
         """Test completing bank with lowercase input."""
-        result = _run(suggester.get_suggestion("/ep133_upload_bank c", 20))
+        result = _run(suggester.get_suggestion("/ep133_upload_bank c"))
         assert result == "/ep133_upload_bank C"
 
     def test_complete_bank_invalid(self, suggester):
         """Test no completion for invalid bank letter."""
-        result = _run(suggester.get_suggestion("/ep133_upload_bank X", 20))
+        result = _run(suggester.get_suggestion("/ep133_upload_bank X"))
         assert result is None
 
 
@@ -152,16 +152,16 @@ class TestEdgeCases:
         """Test that extra whitespace is normalized."""
         # Python's split() without separator collapses whitespace
         # So "/preset  rl" becomes ["preset", "rl"] and works normally
-        result = _run(suggester.get_suggestion("/preset  rl", 11))
+        result = _run(suggester.get_suggestion("/preset  rl"))
         assert result is not None
         assert result.startswith("/preset rl_")
 
     def test_unknown_command_with_argument(self, suggester):
         """Test no completion for unknown command with argument."""
-        result = _run(suggester.get_suggestion("/unknown arg", 12))
+        result = _run(suggester.get_suggestion("/unknown arg"))
         assert result is None
 
     def test_empty_string(self, suggester):
         """Test handling empty string."""
-        result = _run(suggester.get_suggestion("", 0))
+        result = _run(suggester.get_suggestion(""))
         assert result is None
