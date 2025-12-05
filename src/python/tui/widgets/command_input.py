@@ -160,6 +160,10 @@ class CommandInput(Input):
         self._search_query = ""
         self._search_match = ""
         self._mode = self.MODE_INSERT  # Start in insert mode
+        # Tab completion cycling state
+        self._tab_matches: list[str] = []
+        self._tab_index: int = 0
+        self._tab_prefix: str = ""
 
     # Keys that trigger segment playback (1-0, q-p except 'i' which is reserved for insert mode)
     SEGMENT_KEYS = {'1', '2', '3', '4', '5', '6', '7', '8', '9', '0',
@@ -253,12 +257,44 @@ class CommandInput(Input):
             # Let parent Input handle the submit (don't prevent default)
 
         elif key == "tab":
-            # Tab accepts the current suggestion (same as Right arrow)
-            # action_cursor_right accepts suggestions when at end of input
+            # Tab cycles through completion matches
+            self._handle_tab_completion()
+            event.prevent_default()
+
+    def _handle_tab_completion(self) -> None:
+        """Handle Tab key for cycling through completions."""
+        from tui.widgets.command_suggester import CommandSuggester
+
+        # Get the suggester if it exists and is a CommandSuggester
+        suggester = getattr(self, '_suggester', None)
+        if not isinstance(suggester, CommandSuggester):
+            # Fall back to accepting inline suggestion if available
             if self._suggestion:
                 self.value = self._suggestion
                 self.cursor_position = len(self.value)
-                event.prevent_default()
+            return
+
+        current_value = self.value
+
+        # Check if we're continuing from a previous Tab cycle
+        # We're cycling if the current value is one of our matches
+        if self._tab_matches and current_value in self._tab_matches:
+            # Cycle to next match
+            self._tab_index = (self._tab_index + 1) % len(self._tab_matches)
+            self.value = self._tab_matches[self._tab_index]
+            self.cursor_position = len(self.value)
+        else:
+            # Get new matches for current input
+            self._tab_matches = suggester.get_all_matches(current_value)
+            if self._tab_matches:
+                self._tab_index = 0
+                self._tab_prefix = current_value
+                self.value = self._tab_matches[0]
+                self.cursor_position = len(self.value)
+            elif self._suggestion:
+                # Fall back to inline suggestion
+                self.value = self._suggestion
+                self.cursor_position = len(self.value)
 
     def _handle_search_key(self, event) -> None:
         """Handle keys in search mode."""

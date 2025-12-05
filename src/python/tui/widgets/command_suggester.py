@@ -115,3 +115,42 @@ class CommandSuggester(Suggester):
         if matches:
             return f"/ep133_upload_bank {matches[0]}"
         return None
+
+    def get_all_matches(self, value: str) -> list[str]:
+        """Get all matching completions for the current input.
+
+        Args:
+            value: Current input text
+
+        Returns:
+            List of all matching completions, sorted alphabetically
+        """
+        if not value.startswith("/"):
+            return []
+
+        content = value[1:]
+        parts = content.split(maxsplit=1)
+
+        if len(parts) == 0:
+            return []
+
+        if " " not in value:
+            # Command completion
+            prefix = parts[0]
+            if not prefix:
+                return []
+            commands = list(TOOL_SCHEMAS.keys()) + list(TOOL_ALIASES.keys())
+            return sorted(["/" + c for c in commands if c.startswith(prefix)])
+
+        # Argument completion
+        cmd = parts[0]
+        arg_prefix = parts[1] if len(parts) == 2 else ""
+
+        if cmd == "preset" and self.config:
+            presets = [p[0] for p in self.config.get_preset_list()]
+            return sorted([f"/preset {p}" for p in presets if p.startswith(arg_prefix)])
+        elif cmd == "ep133_upload_bank":
+            banks = ["A", "B", "C", "D"]
+            return [f"/ep133_upload_bank {b}" for b in banks if b.startswith(arg_prefix.upper())]
+
+        return []

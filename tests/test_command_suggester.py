@@ -165,3 +165,39 @@ class TestEdgeCases:
         """Test handling empty string."""
         result = _run(suggester.get_suggestion(""))
         assert result is None
+
+
+class TestGetAllMatches:
+    """Tests for get_all_matches method used for Tab cycling."""
+
+    @pytest.fixture
+    def suggester(self):
+        return CommandSuggester(config_manager=MockConfigManager())
+
+    def test_all_preset_matches(self, suggester):
+        """Test getting all preset matches."""
+        matches = suggester.get_all_matches("/preset rl_")
+        assert len(matches) == 3  # rl_hot_pants, rl_shack_up, rl_walk_this_way
+        assert all(m.startswith("/preset rl_") for m in matches)
+
+    def test_all_command_matches(self, suggester):
+        """Test getting all command matches."""
+        matches = suggester.get_all_matches("/pre")
+        # Should include 'preset' and 'presets'
+        assert "/preset" in matches
+        assert "/presets" in matches
+
+    def test_no_matches(self, suggester):
+        """Test getting no matches."""
+        matches = suggester.get_all_matches("/xyz")
+        assert matches == []
+
+    def test_all_bank_matches(self, suggester):
+        """Test getting all bank matches."""
+        matches = suggester.get_all_matches("/ep133_upload_bank ")
+        assert matches == [
+            "/ep133_upload_bank A",
+            "/ep133_upload_bank B",
+            "/ep133_upload_bank C",
+            "/ep133_upload_bank D",
+        ]
