@@ -42,6 +42,8 @@ class WaveformWidget(Widget):
         self._slices: list[float] | None = None
         self._start_marker = 0.0
         self._end_marker: float | None = None
+        self._focused_marker: str | None = "L"  # Default focus on L
+        self._segment_marker_positions: list[float] | None = None
 
     def set_audio_data(self, audio_data, sample_rate: int = 44100) -> None:
         """Update the audio data to display."""
@@ -65,6 +67,16 @@ class WaveformWidget(Widget):
         """Set the visible time range (for zoom)."""
         self._start_time = start
         self._end_time = end
+        self.refresh()
+
+    def set_focused_marker(self, marker_id: str | None) -> None:
+        """Set the currently focused marker for visual indication."""
+        self._focused_marker = marker_id
+        self.refresh()
+
+    def set_segment_markers(self, positions: list[float]) -> None:
+        """Set segment marker positions (in seconds)."""
+        self._segment_marker_positions = positions
         self.refresh()
 
     def render(self) -> Text:
@@ -93,6 +105,8 @@ class WaveformWidget(Widget):
             slices=self._slices,
             start_marker=self._start_marker,
             end_marker=self._end_marker,
+            focused_marker=self._focused_marker,
+            segment_marker_positions=self._segment_marker_positions,
         )
 
         # Format with borders using existing function
