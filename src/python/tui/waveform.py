@@ -17,6 +17,8 @@ def render_waveform(
     slices: Optional[list[float]] = None,
     start_marker: float = 0.0,
     end_marker: Optional[float] = None,
+    focused_marker: Optional[str] = None,
+    segment_marker_positions: Optional[list[float]] = None,
 ) -> list[str]:
     """Render audio data as ASCII waveform.
 
@@ -30,6 +32,8 @@ def render_waveform(
         slices: List of slice positions in seconds
         start_marker: L marker position in seconds
         end_marker: R marker position in seconds (None = end of file)
+        focused_marker: ID of the currently focused marker (e.g., "L", "R", "seg_01")
+        segment_marker_positions: List of segment marker positions (seconds)
 
     Returns:
         List of strings representing the waveform rows
@@ -52,7 +56,8 @@ def render_waveform(
 
     # Build slice marker row
     slice_row = _build_marker_row(
-        width, start_time, end_time, slices, start_marker, end_marker
+        width, start_time, end_time, slices, start_marker, end_marker,
+        focused_marker, segment_marker_positions
     )
     lines.append(slice_row)
 
@@ -100,8 +105,21 @@ def _build_marker_row(
     slices: Optional[list[float]],
     start_marker: float,
     end_marker: float,
+    focused_marker: Optional[str] = None,
+    segment_marker_positions: Optional[list[float]] = None,
 ) -> str:
-    """Build the row showing L/R markers and slice positions."""
+    """Build the row showing L/R markers and slice positions.
+
+    Args:
+        width: Width of the display in characters
+        start_time: Start of visible window (seconds)
+        end_time: End of visible window (seconds)
+        slices: List of slice/segment positions (seconds)
+        start_marker: L marker position (seconds)
+        end_marker: R marker position (seconds)
+        focused_marker: ID of focused marker (e.g., "L", "R", "seg_01")
+        segment_marker_positions: List of segment marker positions (seconds) for focus indication
+    """
     row = [" "] * width
     duration = end_time - start_time
     if duration <= 0:
@@ -110,19 +128,49 @@ def _build_marker_row(
     def time_to_col(t: float) -> int:
         return int((t - start_time) / duration * (width - 1))
 
-    # Place L marker
+    # Place L marker - show as [L] if focused
     if start_time <= start_marker <= end_time:
         col = time_to_col(start_marker)
         if 0 <= col < width:
-            row[col] = "L"
+            if focused_marker == "L":
+                # Show focused L marker with brackets
+                if col > 0:
+                    row[col - 1] = "["
+                row[col] = "L"
+                if col < width - 1:
+                    row[col + 1] = "]"
+            else:
+                row[col] = "L"
 
-    # Place R marker
+    # Place R marker - show as [R] if focused
     if start_time <= end_marker <= end_time:
         col = time_to_col(end_marker)
         if 0 <= col < width:
-            row[col] = "R"
+            if focused_marker == "R":
+                # Show focused R marker with brackets
+                if col > 0 and row[col - 1] == " ":
+                    row[col - 1] = "["
+                row[col] = "R"
+                if col < width - 1:
+                    row[col + 1] = "]"
+            else:
+                row[col] = "R"
 
-    # Place slice markers
+    # Place segment markers (from MarkerManager)
+    if segment_marker_positions:
+        for i, seg_time in enumerate(segment_marker_positions):
+            if start_time < seg_time < end_time:
+                col = time_to_col(seg_time)
+                if 0 <= col < width and row[col] == " ":
+                    seg_id = f"seg_{i+1:02d}"
+                    if focused_marker and focused_marker.startswith("seg_"):
+                        # Check if this segment is focused by comparing positions
+                        # (a bit hacky but works for now)
+                        row[col] = "◆" if focused_marker == seg_id else "▼"
+                    else:
+                        row[col] = "▼"
+
+    # Place slice markers (legacy - from segment_manager)
     if slices:
         for slice_time in slices:
             if start_time < slice_time < end_time:

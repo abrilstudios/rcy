@@ -29,6 +29,7 @@ from segment_manager import get_segment_manager
 from config_manager import config
 from export_utils import ExportUtils
 from tui.widgets import WaveformWidget, CommandInput, CommandSuggester
+from tui.markers import MarkerManager
 from tui.agents import create_agent, BaseAgent
 from tui.agents.base import ToolRegistry
 
@@ -143,6 +144,11 @@ class RCYApp(App):
         Binding("space", "play_selection", "Play L→R", show=False),
         Binding("escape", "stop", "Stop", show=False),
         Binding("ctrl+c", "quit", "Quit", show=False),
+        # Marker focus bindings
+        Binding("left", "nudge_left", "Nudge Left", show=False),
+        Binding("right", "nudge_right", "Nudge Right", show=False),
+        Binding("[", "cycle_focus_prev", "Prev Marker", show=False),
+        Binding("]", "cycle_focus_next", "Next Marker", show=False),
     ]
 
     def __init__(self, preset_id: str = 'amen_classic'):
@@ -151,7 +157,14 @@ class RCYApp(App):
         self.model: Optional[WavAudioProcessor] = None
         self.segment_manager = get_segment_manager()
 
-        # View state
+        # Marker manager - unified focus model for L/R and segment markers
+        self.marker_manager = MarkerManager(
+            debounce_ms=50.0,
+            nudge_samples=441,  # ~10ms at 44100Hz
+            min_region_samples=441,  # ~10ms minimum region
+        )
+
+        # View state (legacy - kept for compatibility, synced from marker_manager)
         self.start_marker = 0.0
         self.end_marker = 0.0
         self.zoom_start = 0.0
@@ -394,6 +407,14 @@ EP-133 Commands:
             self.end_marker = self.model.total_time
             self.zoom_end = self.model.total_time
 
+            # Initialize marker manager with audio context
+            self.marker_manager.set_audio_context(
+                len(self.model.data_left),
+                self.model.sample_rate
+            )
+            # Sync legacy marker values from marker_manager
+            self._sync_markers_from_manager()
+
             if self.model.preset_info:
                 self.num_measures = self.model.preset_info.get('measures', 1)
 
@@ -407,6 +428,15 @@ EP-133 Commands:
             self.update_status(f"Error loading preset: {e}")
             logger.warning("Failed to initialize model: %s", e)
             return False
+
+    def _sync_markers_from_manager(self) -> None:
+        """Sync legacy start/end_marker from marker_manager."""
+        l_marker = self.marker_manager.get_marker("L")
+        r_marker = self.marker_manager.get_marker("R")
+        if l_marker and self.model:
+            self.start_marker = l_marker.position / self.model.sample_rate
+        if r_marker and self.model:
+            self.end_marker = r_marker.position / self.model.sample_rate
 
     def _on_open(self, filepath: Optional[str], preset_id: Optional[str]) -> None:
         if preset_id:
@@ -651,6 +681,9 @@ EP-133 Commands:
                 boundaries = self.segment_manager.get_boundaries()
                 slices = [b / self.model.sample_rate for b in boundaries]
                 waveform.set_slices(slices)
+
+                # Set focused marker for visual indication
+                waveform.set_focused_marker(self.marker_manager.focused_marker_id)
         except Exception:
             pass  # Widget may not exist yet
 
@@ -701,6 +734,40 @@ EP-133 Commands:
     def action_stop(self) -> None:
         """Stop playback."""
         self._on_stop()
+
+    def action_nudge_left(self) -> None:
+        """Nudge focused marker left."""
+        if self.marker_manager.nudge_left():
+            self._sync_markers_from_manager()
+            self._update_waveform()
+            focused = self.marker_manager.focused_marker
+            if focused and self.model:
+                pos_sec = focused.position / self.model.sample_rate
+                self.update_status(f"[{focused.id}] → {pos_sec:.3f}s")
+
+    def action_nudge_right(self) -> None:
+        """Nudge focused marker right."""
+        if self.marker_manager.nudge_right():
+            self._sync_markers_from_manager()
+            self._update_waveform()
+            focused = self.marker_manager.focused_marker
+            if focused and self.model:
+                pos_sec = focused.position / self.model.sample_rate
+                self.update_status(f"[{focused.id}] → {pos_sec:.3f}s")
+
+    def action_cycle_focus_next(self) -> None:
+        """Cycle focus to next marker (by position)."""
+        new_id = self.marker_manager.cycle_focus(reverse=False)
+        if new_id:
+            self._update_waveform()
+            self.update_status(f"Focus: {new_id}")
+
+    def action_cycle_focus_prev(self) -> None:
+        """Cycle focus to previous marker (by position)."""
+        new_id = self.marker_manager.cycle_focus(reverse=True)
+        if new_id:
+            self._update_waveform()
+            self.update_status(f"Focus: {new_id}")
 
     # Event handlers
     def on_command_input_segment_key_pressed(self, event: CommandInput.SegmentKeyPressed) -> None:
