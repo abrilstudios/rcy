@@ -252,6 +252,14 @@ class CommandInput(Input):
             self.history.reset_position()
             # Let parent Input handle the submit (don't prevent default)
 
+        elif key == "tab":
+            # Tab accepts the current suggestion (same as Right arrow)
+            # action_cursor_right accepts suggestions when at end of input
+            if self._suggestion:
+                self.value = self._suggestion
+                self.cursor_position = len(self.value)
+                event.prevent_default()
+
     def _handle_search_key(self, event) -> None:
         """Handle keys in search mode."""
         key = event.key
