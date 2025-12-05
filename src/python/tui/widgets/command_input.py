@@ -266,7 +266,7 @@ class CommandInput(Input):
         from tui.widgets.command_suggester import CommandSuggester
 
         # Get the suggester if it exists and is a CommandSuggester
-        suggester = getattr(self, '_suggester', None)
+        suggester = getattr(self, 'suggester', None)
         if not isinstance(suggester, CommandSuggester):
             # Fall back to accepting inline suggestion if available
             if self._suggestion:
