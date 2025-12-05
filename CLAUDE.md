@@ -25,6 +25,29 @@ just run
 
 ---
 
+## 🔧 **Environment Information Tool**
+
+For detailed environment information, run:
+
+```bash
+./tools/bin/env
+```
+
+This script provides:
+- Python environment details
+- How to run Python/pytest with the venv
+- OS information
+- Git status
+- Installed dependencies
+
+**Key Commands:**
+- `just run` - Run the TUI application
+- `just test` - Run all tests
+- `just test-file <file>` - Run a specific test file
+- `just setup` - Set up/reinstall the virtual environment
+
+---
+
 ## 📦 Project Structure
 
 RCY uses a modular directory layout with absolute imports and explicit runtime configuration.
