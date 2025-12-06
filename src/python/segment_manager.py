@@ -167,6 +167,28 @@ class SegmentStore:
         with self._lock:
             self._boundaries = [0, self._total_samples]
 
+    def set_region_boundaries(self, boundaries: list[int]) -> None:
+        """Set boundaries for a region (uses provided start/end, not 0/total_samples).
+
+        Unlike set_internal_boundaries(), this method does NOT add 0 and total_samples.
+        The provided boundaries list should include the region start and end positions.
+
+        Args:
+            boundaries: Complete list of boundary positions including region start/end
+        """
+        with self._lock:
+            if not boundaries:
+                return
+
+            # Validate boundaries
+            for b in boundaries:
+                if b < 0:
+                    raise ValueError(f"Boundary {b} cannot be negative")
+                if b > self._total_samples:
+                    raise ValueError(f"Boundary {b} exceeds total samples {self._total_samples}")
+
+            self._boundaries = sorted(set(boundaries))
+
 
 class SegmentManager:
     """Simplified segment management with guaranteed invariants."""
@@ -192,6 +214,19 @@ class SegmentManager:
             self._store.set_internal_boundaries(positions)
             self._notify_observers('split', position_count=len(positions))
 
+    def split_by_region_positions(self, positions: list[int]) -> None:
+        """Split audio at given positions within a region.
+
+        Unlike split_by_positions(), this does NOT add 0 and total_samples.
+        The positions list should include the region start and end.
+
+        Args:
+            positions: Complete list of boundary positions including region start/end
+        """
+        with self._lock:
+            self._store.set_region_boundaries(positions)
+            self._notify_observers('split', position_count=len(positions) - 2)
+
     def split_by_measures(self, num_measures: int, measure_resolution: int,
                           start_time: float, end_time: float) -> None:
         """Split audio region into equal divisions based on musical measures.
@@ -207,16 +242,20 @@ class SegmentManager:
             region_duration = end_time - start_time
             time_per_division = region_duration / total_divisions
 
-            # Create internal split positions using consistent time-to-position calculation
-            internal_positions: list[int] = []
-            for i in range(1, total_divisions):  # Skip start (0) and end (total_divisions)
+            # Build complete boundaries including region start and end
+            start_pos = self._time_to_position(start_time)
+            end_pos = self._time_to_position(end_time)
+
+            boundaries = [start_pos]
+            for i in range(1, total_divisions):
                 time = start_time + (i * time_per_division)
                 position = self._time_to_position(time)
-                internal_positions.append(position)
+                boundaries.append(position)
+            boundaries.append(end_pos)
 
-            # Update boundaries
-            self._store.set_internal_boundaries(internal_positions)
-            self._notify_observers('split', position_count=len(internal_positions))
+            # Set boundaries directly (using region bounds, not 0/total_samples)
+            self._store.set_region_boundaries(boundaries)
+            self._notify_observers('split', position_count=len(boundaries) - 2)
     
     def _time_to_position(self, time: float) -> int:
         """Convert time to sample position using consistent calculation."""
@@ -305,7 +344,7 @@ class SegmentManager:
         """Set all boundaries directly (including start/end).
 
         Args:
-            boundaries: Full list of boundary positions including 0 and total_samples
+            boundaries: Full list of boundary positions including region start/end
             sample_rate: Optional sample rate (uses existing if not provided)
         """
         with self._lock:
@@ -313,9 +352,8 @@ class SegmentManager:
                 # Use store's set_boundaries which sets sample_rate too
                 self._store.set_boundaries(boundaries, sample_rate)
             else:
-                # Filter out start/end and use set_internal_boundaries
-                internal = [b for b in boundaries if b != 0 and b != self._store._total_samples]
-                self._store.set_internal_boundaries(internal)
+                # Set boundaries directly (preserves region bounds, doesn't force 0/total_samples)
+                self._store.set_region_boundaries(boundaries)
             self._notify_observers('set_boundaries', boundary_count=len(boundaries))
 
     # Observer management

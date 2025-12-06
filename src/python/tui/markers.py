@@ -387,3 +387,21 @@ class MarkerManager:
     def pending_recompute(self) -> bool:
         """Check if a recompute is pending."""
         return self._debounce.pending_recompute
+
+    def set_region_markers(self, start_samples: int, end_samples: int) -> None:
+        """Set L/R region marker positions directly.
+
+        Args:
+            start_samples: Position for L marker in samples
+            end_samples: Position for R marker in samples
+        """
+        if "L" in self._markers:
+            self._markers["L"].position = max(0, start_samples)
+        if "R" in self._markers:
+            self._markers["R"].position = min(self._total_samples, end_samples)
+
+        # Apply constraints to any existing segment markers
+        if "L" in self._markers:
+            self._apply_marker_constraints(self._markers["L"])
+        if "R" in self._markers:
+            self._apply_marker_constraints(self._markers["R"])

@@ -29,7 +29,7 @@ from segment_manager import get_segment_manager
 from config_manager import config
 from export_utils import ExportUtils
 from tui.widgets import WaveformWidget, CommandInput, CommandSuggester
-from tui.markers import MarkerManager
+from tui.markers import MarkerManager, MarkerKind
 from tui.agents import create_agent, BaseAgent
 from tui.agents.base import ToolRegistry
 
@@ -465,10 +465,21 @@ EP-133 Commands:
                 len(self.model.data_left), self.model.sample_rate
             )
         elif measures:
-            self.model.split_by_measures(measures, measure_resolution=1)
+            # Pass L/R markers as region bounds
+            self.model.split_by_measures(
+                measures,
+                measure_resolution=1,
+                start_time=self.start_marker,
+                end_time=self.end_marker
+            )
         elif transients is not None:
             threshold = transients / 100.0
-            self.model.split_by_transients(threshold)
+            # Pass L/R markers as region bounds for transient detection
+            self.model.split_by_transients(
+                threshold,
+                start_time=self.start_marker,
+                end_time=self.end_marker
+            )
 
         # Sync segment boundaries to MarkerManager for unified focus/nudge
         boundaries = self.segment_manager.get_boundaries()
@@ -479,17 +490,36 @@ EP-133 Commands:
         self._update_waveform()
 
     def _on_markers(self, start: Optional[float], end: Optional[float]) -> None:
+        if not self.model:
+            return
+
         if start is None and end is None:
             self.start_marker = 0.0
-            self.end_marker = self.model.total_time if self.model else 0.0
+            self.end_marker = self.model.total_time
             self.update_status("Markers reset to full file")
         else:
             if start is not None:
                 self.start_marker = max(0.0, start)
             if end is not None:
-                max_time = self.model.total_time if self.model else float('inf')
+                max_time = self.model.total_time
                 self.end_marker = min(end, max_time)
             self.update_status(f"Markers: L={self.start_marker:.2f}s R={self.end_marker:.2f}s")
+
+        # Sync to MarkerManager
+        start_samples = int(self.start_marker * self.model.sample_rate)
+        end_samples = int(self.end_marker * self.model.sample_rate)
+        self.marker_manager.set_region_markers(start_samples, end_samples)
+
+        # Remove segments outside new region
+        self._remove_segments_outside_region()
+
+        # Sync boundaries to segment_manager
+        new_boundaries = self.marker_manager.get_boundaries()
+        self.segment_manager.set_boundaries(new_boundaries)
+
+        # Invalidate cache
+        self._cached_segment_times = None
+
         self._update_waveform()
 
     def _on_tempo(self, bpm: Optional[float], measure_count: Optional[int]) -> None:
@@ -499,9 +529,21 @@ EP-133 Commands:
 
         if measure_count:
             self.num_measures = measure_count
-            calculated_bpm = self.model.get_tempo(measure_count)
-            self.model.calculate_source_bpm(measure_count)
-            self.update_status(f"Source tempo: {calculated_bpm:.1f} BPM ({measure_count} measures)")
+            # Pass L/R region for tempo calculation
+            calculated_bpm = self.model.get_tempo(
+                measure_count,
+                start_time=self.start_marker,
+                end_time=self.end_marker
+            )
+            self.model.calculate_source_bpm(
+                measure_count,
+                start_time=self.start_marker,
+                end_time=self.end_marker
+            )
+            region_duration = self.end_marker - self.start_marker
+            self.update_status(
+                f"Source tempo: {calculated_bpm:.1f} BPM ({measure_count} bars in {region_duration:.2f}s)"
+            )
         elif bpm:
             self.target_bpm = bpm
             self.model.set_playback_tempo(True, int(bpm))
@@ -625,9 +667,15 @@ EP-133 Commands:
                 return "No audio loaded"
 
             self.num_measures = value
-            self.model.calculate_source_bpm(value)
+            # Use L/R region for tempo calculation
+            self.model.calculate_source_bpm(
+                value,
+                start_time=self.start_marker,
+                end_time=self.end_marker
+            )
             self._update_waveform()
-            return f"Set bars={value}, BPM={self.model.source_bpm:.1f}"
+            region_duration = self.end_marker - self.start_marker
+            return f"Set bars={value}, BPM={self.model.source_bpm:.1f} ({region_duration:.2f}s region)"
         elif setting == 'release':
             if not isinstance(value, (int, float)) or value < 0:
                 return "Error: release must be a positive number (ms)"
@@ -751,7 +799,22 @@ EP-133 Commands:
 
     def _on_marker_nudged(self) -> None:
         """Handle marker position change after nudge."""
+        focused = self.marker_manager.focused_marker
+
+        # Always sync for visual feedback first
         self._sync_markers_from_manager()
+
+        if focused and focused.kind in (MarkerKind.REGION_START, MarkerKind.REGION_END):
+            # L or R changed - delete segments outside new region
+            self._remove_segments_outside_region()
+
+            # Recalculate tempo for new region
+            if self.num_measures > 0 and self.model:
+                self.model.calculate_source_bpm(
+                    self.num_measures,
+                    start_time=self.start_marker,
+                    end_time=self.end_marker
+                )
 
         # Sync marker boundaries back to segment_manager for playback
         new_boundaries = self.marker_manager.get_boundaries()
@@ -759,13 +822,33 @@ EP-133 Commands:
 
         self._cached_segment_times = None  # Invalidate cache
         self._update_waveform()
-        focused = self.marker_manager.focused_marker
+
         if focused and self.model:
             pos_sec = focused.position / self.model.sample_rate
             # Show region for context
             self.update_status(
                 f"[{focused.id}] {pos_sec:.3f}s | Region: {self.start_marker:.3f}s - {self.end_marker:.3f}s"
             )
+
+    def _remove_segments_outside_region(self) -> None:
+        """Delete segment markers that fall outside L/R region."""
+        l_marker = self.marker_manager.get_marker("L")
+        r_marker = self.marker_manager.get_marker("R")
+        if not l_marker or not r_marker:
+            return
+
+        l_pos = l_marker.position
+        r_pos = r_marker.position
+
+        # Find segment markers outside the region
+        to_remove = []
+        for marker in self.marker_manager.get_segment_markers():
+            if marker.position <= l_pos or marker.position >= r_pos:
+                to_remove.append(marker.id)
+
+        # Remove them
+        for marker_id in to_remove:
+            self.marker_manager.remove_segment_marker(marker_id)
 
     def action_cycle_focus_next(self) -> None:
         """Cycle focus to next marker (by position)."""

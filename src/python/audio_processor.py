@@ -255,19 +255,39 @@ class WavAudioProcessor:
     def get_tempo(
         self,
         num_measures: int,
-        beats_per_measure: int = 4
+        beats_per_measure: int = 4,
+        start_time: float | None = None,
+        end_time: float | None = None
     ) -> float:
+        """Calculate tempo from region duration and measure count.
+
+        Args:
+            num_measures: Number of musical measures in the region
+            beats_per_measure: Beats per measure (default 4 for 4/4 time)
+            start_time: Start of region in seconds (defaults to 0)
+            end_time: End of region in seconds (defaults to total_time)
+
+        Returns:
+            Calculated tempo in BPM
+        """
+        # Use provided region or default to full file
+        start = start_time if start_time is not None else 0.0
+        end = end_time if end_time is not None else self.total_time
+        duration = end - start
+
         logger.debug("\n----- DETAILED GET_TEMPO CALCULATION -----")
         logger.debug("Input num_measures: %s", num_measures)
-        logger.debug("Total time: %ss = %s minutes", self.total_time, self.total_time/60)
+        logger.debug("Region: %ss to %ss (duration: %ss = %s minutes)",
+                    start, end, duration, duration/60)
 
         total_beats = num_measures * beats_per_measure
-        
-        total_time_minutes = self.total_time / 60
-        tempo = total_beats / total_time_minutes
 
-        logger.debug("Tempo calculation: %s beats / %s minutes = %s BPM", total_beats, total_time_minutes, tempo)
-        
+        duration_minutes = duration / 60
+        tempo = total_beats / duration_minutes
+
+        logger.debug("Tempo calculation: %s beats / %s minutes = %s BPM",
+                    total_beats, duration_minutes, tempo)
+
         return tempo
 
     def split_by_measures(self, num_measures: int, measure_resolution: int,
@@ -293,7 +313,22 @@ class WavAudioProcessor:
         # Return all boundaries for backward compatibility
         return self.segment_manager.get_boundaries()
 
-    def split_by_transients(self, threshold: float | None = None) -> list[int]:
+    def split_by_transients(
+        self,
+        threshold: float | None = None,
+        start_time: float | None = None,
+        end_time: float | None = None
+    ) -> list[int]:
+        """Split audio by transient detection within a region.
+
+        Args:
+            threshold: Detection threshold (0-1), defaults to config value
+            start_time: Start of region in seconds (defaults to 0)
+            end_time: End of region in seconds (defaults to total_time)
+
+        Returns:
+            List of boundary positions in samples
+        """
         # Get transient detection parameters from config
         td_config = config.get_setting("audio", "transientDetection", {})
 
@@ -310,7 +345,12 @@ class WavAudioProcessor:
         # Calculate delta based on the threshold and delta factor
         delta = threshold * delta_factor
 
-        logger.debug("split_by_transients: threshold=%s, wait=%s, delta=%s", threshold, wait_time, delta)
+        # Use provided region or default to full file
+        start = start_time if start_time is not None else 0.0
+        end = end_time if end_time is not None else self.total_time
+
+        logger.debug("split_by_transients: threshold=%s, wait=%s, delta=%s, region=[%s, %s]",
+                    threshold, wait_time, delta, start, end)
 
         # Use left channel for transient detection
         onset_env = librosa.onset.onset_strength(y=self.data_left, sr=self.sample_rate)
@@ -322,11 +362,21 @@ class WavAudioProcessor:
             pre_max=pre_max,
             post_max=post_max,
         )
-        onset_samples = librosa.frames_to_samples(onsets)
-        internal_positions = onset_samples.tolist()
+        onset_times = librosa.frames_to_time(onsets, sr=self.sample_rate)
 
-        # Update SegmentManager (automatically adds start/end boundaries)
-        self.segment_manager.split_by_positions(internal_positions)
+        # Filter onsets to region (keep only those strictly inside L-R)
+        filtered_times = [t for t in onset_times if start < t < end]
+
+        # Build positions list: region start + filtered onsets + region end
+        start_sample = int(start * self.sample_rate)
+        end_sample = int(end * self.sample_rate)
+
+        region_positions = [start_sample]
+        region_positions.extend([int(t * self.sample_rate) for t in filtered_times])
+        region_positions.append(end_sample)
+
+        # Update SegmentManager with region boundaries (uses L/R, not 0/total)
+        self.segment_manager.split_by_region_positions(region_positions)
 
         # Return all boundaries for backward compatibility
         return self.segment_manager.get_boundaries()
@@ -388,21 +438,36 @@ class WavAudioProcessor:
     def get_sample_at_time(self, time: float) -> int:
         return int(time * self.sample_rate)
     
-    def calculate_source_bpm(self, measures: int | None = None) -> float:
-        """Calculate source BPM based on audio duration and measure count
+    def calculate_source_bpm(
+        self,
+        measures: int | None = None,
+        start_time: float | None = None,
+        end_time: float | None = None
+    ) -> float:
+        """Calculate source BPM based on region duration and measure count.
 
         Formula: Source BPM = (60 × beats) / duration
         Where beats = measures × 4 (assuming 4/4 time signature)
 
+        Args:
+            measures: Number of musical measures in the region
+            start_time: Start of region in seconds (defaults to 0)
+            end_time: End of region in seconds (defaults to total_time)
+
         Returns:
             float: The calculated BPM value (self.source_bpm)
         """
+        # Use provided region or default to full file
+        start = start_time if start_time is not None else 0.0
+        end = end_time if end_time is not None else self.total_time
+        duration = end - start
+
         logger.debug("\n===== DETAILED BPM CALCULATION DEBUGGING =====")
         logger.debug("Input measures value: %s", measures)
-        logger.warning("Total time: %ss", self.total_time)
+        logger.debug("Region: %ss to %ss (duration: %ss)", start, end, duration)
 
-        if self.total_time <= 0:
-            logger.warning("WARNING: Cannot calculate source BPM, invalid duration: %s", self.total_time)
+        if duration <= 0:
+            logger.warning("WARNING: Cannot calculate source BPM, invalid duration: %s", duration)
             self.source_bpm = 120.0  # Default fallback
             return self.source_bpm
 
@@ -410,16 +475,16 @@ class WavAudioProcessor:
         beats_per_measure = 4  # Standard 4/4 time for breakbeats
         logger.debug("Using beats_per_measure: %s", beats_per_measure)
 
-        # Calculate total beats in the audio file
+        # Calculate total beats in the region
         if measures is None:
             measures = 1
         total_beats = measures * beats_per_measure
 
         # Calculate BPM based on total beats
         old_source_bpm = getattr(self, 'source_bpm', None)
-        self.source_bpm = (60.0 * total_beats) / self.total_time
+        self.source_bpm = (60.0 * total_beats) / duration
 
-        logger.debug("BPM CALCULATION: (%s × %s) / %s = %s BPM", 60.0, total_beats, self.total_time, self.source_bpm)
+        logger.debug("BPM CALCULATION: (%s × %s) / %s = %s BPM", 60.0, total_beats, duration, self.source_bpm)
         if old_source_bpm is not None:
             logger.debug("Source BPM changed from %s to %s", old_source_bpm, self.source_bpm)
 
