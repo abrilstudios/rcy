@@ -177,8 +177,9 @@ class CommandInput(Input):
 
     class MarkerNudge(Message):
         """Posted when marker nudge key is pressed."""
-        def __init__(self, direction: str) -> None:
+        def __init__(self, direction: str, mode: str = "normal") -> None:
             self.direction = direction  # "left" or "right"
+            self.mode = mode  # "normal", "fine", or "coarse"
             super().__init__()
 
     class MarkerCycleFocus(Message):
@@ -221,14 +222,16 @@ class CommandInput(Input):
                 event.prevent_default()
                 return
 
-            # Arrow keys nudge the focused marker
-            if key == "left":
-                self.post_message(self.MarkerNudge("left"))
+            # Arrow keys nudge the focused marker (with modifier support)
+            if key in ("left", "shift+left", "ctrl+left"):
+                mode = "fine" if "shift" in key else ("coarse" if "ctrl" in key else "normal")
+                self.post_message(self.MarkerNudge("left", mode))
                 event.stop()
                 event.prevent_default()
                 return
-            if key == "right":
-                self.post_message(self.MarkerNudge("right"))
+            if key in ("right", "shift+right", "ctrl+right"):
+                mode = "fine" if "shift" in key else ("coarse" if "ctrl" in key else "normal")
+                self.post_message(self.MarkerNudge("right", mode))
                 event.stop()
                 event.prevent_default()
                 return

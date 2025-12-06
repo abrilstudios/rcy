@@ -134,6 +134,9 @@ def _build_marker_row(
         if 0 <= col < width:
             if focused_marker == "L":
                 # Show focused L marker with brackets
+                # If at left edge, shift right to fit [L]
+                if col < 1:
+                    col = 1
                 if col > 0:
                     row[col - 1] = "["
                 row[col] = "L"
@@ -148,6 +151,9 @@ def _build_marker_row(
         if 0 <= col < width:
             if focused_marker == "R":
                 # Show focused R marker with brackets
+                # If at right edge, shift left to fit [R]
+                if col >= width - 1:
+                    col = width - 2
                 if col > 0 and row[col - 1] == " ":
                     row[col - 1] = "["
                 row[col] = "R"

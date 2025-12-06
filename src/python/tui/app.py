@@ -145,8 +145,6 @@ class RCYApp(App):
         Binding("escape", "stop", "Stop", show=False),
         Binding("ctrl+c", "quit", "Quit", show=False),
         # Marker focus bindings
-        Binding("left", "nudge_left", "Nudge Left", show=False),
-        Binding("right", "nudge_right", "Nudge Right", show=False),
         Binding("[", "cycle_focus_prev", "Prev Marker", show=False),
         Binding("]", "cycle_focus_next", "Next Marker", show=False),
     ]
@@ -219,7 +217,7 @@ class RCYApp(App):
         from tui.agents.tools import (
             SliceTool, PresetTool, OpenTool, MarkersTool,
             SetTool, TempoTool, PlayTool, StopTool, ExportTool,
-            ZoomTool, ModeTool, HelpTool, PresetsTool, QuitTool,
+            ZoomTool, ModeTool, HelpTool, PresetsTool, QuitTool, CutTool, NudgeTool,
             EP133ConnectTool, EP133DisconnectTool, EP133StatusTool,
             EP133ListSoundsTool, EP133UploadTool, EP133AssignTool,
             EP133UploadBankTool, EP133ClearBankTool
@@ -244,6 +242,8 @@ class RCYApp(App):
         registry.register("help", HelpTool, self._agent_help)
         registry.register("presets", PresetsTool, self._agent_presets)
         registry.register("quit", QuitTool, self._agent_quit)
+        registry.register("cut", CutTool, self._agent_cut)
+        registry.register("nudge", NudgeTool, self._agent_nudge)
 
         # EP-133 tools
         registry.register("ep133_connect", EP133ConnectTool, ep133_connect)
@@ -337,6 +337,8 @@ class RCYApp(App):
   /set bars <n>           Set bars
   /set release <ms>       Tail decay to zero crossing (default: 3ms)
   /markers <s> <e>        Set markers
+  /cut                    Cut audio to L/R region
+  /nudge left|right       Nudge marker (--mode fine|coarse)
   /tempo <bpm>            Set tempo
   /play 1 2 3 4           Play pattern (1-0 for 1-10)
   /play q w e r           Play 11-14 (q-p for 11-20)
@@ -364,6 +366,69 @@ EP-133 Commands:
     def _agent_quit(self, args) -> str:
         self.exit()
         return "Goodbye!"
+
+    def _agent_cut(self, args) -> str:
+        """Handler for /cut command."""
+        return self._on_cut()
+
+    def _on_cut(self) -> str:
+        """Cut audio to L/R region in-place."""
+        if not self.model:
+            return "No audio loaded"
+
+        if self.start_marker >= self.end_marker:
+            return "Error: L marker must be before R marker"
+
+        old_duration = self.model.total_time
+        new_duration = self.end_marker - self.start_marker
+
+        # Use existing crop_to_time_range method
+        success = self.model.crop_to_time_range(self.start_marker, self.end_marker)
+
+        if success:
+            # Reset to full file state (same as fresh load)
+            self.start_marker = 0.0
+            self.end_marker = self.model.total_time
+            self.zoom_start = 0.0
+            self.zoom_end = self.model.total_time
+
+            # Sync marker manager with new audio context
+            self.marker_manager.set_audio_context(
+                len(self.model.data_left),
+                self.model.sample_rate
+            )
+
+            # Clear segment cache
+            self._cached_segment_times = None
+
+            # Update display
+            self._update_waveform()
+
+            return f"Cut: {old_duration:.2f}s → {new_duration:.2f}s"
+        else:
+            return "Cut failed"
+
+    def _agent_nudge(self, args) -> str:
+        """Handler for /nudge command."""
+        focused = self.marker_manager.focused_marker
+        if not focused:
+            return "No marker focused"
+
+        base = self.marker_manager._nudge_samples
+        if args.mode == "fine":
+            delta = max(1, base // 10)
+        elif args.mode == "coarse":
+            delta = base * 3
+        else:
+            delta = base
+
+        if args.direction == "left":
+            delta = -delta
+
+        if self.marker_manager.nudge_focused_marker(delta):
+            self._on_marker_nudged()
+            return f"[{focused.id}] moved {abs(delta)} samples"
+        return "Nudge failed"
 
     def process_command(self, command: str) -> str:
         """Process /command through default agent (fast path)."""
@@ -733,6 +798,9 @@ EP-133 Commands:
                 boundaries = self.segment_manager.get_boundaries()
                 slices = [b / self.model.sample_rate for b in boundaries]
                 waveform.set_slices(slices)
+                # Set internal segment markers only (exclude L/R) for focus indication
+                internal_segments = slices[1:-1] if len(slices) > 2 else []
+                waveform.set_segment_markers(internal_segments)
 
                 # Set focused marker for visual indication
                 waveform.set_focused_marker(self.marker_manager.focused_marker_id)
@@ -823,13 +891,6 @@ EP-133 Commands:
         self._cached_segment_times = None  # Invalidate cache
         self._update_waveform()
 
-        if focused and self.model:
-            pos_sec = focused.position / self.model.sample_rate
-            # Show region for context
-            self.update_status(
-                f"[{focused.id}] {pos_sec:.3f}s | Region: {self.start_marker:.3f}s - {self.end_marker:.3f}s"
-            )
-
     def _remove_segments_outside_region(self) -> None:
         """Delete segment markers that fall outside L/R region."""
         l_marker = self.marker_manager.get_marker("L")
@@ -852,17 +913,13 @@ EP-133 Commands:
 
     def action_cycle_focus_next(self) -> None:
         """Cycle focus to next marker (by position)."""
-        new_id = self.marker_manager.cycle_focus(reverse=False)
-        if new_id:
+        if self.marker_manager.cycle_focus(reverse=False):
             self._update_waveform()
-            self.update_status(f"Focus: {new_id}")
 
     def action_cycle_focus_prev(self) -> None:
         """Cycle focus to previous marker (by position)."""
-        new_id = self.marker_manager.cycle_focus(reverse=True)
-        if new_id:
+        if self.marker_manager.cycle_focus(reverse=True):
             self._update_waveform()
-            self.update_status(f"Focus: {new_id}")
 
     # Event handlers
     def on_command_input_segment_key_pressed(self, event: CommandInput.SegmentKeyPressed) -> None:
@@ -872,10 +929,21 @@ EP-133 Commands:
 
     def on_command_input_marker_nudge(self, event: CommandInput.MarkerNudge) -> None:
         """Handle marker nudge from CommandInput."""
-        if event.direction == "left":
-            self.action_nudge_left()
+        mode = getattr(event, 'mode', 'normal')
+
+        base = self.marker_manager._nudge_samples
+        if mode == "fine":
+            delta = max(1, base // 10)
+        elif mode == "coarse":
+            delta = base * 10
         else:
-            self.action_nudge_right()
+            delta = base
+
+        if event.direction == "left":
+            delta = -delta
+
+        if self.marker_manager.nudge_focused_marker(delta):
+            self._on_marker_nudged()
 
     def on_command_input_marker_cycle_focus(self, event: CommandInput.MarkerCycleFocus) -> None:
         """Handle marker focus cycle from CommandInput."""

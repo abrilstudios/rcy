@@ -132,6 +132,27 @@ class QuitTool(BaseModel):
     pass
 
 
+class CutTool(BaseModel):
+    """Cut audio to L/R region in-place.
+
+    Trims the audio file to the region between the L and R markers,
+    discarding audio outside this region. The markers are then reset
+    to cover the new (trimmed) file.
+    """
+    pass
+
+
+class NudgeTool(BaseModel):
+    """Nudge the focused marker left or right.
+
+    Args:
+        direction: 'left' or 'right'
+        mode: 'normal' (1x), 'fine' (0.1x), or 'coarse' (10x)
+    """
+    direction: str = Field(..., pattern="^(left|right)$", description="Nudge direction")
+    mode: str = Field("normal", pattern="^(normal|fine|coarse)$", description="Nudge amount: normal, fine (0.1x), coarse (10x)")
+
+
 # EP-133 Tools
 # ------------
 # These tools provide integration with the Teenage Engineering EP-133 K.O. II
@@ -238,6 +259,8 @@ TOOL_SCHEMAS = {
     "help": HelpTool,
     "presets": PresetsTool,
     "quit": QuitTool,
+    "cut": CutTool,
+    "nudge": NudgeTool,
     # EP-133 tools
     "ep133_connect": EP133ConnectTool,
     "ep133_disconnect": EP133DisconnectTool,
@@ -262,4 +285,6 @@ TOOL_ALIASES = {
     "?": "help",
     "q": "quit",
     "x": "stop",
+    "c": "cut",
+    "n": "nudge",
 }
