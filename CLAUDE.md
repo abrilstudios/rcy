@@ -123,19 +123,3 @@ RCY uses a modular directory layout with absolute imports and explicit runtime c
 - Update the issue description if needed to reflect the actual problem and solution
 - **Important**: You do not get credit for your work if you don't update the issue!
 
-## 🤖 L1/L2 Workflow
-
-RCy uses a tiered approach for AI assistants:
-
-- **Claude (L2)**: Handles complex tasks, system design, and code reviews
-- **Claude Jr. (L1)**: Handles simpler, well-defined tasks like documentation updates and routine code changes
-
-### Guidelines for L1/L2 Interaction
-
-- Issues are labeled as `L1` or `L2` based on complexity
-- L2 can hand off appropriate subtasks to L1 by creating new issues
-- L1 submits work for review using the `review-needed` label
-- L2 provides feedback and approval for L1's work
-- Final integration and system-wide changes are managed by L2
-
-This workflow allows for efficient division of labor while maintaining quality control.
