@@ -239,6 +239,34 @@ class MarkerManager:
 
         return True
 
+    def delete_focused_marker(self) -> tuple[bool, str]:
+        """Delete the currently focused marker if it's a segment marker.
+
+        L/R region markers cannot be deleted.
+
+        Returns:
+            Tuple of (success, message):
+            - (True, marker_id) if deleted
+            - (False, reason) if cannot delete
+        """
+        marker = self.focused_marker
+        if not marker:
+            return (False, "No marker focused")
+
+        if marker.kind in (MarkerKind.REGION_START, MarkerKind.REGION_END):
+            return (False, "Cannot delete L/R region markers")
+
+        marker_id = marker.id
+        deleted_pos = marker.position
+
+        # Remove the marker
+        del self._markers[marker_id]
+
+        # Focus nearest marker after delete
+        self._focus_nearest_after_delete(deleted_pos)
+
+        return (True, marker_id)
+
     def _focus_nearest_after_delete(self, deleted_position: int) -> None:
         """Focus nearest marker after deletion."""
         if not self._markers:
@@ -405,3 +433,79 @@ class MarkerManager:
             self._apply_marker_constraints(self._markers["L"])
         if "R" in self._markers:
             self._apply_marker_constraints(self._markers["R"])
+
+    # --- Musical Position Methods ---
+
+    def bar_beat_to_samples(
+        self,
+        bar: int,
+        beat: float,
+        tempo_bpm: float,
+        beats_per_bar: int = 4,
+        region_start_samples: int = 0,
+    ) -> int:
+        """Convert bar.beat position to sample position.
+
+        Args:
+            bar: Bar number (1-based)
+            beat: Beat within bar (1-based, can be fractional)
+            tempo_bpm: Tempo in beats per minute
+            beats_per_bar: Beats per bar (default 4 for 4/4)
+            region_start_samples: Start of region in samples (offset)
+
+        Returns:
+            Sample position (absolute, including region offset)
+        """
+        if tempo_bpm <= 0:
+            return region_start_samples
+
+        seconds_per_beat = 60.0 / tempo_bpm
+        samples_per_beat = seconds_per_beat * self._sample_rate
+
+        # Convert to 0-based
+        total_beats = (bar - 1) * beats_per_bar + (beat - 1)
+        raw_samples = int(total_beats * samples_per_beat)
+
+        return region_start_samples + raw_samples
+
+    def find_or_create_marker_at(
+        self,
+        position: int,
+        snap_samples: int = 100,
+    ) -> str:
+        """Find nearby marker or create new one at position.
+
+        If a segment marker exists within snap_samples, move it to position.
+        Otherwise, create a new segment marker.
+
+        Args:
+            position: Target sample position
+            snap_samples: Snap threshold in samples
+
+        Returns:
+            ID of the marker (existing or new)
+        """
+        # Clamp to region
+        l_pos = self._markers["L"].position
+        r_pos = self._markers["R"].position
+        position = max(l_pos, min(position, r_pos))
+
+        # Find nearest segment marker
+        nearest_id = None
+        nearest_dist = float('inf')
+
+        for m in self._markers.values():
+            if m.kind != MarkerKind.SEGMENT:
+                continue
+            dist = abs(m.position - position)
+            if dist < nearest_dist:
+                nearest_dist = dist
+                nearest_id = m.id
+
+        # If close enough, move existing marker
+        if nearest_id is not None and nearest_dist <= snap_samples:
+            self._markers[nearest_id].position = position
+            return nearest_id
+
+        # Otherwise create new marker
+        return self.add_segment_marker(position)

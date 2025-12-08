@@ -188,11 +188,15 @@ class CommandInput(Input):
             self.reverse = reverse
             super().__init__()
 
+    class MarkerDelete(Message):
+        """Posted when DEL key is pressed to delete focused marker."""
+        pass
+
     def _set_mode(self, mode: str) -> None:
         """Switch between insert and segment modes."""
         self._mode = mode
         if mode == self.MODE_SEGMENT:
-            self.placeholder = "[SEGMENT] 1-0/qwerty play | [/] focus | ←→ nudge | i=insert"
+            self.placeholder = "[SEGMENT] 1-0/qwerty play | [/] focus | ←→ nudge | DEL delete | i=insert"
         else:
             self.placeholder = "[INSERT] Type for AI, /cmd direct | ESC for segment mode"
 
@@ -244,6 +248,13 @@ class CommandInput(Input):
                 return
             if check_key == "]":
                 self.post_message(self.MarkerCycleFocus(reverse=False))
+                event.stop()
+                event.prevent_default()
+                return
+
+            # DEL/Backspace deletes focused marker
+            if key in ("delete", "backspace"):
+                self.post_message(self.MarkerDelete())
                 event.stop()
                 event.prevent_default()
                 return

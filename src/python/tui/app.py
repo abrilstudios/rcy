@@ -215,7 +215,7 @@ class RCYApp(App):
     def _register_agent_tools(self, registry: ToolRegistry) -> None:
         """Register tool handlers with the agent's tool registry."""
         from tui.agents.tools import (
-            SliceTool, PresetTool, OpenTool, MarkersTool,
+            SliceTool, PresetTool, OpenTool, MarkersTool, MarkerTool,
             SetTool, TempoTool, PlayTool, StopTool, ExportTool,
             ZoomTool, ModeTool, HelpTool, PresetsTool, QuitTool, CutTool, NudgeTool,
             EP133ConnectTool, EP133DisconnectTool, EP133StatusTool,
@@ -232,6 +232,7 @@ class RCYApp(App):
         registry.register("preset", PresetTool, self._agent_preset)
         registry.register("open", OpenTool, self._agent_open)
         registry.register("markers", MarkersTool, self._agent_markers)
+        registry.register("marker", MarkerTool, self._agent_marker)
         registry.register("set", SetTool, self._agent_set)
         registry.register("tempo", TempoTool, self._agent_tempo)
         registry.register("play", PlayTool, self._agent_play)
@@ -290,6 +291,64 @@ class RCYApp(App):
         self._on_markers(args.start, args.end)
         return f"Markers set: L={args.start:.2f}s R={args.end:.2f}s"
 
+    def _agent_marker(self, args) -> str:
+        """Handler for /marker command - place marker at bar.beat position."""
+        if not self.model:
+            return "No audio loaded"
+
+        if self.model.source_bpm <= 0:
+            return "Tempo not set. Use /set bars <n> first"
+
+        # Parse position string (e.g., "3.2" -> bar=3, beat=2)
+        position_str = args.position
+        if "." in position_str:
+            parts = position_str.split(".")
+            bar = int(parts[0])
+            beat = float(parts[1]) if len(parts) > 1 else 1.0
+        else:
+            bar = int(position_str)
+            beat = 1.0
+
+        if bar < 1:
+            return "Bar must be >= 1"
+        if beat < 1:
+            return "Beat must be >= 1"
+
+        # Get region start in samples
+        l_marker = self.marker_manager.get_marker("L")
+        region_start_samples = l_marker.position if l_marker else 0
+
+        # Convert bar.beat to samples
+        target_samples = self.marker_manager.bar_beat_to_samples(
+            bar=bar,
+            beat=beat,
+            tempo_bpm=self.model.source_bpm,
+            beats_per_bar=4,
+            region_start_samples=region_start_samples,
+        )
+
+        # Find or create marker at position (with snap)
+        snap_samples = int(0.01 * self.model.sample_rate)  # 10ms snap
+        marker_id = self.marker_manager.find_or_create_marker_at(
+            position=target_samples,
+            snap_samples=snap_samples,
+        )
+
+        # Focus the marker
+        self.marker_manager.set_focus(marker_id)
+
+        # Sync to segment manager
+        new_boundaries = self.marker_manager.get_boundaries()
+        self.segment_manager.set_boundaries(new_boundaries)
+
+        # Invalidate cache and redraw
+        self._cached_segment_times = None
+        self._update_waveform()
+
+        # Format position for feedback
+        time_sec = target_samples / self.model.sample_rate
+        return f"Marker {marker_id} at bar {bar}.{beat:.0f} ({time_sec:.3f}s)"
+
     def _agent_set(self, args) -> str:
         return self._on_set(args.setting, args.value)
 
@@ -337,6 +396,7 @@ class RCYApp(App):
   /set bars <n>           Set bars
   /set release <ms>       Tail decay to zero crossing (default: 3ms)
   /markers <s> <e>        Set markers
+  /marker <bar.beat>      Place marker at bar.beat (e.g., /marker 3.2)
   /cut                    Cut audio to L/R region
   /nudge left|right       Nudge marker (--mode fine|coarse)
   /tempo <bpm>            Set tempo
@@ -951,6 +1011,23 @@ EP-133 Commands:
             self.action_cycle_focus_prev()
         else:
             self.action_cycle_focus_next()
+
+    def on_command_input_marker_delete(self, event: CommandInput.MarkerDelete) -> None:
+        """Handle marker delete from CommandInput (DEL key in segment mode)."""
+        success, message = self.marker_manager.delete_focused_marker()
+
+        if success:
+            # Sync boundaries back to segment_manager
+            new_boundaries = self.marker_manager.get_boundaries()
+            self.segment_manager.set_boundaries(new_boundaries)
+
+            # Invalidate cache and redraw
+            self._cached_segment_times = None
+            self._update_waveform()
+
+            self.update_status(f"Deleted marker {message}")
+        else:
+            self.update_status(message)
 
     def on_input_submitted(self, event) -> None:
         """Handle command submission from Input widget."""

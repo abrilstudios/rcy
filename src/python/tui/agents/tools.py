@@ -153,6 +153,21 @@ class NudgeTool(BaseModel):
     mode: str = Field("normal", pattern="^(normal|fine|coarse)$", description="Nudge amount: normal, fine (0.1x), coarse (10x)")
 
 
+class MarkerTool(BaseModel):
+    """Place or move a segment marker at a musical position (bar.beat).
+
+    Position format: X.Y where X is bar (1-based), Y is beat (1-based).
+    Examples: 1.1 (start), 2.3 (bar 2, beat 3), 3.1 (bar 3, beat 1)
+
+    The marker is quantized to the grid resolution and clamped to the L/R region.
+    If a marker exists nearby, it is moved; otherwise a new one is created.
+
+    Args:
+        position: Bar.beat position (e.g., '3.2' for bar 3, beat 2)
+    """
+    position: str = Field(..., pattern=r"^\d+\.?\d*$", description="Bar.beat position (e.g., '3.2')")
+
+
 # EP-133 Tools
 # ------------
 # These tools provide integration with the Teenage Engineering EP-133 K.O. II
@@ -249,6 +264,7 @@ TOOL_SCHEMAS = {
     "preset": PresetTool,
     "open": OpenTool,
     "markers": MarkersTool,
+    "marker": MarkerTool,
     "set": SetTool,
     "tempo": TempoTool,
     "play": PlayTool,
