@@ -11,8 +11,13 @@ class CommandSuggester(Suggester):
     Provides completions for:
     - Command names after '/' (e.g., /pre -> /preset)
     - Preset IDs after '/preset ' (e.g., /preset rl_ -> /preset rl_hot_pants)
-    - Bank letters after '/ep133_upload_bank ' (A, B, C, D)
+    - EP-133 subcommands after '/ep133 ' (connect, upload, clear, etc.)
+    - Bank letters after '/ep133 upload ' or '/ep133 clear ' (A, B, C, D)
     """
+
+    # EP-133 subcommands
+    EP133_SUBCOMMANDS = ["connect", "disconnect", "status", "set", "list", "upload", "clear"]
+    EP133_BANKS = ["A", "B", "C", "D"]
 
     def __init__(self, config_manager=None):
         """Initialize the suggester.
@@ -26,7 +31,7 @@ class CommandSuggester(Suggester):
         # Registry of command-specific completers
         self._completers = {
             "preset": self._complete_preset,
-            "ep133_upload_bank": self._complete_bank,
+            "ep133": self._complete_ep133,
         }
 
     async def get_suggestion(self, value: str) -> str | None:
@@ -100,20 +105,33 @@ class CommandSuggester(Suggester):
             return f"/preset {matches[0]}"
         return None
 
-    def _complete_bank(self, prefix: str) -> str | None:
-        """Complete an EP-133 bank letter.
+    def _complete_ep133(self, arg_str: str) -> str | None:
+        """Complete EP-133 subcommands and their arguments.
 
         Args:
-            prefix: Partial bank letter
+            arg_str: Everything after '/ep133 '
 
         Returns:
-            Full command with bank suggestion, or None
+            Full command suggestion, or None
         """
-        banks = ["A", "B", "C", "D"]
-        matches = [b for b in banks if b.startswith(prefix.upper())]
+        parts = arg_str.split()
 
-        if matches:
-            return f"/ep133_upload_bank {matches[0]}"
+        if len(parts) == 0 or (len(parts) == 1 and " " not in arg_str):
+            # Completing subcommand
+            prefix = parts[0] if parts else ""
+            matches = [s for s in self.EP133_SUBCOMMANDS if s.startswith(prefix.lower())]
+            if matches:
+                return f"/ep133 {matches[0]}"
+            return None
+
+        # Have subcommand, check if it needs bank argument
+        subcmd = parts[0].lower()
+        if subcmd in ("upload", "clear"):
+            bank_prefix = parts[1] if len(parts) > 1 else ""
+            matches = [b for b in self.EP133_BANKS if b.startswith(bank_prefix.upper())]
+            if matches:
+                return f"/ep133 {subcmd} {matches[0]}"
+
         return None
 
     def get_all_matches(self, value: str) -> list[str]:
@@ -149,8 +167,31 @@ class CommandSuggester(Suggester):
         if cmd == "preset" and self.config:
             presets = [p[0] for p in self.config.get_preset_list()]
             return sorted([f"/preset {p}" for p in presets if p.startswith(arg_prefix)])
-        elif cmd == "ep133_upload_bank":
-            banks = ["A", "B", "C", "D"]
-            return [f"/ep133_upload_bank {b}" for b in banks if b.startswith(arg_prefix.upper())]
+        elif cmd == "ep133":
+            return self._get_ep133_matches(arg_prefix)
+
+        return []
+
+    def _get_ep133_matches(self, arg_str: str) -> list[str]:
+        """Get all EP-133 completion matches.
+
+        Args:
+            arg_str: Everything after '/ep133 '
+
+        Returns:
+            List of matching completions
+        """
+        parts = arg_str.split()
+
+        if len(parts) == 0 or (len(parts) == 1 and " " not in arg_str):
+            # Completing subcommand
+            prefix = parts[0] if parts else ""
+            return [f"/ep133 {s}" for s in self.EP133_SUBCOMMANDS if s.startswith(prefix.lower())]
+
+        # Have subcommand, check if it needs bank argument
+        subcmd = parts[0].lower()
+        if subcmd in ("upload", "clear"):
+            bank_prefix = parts[1] if len(parts) > 1 else ""
+            return [f"/ep133 {subcmd} {b}" for b in self.EP133_BANKS if b.startswith(bank_prefix.upper())]
 
         return []

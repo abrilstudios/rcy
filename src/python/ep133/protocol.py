@@ -262,7 +262,8 @@ def build_upload_init_request(
     slot: int,
     file_size: int,
     channels: int,
-    samplerate: int = 44100
+    samplerate: int = 44100,
+    name: str | None = None
 ) -> bytes:
     """Build upload initialization message.
 
@@ -277,12 +278,16 @@ def build_upload_init_request(
         file_size: Size of audio data in bytes
         channels: Number of channels (1 or 2)
         samplerate: Sample rate (default 44100)
+        name: Optional display name for the sample (default: slot number)
 
     Returns:
         Complete SysEx message
     """
-    # Filename is slot number as 3-digit string (e.g., "050" for slot 50)
-    filename = f"{slot:03d}".encode('utf-8')
+    # Filename - use custom name if provided, otherwise slot number
+    if name:
+        filename = name.encode('utf-8')
+    else:
+        filename = f"{slot:03d}".encode('utf-8')
 
     # Metadata JSON
     metadata = f'{{"channels":{channels},"samplerate":{samplerate}}}'.encode('utf-8')

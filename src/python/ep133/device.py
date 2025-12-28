@@ -4,8 +4,11 @@ Provides high-level access to the EP-133 over MIDI SysEx.
 """
 
 import json
+import logging
 import time
 from typing import Iterator
+
+logger = logging.getLogger(__name__)
 
 try:
     import mido
@@ -120,6 +123,20 @@ class EP133Device:
         req = build_file_init_request(self._next_seq())
         resp = self.send_and_receive(req)
         # We don't fail if init doesn't respond - device may already be initialized
+
+    def sync(self) -> bool:
+        """Re-initialize file protocol to sync device state.
+
+        Call this after bulk operations to ensure the device's internal
+        state is refreshed and external tools (like EP-133 Sample Tool)
+        see the updated state.
+
+        Returns:
+            True if sync succeeded
+        """
+        req = build_file_init_request(self._next_seq())
+        resp = self.send_and_receive(req)
+        return resp is not None and resp.get("status", 1) == 0
 
     def disconnect(self) -> None:
         """Close MIDI ports."""
@@ -303,13 +320,23 @@ class EP133Device:
             True if successful
         """
         json_str = json.dumps(metadata, separators=(',', ':'))
+        logger.debug(f"set_metadata: node_id={node_id}, metadata={json_str}")
+
         req = build_metadata_set_request(self._next_seq(), node_id, json_str)
         resp = self.send_and_receive(req)
 
         if resp is None:
+            logger.warning(f"set_metadata: no response for node_id={node_id}")
             return False
 
-        return resp.get("status", 1) == 0
+        status = resp.get("status", 1)
+        success = status == 0
+        if not success:
+            logger.warning(f"set_metadata: failed for node_id={node_id}, status={status}, resp={resp}")
+        else:
+            logger.debug(f"set_metadata: success for node_id={node_id}")
+
+        return success
 
     def assign_sound(self, pad_node_id: int, sound_number: int) -> bool:
         """Assign a sound to a pad.
@@ -322,6 +349,29 @@ class EP133Device:
             True if successful
         """
         return self.set_metadata(pad_node_id, {"sym": sound_number})
+
+    def verify_pad_assignment(self, pad_node_id: int, expected_sound: int) -> bool:
+        """Verify a pad is assigned to the expected sound.
+
+        Args:
+            pad_node_id: Pad's node ID
+            expected_sound: Expected sound number
+
+        Returns:
+            True if assignment matches
+        """
+        metadata = self.get_metadata(pad_node_id)
+        if metadata is None:
+            logger.warning(f"verify_pad_assignment: no metadata for node {pad_node_id}")
+            return False
+
+        actual = metadata.get("sym")
+        if actual != expected_sound:
+            logger.warning(f"verify_pad_assignment: node {pad_node_id} has sym={actual}, expected {expected_sound}")
+            return False
+
+        logger.debug(f"verify_pad_assignment: node {pad_node_id} correctly has sym={expected_sound}")
+        return True
 
     def walk_filesystem(self, node_id: int = 0, path: str = "/") -> Iterator[tuple[str, dict]]:
         """Walk the filesystem tree.
@@ -346,6 +396,7 @@ class EP133Device:
         audio_data: bytes,
         channels: int = 1,
         samplerate: int = 44100,
+        name: str | None = None,
         progress_callback=None
     ) -> bool:
         """Upload raw PCM audio to a sound slot.
@@ -355,6 +406,7 @@ class EP133Device:
             audio_data: Raw s16 PCM bytes (16-bit signed, little-endian)
             channels: Number of channels (1 or 2)
             samplerate: Sample rate (must be 44100)
+            name: Optional display name for the sample
             progress_callback: Optional callback(chunks_sent, total_chunks)
 
         Returns:
@@ -382,7 +434,8 @@ class EP133Device:
             slot,
             file_size,
             channels,
-            samplerate
+            samplerate,
+            name
         )
         init_resp = self.send_and_receive(init_req, timeout=5.0)
         if init_resp is None:

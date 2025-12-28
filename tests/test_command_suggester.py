@@ -113,31 +113,52 @@ class TestPresetCompletion:
         assert result is None
 
 
-class TestBankCompletion:
-    """Tests for EP-133 bank completion."""
+class TestEP133Completion:
+    """Tests for EP-133 subcommand and bank completion."""
 
     @pytest.fixture
     def suggester(self):
         return CommandSuggester(config_manager=None)
 
-    def test_complete_bank_empty(self, suggester):
-        """Test completing bank with empty prefix."""
-        result = _run(suggester.get_suggestion("/ep133_upload_bank "))
-        assert result == "/ep133_upload_bank A"
+    def test_complete_subcommand_empty(self, suggester):
+        """Test completing subcommand with empty prefix."""
+        result = _run(suggester.get_suggestion("/ep133 "))
+        # Returns first subcommand in workflow order: 'connect'
+        assert result == "/ep133 connect"
 
-    def test_complete_bank_b(self, suggester):
-        """Test completing bank B."""
-        result = _run(suggester.get_suggestion("/ep133_upload_bank B"))
-        assert result == "/ep133_upload_bank B"
+    def test_complete_subcommand_partial(self, suggester):
+        """Test completing partial subcommand."""
+        result = _run(suggester.get_suggestion("/ep133 up"))
+        assert result == "/ep133 upload"
 
-    def test_complete_bank_lowercase(self, suggester):
-        """Test completing bank with lowercase input."""
-        result = _run(suggester.get_suggestion("/ep133_upload_bank c"))
-        assert result == "/ep133_upload_bank C"
+    def test_complete_subcommand_connect(self, suggester):
+        """Test completing /ep133 co to /ep133 connect."""
+        result = _run(suggester.get_suggestion("/ep133 co"))
+        assert result == "/ep133 connect"
+
+    def test_complete_upload_bank_empty(self, suggester):
+        """Test completing bank after upload with empty prefix."""
+        result = _run(suggester.get_suggestion("/ep133 upload "))
+        assert result == "/ep133 upload A"
+
+    def test_complete_upload_bank_b(self, suggester):
+        """Test completing bank B after upload."""
+        result = _run(suggester.get_suggestion("/ep133 upload B"))
+        assert result == "/ep133 upload B"
+
+    def test_complete_clear_bank_lowercase(self, suggester):
+        """Test completing bank with lowercase input after clear."""
+        result = _run(suggester.get_suggestion("/ep133 clear c"))
+        assert result == "/ep133 clear C"
 
     def test_complete_bank_invalid(self, suggester):
         """Test no completion for invalid bank letter."""
-        result = _run(suggester.get_suggestion("/ep133_upload_bank X"))
+        result = _run(suggester.get_suggestion("/ep133 upload X"))
+        assert result is None
+
+    def test_no_bank_for_connect(self, suggester):
+        """Test no bank completion for connect subcommand."""
+        result = _run(suggester.get_suggestion("/ep133 connect "))
         assert result is None
 
 
@@ -192,12 +213,27 @@ class TestGetAllMatches:
         matches = suggester.get_all_matches("/xyz")
         assert matches == []
 
-    def test_all_bank_matches(self, suggester):
-        """Test getting all bank matches."""
-        matches = suggester.get_all_matches("/ep133_upload_bank ")
+    def test_all_ep133_subcommand_matches(self, suggester):
+        """Test getting all EP-133 subcommand matches."""
+        matches = suggester.get_all_matches("/ep133 ")
+        # Order matches workflow: connect, disconnect, status, set, list, upload, clear
+        expected = [
+            "/ep133 connect",
+            "/ep133 disconnect",
+            "/ep133 status",
+            "/ep133 set",
+            "/ep133 list",
+            "/ep133 upload",
+            "/ep133 clear",
+        ]
+        assert matches == expected
+
+    def test_all_ep133_bank_matches(self, suggester):
+        """Test getting all EP-133 bank matches for upload."""
+        matches = suggester.get_all_matches("/ep133 upload ")
         assert matches == [
-            "/ep133_upload_bank A",
-            "/ep133_upload_bank B",
-            "/ep133_upload_bank C",
-            "/ep133_upload_bank D",
+            "/ep133 upload A",
+            "/ep133 upload B",
+            "/ep133 upload C",
+            "/ep133 upload D",
         ]
