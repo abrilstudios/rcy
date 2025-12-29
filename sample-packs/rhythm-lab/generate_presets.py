@@ -73,7 +73,7 @@ def save_presets(presets: dict, presets_path: Path) -> None:
         json.dump(presets, f, indent=2)
 
 
-def main():
+def main() -> None:
     import argparse
     parser = argparse.ArgumentParser(description="Generate RCY presets from Rhythm Lab WAVs")
     parser.add_argument("--dry-run", action="store_true", help="Preview without writing")
@@ -101,8 +101,8 @@ def main():
         print("Download the archive from rhythm-lab.com and extract to audio/")
         return
 
-    print(f"\nRhythm Lab Preset Generator")
-    print(f"===========================")
+    print("\nRhythm Lab Preset Generator")
+    print("===========================")
     print(f"Found {len(wav_files)} WAV files in audio/")
     print()
 

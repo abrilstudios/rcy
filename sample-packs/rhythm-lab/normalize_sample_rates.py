@@ -69,7 +69,7 @@ def resample_file(wav_path: Path, dry_run: bool = False) -> tuple[bool, str]:
         return False, f"Conversion failed: {e}"
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Normalize WAV files to 44100 Hz")
     parser.add_argument("--dry-run", action="store_true", help="Preview without converting")
     parser.add_argument("--check", action="store_true", help="Just check sample rates")
@@ -129,7 +129,7 @@ def main():
 
         if corrupted:
             print(f"\nCorrupted (need re-extraction from archive): {len(corrupted)}")
-            for name, error in corrupted[:5]:
+            for name, _error in corrupted[:5]:
                 print(f"  {name}")
             if len(corrupted) > 5:
                 print(f"  ... and {len(corrupted) - 5} more")

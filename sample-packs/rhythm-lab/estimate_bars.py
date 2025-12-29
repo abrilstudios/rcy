@@ -61,22 +61,21 @@ def estimate_bars(duration: float) -> tuple[int, float, str]:
     return best_bars, best_bpm, confidence
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Estimate bar counts for presets")
     parser.add_argument("--dry-run", action="store_true", help="Preview without updating")
     parser.add_argument("--check", action="store_true", help="Just show analysis")
     args = parser.parse_args()
 
     script_dir = Path(__file__).parent
-    audio_dir = script_dir / "audio"
-    presets_path = script_dir.parent.parent / "presets" / "presets.json"
+    presets_path = script_dir.parent.parent / "config" / "presets" / "rhythm-lab.json"
 
     # Load presets
     with open(presets_path) as f:
         presets = json.load(f)
 
-    # Filter to rl_ presets
-    rl_presets = {k: v for k, v in presets.items() if k.startswith("rl_")}
+    # All presets in this file are rl_ presets
+    rl_presets = presets
 
     print(f"\nAnalyzing {len(rl_presets)} Rhythm Lab presets...\n")
 
@@ -92,7 +91,7 @@ def main():
         try:
             info = sf.info(filepath)
             duration = info.duration
-        except Exception:
+        except Exception:  # noqa: S112
             continue
 
         current_bars = preset.get("measures", 2)
