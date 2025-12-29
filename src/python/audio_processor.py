@@ -14,8 +14,9 @@ from custom_types import AudioArray, TimeArray, PresetInfo, PlaybackEndedCallbac
 import logging
 
 logger = logging.getLogger(__name__)
-# Import the high-performance audio engine
-from high_performance_audio import ImprovedAudioEngine, PlaybackMode
+# Import the ring buffer audio engine
+from ring_buffer_audio import RingBufferAudioEngine
+from enums import PlaybackMode
 
 # Import audio processing functions from shared utils
 from audio_utils import (
@@ -27,9 +28,9 @@ from audio_utils import (
 class AudioEngineObserver(SegmentObserver):
     """Observer that keeps audio engine synchronized with segment changes."""
 
-    audio_engine: Any  # ImprovedAudioEngine - using Any to avoid typing the full class
+    audio_engine: RingBufferAudioEngine
 
-    def __init__(self, audio_engine: Any) -> None:
+    def __init__(self, audio_engine: RingBufferAudioEngine) -> None:
         self.audio_engine = audio_engine
 
     def on_segments_changed(self, operation: str, **kwargs: Any) -> None:
@@ -48,7 +49,7 @@ class WavAudioProcessor:
     is_stereo: bool
     channels: int
     segment_manager: SegmentManager
-    audio_engine: Any  # ImprovedAudioEngine
+    audio_engine: RingBufferAudioEngine
     audio_observer: AudioEngineObserver
     playback_tempo_enabled: bool
     target_bpm: int
@@ -76,12 +77,12 @@ class WavAudioProcessor:
         # Initialize centralized segment management
         self.segment_manager = get_segment_manager()
 
-        # Initialize high-performance audio engine
-        logger.debug("Using high-performance audio engine")
-        self.audio_engine = ImprovedAudioEngine(
+        # Initialize ring buffer audio engine
+        logger.debug("Using ring buffer audio engine")
+        self.audio_engine = RingBufferAudioEngine(
             sample_rate=sample_rate,
             channels=2,  # Always use stereo for compatibility
-            blocksize=512  # Low latency block size
+            blocksize=256  # Low latency block size
         )
         self.audio_engine.set_playback_ended_callback(self._on_playback_ended)
 

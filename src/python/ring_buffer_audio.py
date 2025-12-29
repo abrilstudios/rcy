@@ -28,6 +28,9 @@ from enum import Enum, auto
 from typing import Callable, Any
 import logging
 
+from enums import PlaybackMode
+from config_manager import config
+
 logger = logging.getLogger(__name__)
 
 
@@ -360,6 +363,24 @@ class RingBufferAudioEngine:
         # Callbacks
         self._playback_ended_callback: Callable[[], None] | None = None
 
+        # Source audio for segment extraction (compatibility with ImprovedAudioEngine)
+        self._source_data_left: np.ndarray | None = None
+        self._source_data_right: np.ndarray | None = None
+        self._source_sample_rate: int = 44100
+        self._source_is_stereo: bool = False
+
+        # Playback mode and tempo
+        self._playback_mode: PlaybackMode = PlaybackMode.ONE_SHOT
+        self._playback_tempo_enabled: bool = False
+        self._source_bpm: float = 120.0
+        self._target_bpm: int = 120
+
+        # Current segment state (for loop mode)
+        self._current_segment_audio: np.ndarray | None = None
+        self._loop_start_time: float | None = None
+        self._loop_end_time: float | None = None
+        self._loop_reverse: bool = False
+
     @property
     def sample_rate(self) -> int:
         return self.config.sample_rate
@@ -489,6 +510,172 @@ class RingBufferAudioEngine:
 
         self._command_queue.put(_SetTempoCommand(bpm=bpm, source_bpm=source_bpm))
         return True
+
+    # =========================================================================
+    # Compatibility API (matches ImprovedAudioEngine interface)
+    # =========================================================================
+
+    def set_source_audio(
+        self,
+        data_left: np.ndarray,
+        data_right: np.ndarray,
+        sample_rate: int,
+        is_stereo: bool
+    ) -> None:
+        """
+        Set the source audio data for segment extraction.
+
+        Args:
+            data_left: Left channel audio data
+            data_right: Right channel audio data
+            sample_rate: Sample rate of the source audio
+            is_stereo: Whether the source is stereo
+        """
+        self._source_data_left = data_left
+        self._source_data_right = data_right
+        self._source_sample_rate = sample_rate
+        self._source_is_stereo = is_stereo
+        logger.debug("Set source audio: %d samples at %dHz, stereo=%s",
+                     len(data_left), sample_rate, is_stereo)
+
+    def play_segment(self, start_time: float, end_time: float, reverse: bool = False) -> bool:
+        """
+        Play a segment from the source audio.
+
+        Extracts the segment, applies processing, and plays it.
+        If in loop mode, loops the segment. Otherwise plays once.
+
+        Args:
+            start_time: Start time in seconds
+            end_time: End time in seconds
+            reverse: Whether to play in reverse
+
+        Returns:
+            True if playback started, False otherwise
+        """
+        if self._source_data_left is None:
+            logger.warning("No source audio data set")
+            return False
+
+        # Extract segment
+        start_sample = int(start_time * self._source_sample_rate)
+        end_sample = int(end_time * self._source_sample_rate)
+
+        # Clamp to valid range
+        start_sample = max(0, start_sample)
+        end_sample = min(len(self._source_data_left), end_sample)
+
+        if start_sample >= end_sample:
+            logger.warning("Invalid segment range: %d to %d", start_sample, end_sample)
+            return False
+
+        # Extract audio
+        left = self._source_data_left[start_sample:end_sample]
+        right = self._source_data_right[start_sample:end_sample]
+
+        # Create stereo array
+        if self._source_is_stereo:
+            audio = np.column_stack([left, right]).astype(np.float32)
+        else:
+            audio = mono_to_stereo(left.astype(np.float32))
+
+        # Apply reverse if requested
+        if reverse:
+            audio = audio[::-1].copy()
+
+        # Store for loop mode
+        self._current_segment_audio = audio
+        self._loop_start_time = start_time
+        self._loop_end_time = end_time
+        self._loop_reverse = reverse
+
+        # Play based on mode
+        if self._playback_mode == PlaybackMode.LOOP:
+            self.start_loop([audio])
+        else:
+            self.play_one_shot(audio)
+
+        return True
+
+    def set_playback_mode(self, mode: PlaybackMode) -> None:
+        """
+        Set the playback mode.
+
+        Args:
+            mode: PlaybackMode.ONE_SHOT or PlaybackMode.LOOP
+        """
+        self._playback_mode = mode
+        logger.debug("Playback mode set to: %s", mode.value)
+
+    def set_playback_tempo(self, enabled: bool, source_bpm: float, target_bpm: int) -> None:
+        """
+        Configure playback tempo using engine sample rate adjustment.
+
+        Args:
+            enabled: Whether tempo adjustment is enabled
+            source_bpm: Original BPM of the source material
+            target_bpm: Target BPM for playback
+        """
+        self._playback_tempo_enabled = enabled
+        self._source_bpm = source_bpm
+        self._target_bpm = target_bpm
+
+        logger.debug("Playback tempo: enabled=%s, %s -> %s BPM", enabled, source_bpm, target_bpm)
+
+        if enabled and source_bpm > 0:
+            tempo_ratio = target_bpm / source_bpm
+            new_sample_rate = int(self._source_sample_rate * tempo_ratio)
+            logger.debug("Adjusting sample rate from %d to %d Hz (ratio: %.3f)",
+                         self._source_sample_rate, new_sample_rate, tempo_ratio)
+            self._restart_with_sample_rate(new_sample_rate)
+        else:
+            logger.debug("Resetting to original sample rate: %dHz", self._source_sample_rate)
+            self._restart_with_sample_rate(self._source_sample_rate)
+
+    def _restart_with_sample_rate(self, new_sample_rate: int) -> None:
+        """Restart the audio engine with a new sample rate for tempo adjustment."""
+        was_running = self._state != EngineState.STOPPED
+        if was_running:
+            self.stop()
+        self.config.sample_rate = new_sample_rate
+        self._ring_buffer = StereoRingBuffer(self.config.ring_buffer_frames)
+        if was_running:
+            self.start()
+
+    def update_tail_fade_config(self) -> None:
+        """Reload tail fade config from config manager."""
+        tail_fade_config = config.get_setting("audio", "tailFade", {})
+        self.config.tail_fade_ms = tail_fade_config.get("durationMs", 3.0)
+        self.config.fade_curve = tail_fade_config.get("curve", "exponential")
+
+    # Aliases for compatibility with ImprovedAudioEngine
+    def start_stream(self) -> None:
+        """Start the audio stream (alias for start())."""
+        self.start()
+
+    def stop_stream(self) -> None:
+        """Stop the audio stream (alias for stop())."""
+        self.stop()
+
+    @property
+    def is_playing(self) -> bool:
+        """Check if audio is currently playing."""
+        return self._state == EngineState.PLAYING
+
+    @property
+    def is_streaming(self) -> bool:
+        """Check if the audio stream is running."""
+        return self._state != EngineState.STOPPED
+
+    @property
+    def playback_mode(self) -> PlaybackMode:
+        """Current playback mode."""
+        return self._playback_mode
+
+    @property
+    def loop_enabled(self) -> bool:
+        """Whether loop mode is enabled."""
+        return self._playback_mode == PlaybackMode.LOOP
 
     def _audio_callback(self, outdata: np.ndarray, frames: int, time_info: Any, status: Any) -> None:
         """
