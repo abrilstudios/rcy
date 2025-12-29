@@ -40,12 +40,12 @@ class TestConfigManager:
     def test_default_paths(self):
         """Test default path resolution logic."""
         config_mgr = ConfigManager(exit_on_error=False)  # Don't exit on error for testing
-        
+
         # Since we're not mocking file operations, this will likely raise an exception
         # in test environments without actual config files. But we can still test the path resolution.
         expected_config_path = pathlib.Path(__file__).parent.parent / "config" / "config.json"
-        expected_presets_path = pathlib.Path(__file__).parent.parent / "presets" / "presets.json"
-        
+        expected_presets_path = pathlib.Path(__file__).parent.parent / "config" / "presets"
+
         assert str(config_mgr.cfg_path) == str(expected_config_path)
         assert str(config_mgr.presets_path) == str(expected_presets_path)
 

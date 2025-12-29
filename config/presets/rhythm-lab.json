@@ -1,34 +1,4 @@
 {
-  "amen_classic": {
-    "filepath": "presets/amen_classic/amen.wav",
-    "name": "Winstons Amen (No Processing)",
-    "artist": "The Winstons",
-    "measures": 4
-  },
-  "think_break": {
-    "filepath": "presets/think_break/think.wav",
-    "name": "Think (About It)",
-    "artist": "Lyn Collins",
-    "measures": 1
-  },
-  "apache_break": {
-    "filepath": "presets/apache_break/apache.wav",
-    "name": "Apache",
-    "artist": "Incredible Bongo Band",
-    "measures": 2
-  },
-  "apache_L": {
-    "filepath": "presets/apache_L/apache-L.wav",
-    "name": "Apache (Left Channel)",
-    "artist": "Incredible Bongo Band",
-    "measures": 2
-  },
-  "apache_R": {
-    "filepath": "presets/apache_R/apache-R.wav",
-    "name": "Apache (Right Channel)",
-    "artist": "Incredible Bongo Band",
-    "measures": 2
-  },
   "rl_hot_pants": {
     "filepath": "sample-packs/rhythm-lab/audio/20th Century - Hot Pants.wav",
     "name": "20th Century - Hot Pants",

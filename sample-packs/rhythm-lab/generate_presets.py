@@ -2,7 +2,7 @@
 """Generate RCY presets from downloaded Rhythm Lab WAV files.
 
 Scans the audio/ directory for WAV files and generates preset entries
-in presets/presets.json.
+in config/presets/rhythm-lab.json.
 
 Usage:
     python generate_presets.py              # Generate all presets
@@ -83,15 +83,14 @@ def main():
     # Paths
     script_dir = Path(__file__).parent
     audio_dir = script_dir / "audio"
-    presets_path = script_dir.parent.parent / "presets" / "presets.json"
+    presets_path = script_dir.parent.parent / "config" / "presets" / "rhythm-lab.json"
 
-    # Load existing presets
+    # Load existing presets (rhythm-lab only)
     presets = load_presets(presets_path)
 
     if args.list:
-        rl_presets = {k: v for k, v in presets.items() if k.startswith("rl_")}
-        print(f"\nExisting Rhythm Lab presets ({len(rl_presets)}):\n")
-        for pid, data in sorted(rl_presets.items()):
+        print(f"\nExisting Rhythm Lab presets ({len(presets)}):\n")
+        for pid, data in sorted(presets.items()):
             print(f"  {pid}: {data.get('name', 'Unknown')}")
         return
 
@@ -107,13 +106,9 @@ def main():
     print(f"Found {len(wav_files)} WAV files in audio/")
     print()
 
-    # Remove old rl_ presets (we'll regenerate them all)
-    non_rl_presets = {k: v for k, v in presets.items() if not k.startswith("rl_")}
-    print(f"Keeping {len(non_rl_presets)} non-Rhythm Lab presets")
-
-    # Generate new presets
-    new_presets = dict(non_rl_presets)
-    existing_ids = set(new_presets.keys())
+    # Generate new presets (this file only contains rl_* presets)
+    new_presets = {}
+    existing_ids: set[str] = set()
     generated = 0
 
     for wav_path in wav_files:
@@ -145,8 +140,7 @@ def main():
     save_presets(new_presets, presets_path)
 
     print(f"Generated {generated} Rhythm Lab presets")
-    print(f"Total presets: {len(new_presets)}")
-    print(f"\nUpdated: {presets_path}")
+    print(f"\nWritten to: {presets_path}")
     print("\nUse 'just run' and '/presets' to see all available presets.")
 
 

@@ -58,9 +58,14 @@ class ConfigManager:
         return base / "config" / "config.json"
 
     def _default_presets_path(self) -> pathlib.Path:
-        """Get the default path to the presets.json file."""
+        """Get the default path to the presets directory.
+
+        Presets are now loaded from config/presets/*.json files which are
+        merged at load time. This allows modular preset management where
+        each sample pack can have its own JSON file.
+        """
         base = pathlib.Path(__file__).parent.parent.parent
-        return base / "presets" / "presets.json"
+        return base / "config" / "presets"
 
     def load_config(self) -> None:
         """Load master configuration from the configured paths."""
@@ -92,18 +97,79 @@ class ConfigManager:
             else:
                 raise KeyError(f"Configuration missing key: {e}")
         
-        # Load presets
-        try:
-            with open(self.presets_path, 'r') as f:
-                self.presets = json.load(f)
-        except Exception as e:
-            error_msg = "Critical error loading presets '%s': %s"
-            logger.error(error_msg, self.presets_path, e)
+        # Load presets from config/presets/*.json (merged)
+        self._load_presets()
+
+    def _load_presets(self) -> None:
+        """Load and merge all preset files from the presets directory.
+
+        Presets are loaded from config/presets/*.json files. Each file contains
+        a flat dict of preset_id -> preset_data. Files are loaded in sorted order
+        and merged, with collision detection to prevent duplicate preset IDs.
+
+        For backwards compatibility, if presets_path is a file (not directory),
+        it will be loaded directly as a single JSON file.
+        """
+        presets_path = pathlib.Path(self.presets_path)
+
+        # Backwards compatibility: if path is a file, load it directly
+        if presets_path.is_file():
+            try:
+                with open(presets_path, 'r') as f:
+                    self.presets = json.load(f)
+                return
+            except Exception as e:
+                error_msg = "Critical error loading presets '%s': %s"
+                logger.error(error_msg, presets_path, e)
+                if self.exit_on_error:
+                    sys.exit(1)
+                else:
+                    raise RuntimeError(f"Critical error loading presets '{presets_path}': {e}")
+
+        # Load from directory: merge all *.json files
+        if not presets_path.is_dir():
+            error_msg = f"Presets path is not a file or directory: {presets_path}"
+            logger.error(error_msg)
             if self.exit_on_error:
                 sys.exit(1)
             else:
-                raise RuntimeError(f"Critical error loading presets '{self.presets_path}': {e}")
-    
+                raise RuntimeError(error_msg)
+
+        self.presets = {}
+        json_files = sorted(presets_path.glob("*.json"))
+
+        if not json_files:
+            logger.warning("No preset files found in %s", presets_path)
+            return
+
+        for json_file in json_files:
+            try:
+                with open(json_file, 'r') as f:
+                    file_presets = json.load(f)
+
+                # Check for ID collisions
+                for preset_id in file_presets:
+                    if preset_id in self.presets:
+                        error_msg = f"Duplicate preset ID '{preset_id}' in {json_file.name}"
+                        logger.error(error_msg)
+                        if self.exit_on_error:
+                            sys.exit(1)
+                        else:
+                            raise ValueError(error_msg)
+
+                self.presets.update(file_presets)
+                logger.debug("Loaded %d presets from %s", len(file_presets), json_file.name)
+
+            except json.JSONDecodeError as e:
+                error_msg = f"Invalid JSON in preset file {json_file}: {e}"
+                logger.error(error_msg)
+                if self.exit_on_error:
+                    sys.exit(1)
+                else:
+                    raise RuntimeError(error_msg)
+
+        logger.info("Loaded %d total presets from %d files", len(self.presets), len(json_files))
+
     # Default-setting methods removed: loading now always requires valid config.json
 
     def get_color(self, key: str, default: str | None = None) -> str:
