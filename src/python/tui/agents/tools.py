@@ -26,15 +26,15 @@ class PresetTool(BaseModel):
     preset_id: str = Field(..., description="Preset ID to load")
 
 
-class OpenTool(BaseModel):
-    """Open an audio file.
+class ImportTool(BaseModel):
+    """Import an audio file into the current view.
+
+    Loads a WAV file directly without preset metadata. The file must be 44100Hz.
 
     Args:
-        filepath: Path to the audio file
-        preset: Optional preset ID to load instead of a file
+        filepath: Path to WAV file to import
     """
-    filepath: Optional[str] = Field(None, description="Path to audio file")
-    preset: Optional[str] = Field(None, description="Preset ID to load")
+    filepath: str = Field(..., description="Path to WAV file to import")
 
 
 class MarkersTool(BaseModel):
@@ -210,7 +210,7 @@ class EP133Tool(BaseModel):
 TOOL_SCHEMAS = {
     "slice": SliceTool,
     "preset": PresetTool,
-    "open": OpenTool,
+    "import": ImportTool,
     "markers": MarkersTool,
     "marker": MarkerTool,
     "set": SetTool,
@@ -234,7 +234,7 @@ TOOL_SCHEMAS = {
 TOOL_ALIASES = {
     "s": "slice",
     "p": "preset",
-    "o": "open",
+    "i": "import",
     "m": "markers",
     "t": "tempo",
     "e": "export",

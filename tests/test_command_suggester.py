@@ -1,7 +1,10 @@
 """Tests for CommandSuggester tab completion."""
 
 import asyncio
+import os
+import tempfile
 import pytest
+from pathlib import Path
 
 from tui.widgets.command_suggester import CommandSuggester
 from tui.agents.tools import TOOL_SCHEMAS, TOOL_ALIASES
@@ -237,3 +240,89 @@ class TestGetAllMatches:
             "/ep133 upload C",
             "/ep133 upload D",
         ]
+
+
+class TestImportPathCompletion:
+    """Tests for file path completion in /import command."""
+
+    @pytest.fixture
+    def suggester(self):
+        return CommandSuggester(config_manager=None)
+
+    @pytest.fixture
+    def temp_dir(self):
+        """Create a temporary directory with test files."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create some WAV files
+            Path(tmpdir, "beat1.wav").touch()
+            Path(tmpdir, "beat2.wav").touch()
+            Path(tmpdir, "drums.wav").touch()
+            # Create a non-WAV file (should be excluded)
+            Path(tmpdir, "notes.txt").touch()
+            # Create a subdirectory
+            subdir = Path(tmpdir, "samples")
+            subdir.mkdir()
+            Path(subdir, "kick.wav").touch()
+            # Create a hidden file (should be excluded)
+            Path(tmpdir, ".hidden.wav").touch()
+            yield tmpdir
+
+    def test_complete_import_in_directory(self, suggester, temp_dir):
+        """Test completing files in a directory."""
+        result = _run(suggester.get_suggestion(f"/import {temp_dir}/"))
+        assert result is not None
+        # Should suggest first match alphabetically (beat1.wav or samples/)
+        assert result.startswith(f"/import {temp_dir}/")
+
+    def test_complete_import_partial_filename(self, suggester, temp_dir):
+        """Test completing a partial filename."""
+        result = _run(suggester.get_suggestion(f"/import {temp_dir}/beat"))
+        assert result is not None
+        assert "beat1.wav" in result or "beat2.wav" in result
+
+    def test_complete_import_exact_prefix(self, suggester, temp_dir):
+        """Test completing with exact prefix."""
+        result = _run(suggester.get_suggestion(f"/import {temp_dir}/drum"))
+        assert result == f"/import {temp_dir}/drums.wav"
+
+    def test_complete_import_excludes_non_wav(self, suggester, temp_dir):
+        """Test that non-WAV files are excluded."""
+        result = _run(suggester.get_suggestion(f"/import {temp_dir}/note"))
+        # notes.txt should not match
+        assert result is None
+
+    def test_complete_import_excludes_hidden(self, suggester, temp_dir):
+        """Test that hidden files are excluded."""
+        result = _run(suggester.get_suggestion(f"/import {temp_dir}/.hid"))
+        assert result is None
+
+    def test_complete_import_includes_directories(self, suggester, temp_dir):
+        """Test that directories are included with trailing slash."""
+        result = _run(suggester.get_suggestion(f"/import {temp_dir}/sam"))
+        assert result == f"/import {temp_dir}/samples/"
+
+    def test_complete_import_nonexistent_dir(self, suggester):
+        """Test completing in nonexistent directory."""
+        result = _run(suggester.get_suggestion("/import /nonexistent/path/"))
+        assert result is None
+
+    def test_get_all_import_matches(self, suggester, temp_dir):
+        """Test getting all import matches for Tab cycling."""
+        matches = suggester.get_all_matches(f"/import {temp_dir}/beat")
+        assert len(matches) == 2
+        assert f"/import {temp_dir}/beat1.wav" in matches
+        assert f"/import {temp_dir}/beat2.wav" in matches
+
+    def test_get_all_import_matches_empty_dir(self, suggester):
+        """Test getting matches in empty directory."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            matches = suggester.get_all_matches(f"/import {tmpdir}/")
+            assert matches == []
+
+    def test_complete_import_case_insensitive(self, suggester, temp_dir):
+        """Test that filename matching is case-insensitive."""
+        # Create a file with different case
+        Path(temp_dir, "LOUD.wav").touch()
+        result = _run(suggester.get_suggestion(f"/import {temp_dir}/lou"))
+        assert result is not None
+        assert "LOUD.wav" in result

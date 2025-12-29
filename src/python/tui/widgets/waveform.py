@@ -98,7 +98,7 @@ class WaveformWidget(Widget):
             result.append(" No audio loaded ".center(width - 2), style=info_color)
             result.append("│\n", style=border_color)
             result.append("│", style=border_color)
-            result.append(" Use /preset or /open ".center(width - 2), style=info_color)
+            result.append(" Use /preset or /import ".center(width - 2), style=info_color)
             result.append("│\n", style=border_color)
             result.append("└" + "─" * (width - 2) + "┘", style=border_color)
             return result

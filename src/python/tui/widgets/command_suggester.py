@@ -1,5 +1,8 @@
 """Context-aware tab completion for slash commands."""
 
+import os
+from pathlib import Path
+
 from textual.suggester import Suggester
 
 from tui.agents.tools import TOOL_SCHEMAS, TOOL_ALIASES
@@ -11,6 +14,7 @@ class CommandSuggester(Suggester):
     Provides completions for:
     - Command names after '/' (e.g., /pre -> /preset)
     - Preset IDs after '/preset ' (e.g., /preset rl_ -> /preset rl_hot_pants)
+    - File paths after '/import ' (directories and .wav files)
     - EP-133 subcommands after '/ep133 ' (connect, upload, clear, etc.)
     - Bank letters after '/ep133 upload ' or '/ep133 clear ' (A, B, C, D)
     """
@@ -31,6 +35,7 @@ class CommandSuggester(Suggester):
         # Registry of command-specific completers
         self._completers = {
             "preset": self._complete_preset,
+            "import": self._complete_import,
             "ep133": self._complete_ep133,
         }
 
@@ -105,6 +110,67 @@ class CommandSuggester(Suggester):
             return f"/preset {matches[0]}"
         return None
 
+    def _complete_import(self, prefix: str) -> str | None:
+        """Complete a file path for import.
+
+        Args:
+            prefix: Partial file path
+
+        Returns:
+            Full command with path suggestion, or None
+        """
+        matches = self._get_path_matches(prefix)
+        if matches:
+            return f"/import {matches[0]}"
+        return None
+
+    def _get_path_matches(self, prefix: str) -> list[str]:
+        """Get matching directories and WAV files for a path prefix.
+
+        Args:
+            prefix: Partial file path (can be empty, relative, or absolute)
+
+        Returns:
+            Sorted list of matching paths (directories end with /)
+        """
+        if not prefix:
+            # Empty prefix: list current directory
+            base_dir = Path.cwd()
+            name_prefix = ""
+        else:
+            path = Path(prefix).expanduser()
+            if prefix.endswith("/") or prefix.endswith(os.sep):
+                # Ends with separator: list contents of that directory
+                base_dir = path
+                name_prefix = ""
+            else:
+                # Partial name: list parent directory, filter by prefix
+                base_dir = path.parent
+                name_prefix = path.name
+
+        if not base_dir.is_dir():
+            return []
+
+        matches = []
+        try:
+            for entry in base_dir.iterdir():
+                name = entry.name
+                # Skip hidden files
+                if name.startswith("."):
+                    continue
+                # Filter by prefix if provided
+                if name_prefix and not name.lower().startswith(name_prefix.lower()):
+                    continue
+                # Include directories (with trailing /) and .wav files
+                if entry.is_dir():
+                    matches.append(str(entry) + "/")
+                elif entry.suffix.lower() == ".wav":
+                    matches.append(str(entry))
+        except PermissionError:
+            return []
+
+        return sorted(matches)
+
     def _complete_ep133(self, arg_str: str) -> str | None:
         """Complete EP-133 subcommands and their arguments.
 
@@ -167,6 +233,8 @@ class CommandSuggester(Suggester):
         if cmd == "preset" and self.config:
             presets = [p[0] for p in self.config.get_preset_list()]
             return sorted([f"/preset {p}" for p in presets if p.startswith(arg_prefix)])
+        elif cmd == "import":
+            return [f"/import {p}" for p in self._get_path_matches(arg_prefix)]
         elif cmd == "ep133":
             return self._get_ep133_matches(arg_prefix)
 

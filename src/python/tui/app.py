@@ -3,7 +3,7 @@
 A command-line interface for RCY breakbeat slicer with:
 - ASCII waveform display
 - Keyboard-driven segment playback (1-0, q-p keys)
-- Command input (/open, /slice, /export, etc.)
+- Command input (/import, /slice, /export, etc.)
 - Agent-based interaction (!slice, !preset, etc.)
 """
 
@@ -205,7 +205,7 @@ class RCYApp(App):
     def _register_agent_tools(self, registry: ToolRegistry) -> None:
         """Register tool handlers with the agent's tool registry."""
         from tui.agents.tools import (
-            SliceTool, PresetTool, OpenTool, MarkersTool,
+            SliceTool, PresetTool, ImportTool, MarkersTool,
             SetTool, TempoTool, PlayTool, StopTool, ExportTool,
             ZoomTool, ModeTool, HelpTool, PresetsTool, QuitTool, CutTool, NudgeTool,
             SkinTool, EP133Tool,
@@ -214,7 +214,7 @@ class RCYApp(App):
 
         registry.register("slice", SliceTool, self._agent_slice)
         registry.register("preset", PresetTool, self._agent_preset)
-        registry.register("open", OpenTool, self._agent_open)
+        registry.register("import", ImportTool, self._agent_import)
         registry.register("markers", MarkersTool, self._agent_markers)
         registry.register("set", SetTool, self._agent_set)
         registry.register("tempo", TempoTool, self._agent_tempo)
@@ -253,13 +253,17 @@ class RCYApp(App):
         # Return the current status which was set by _on_preset
         return self._status
 
-    def _agent_open(self, args) -> str:
-        self._on_open(args.filepath, args.preset)
-        if args.preset:
-            return f"Loaded preset: {args.preset}"
-        elif args.filepath:
-            return f"Loaded: {args.filepath}"
-        return "No file or preset specified"
+    def _agent_import(self, args) -> str:
+        import soundfile as sf
+        filepath = args.filepath
+        try:
+            info = sf.info(filepath)
+            if info.samplerate != 44100:
+                return f"Error: File must be 44100Hz (got {info.samplerate}Hz)"
+            self._on_import(filepath)
+            return f"Imported: {filepath}"
+        except Exception as e:
+            return f"Error importing file: {e}"
 
     def _agent_markers(self, args) -> str:
         if args.reset:
@@ -511,23 +515,29 @@ EP-133 Commands:
         if r_marker and self.model:
             self.end_marker = r_marker.position / self.model.sample_rate
 
-    def _on_open(self, filepath: Optional[str], preset_id: Optional[str]) -> None:
-        if preset_id:
-            self.preset_id = preset_id
-            if self.init_model():
-                self.update_status(f"Loaded preset: {preset_id}")
-            else:
-                self.update_status(f"Failed to load preset: {preset_id}")
-        elif filepath:
-            try:
-                if self.model:
-                    self.model.set_filename(filepath)
-                    self.end_marker = self.model.total_time
-                    self.zoom_end = self.model.total_time
-                    self.update_status(f"Loaded: {os.path.basename(filepath)}")
-            except Exception as e:
-                self.update_status(f"Error: {e}")
+    def _on_import(self, filepath: str) -> None:
+        """Import a WAV file directly without preset metadata."""
+        base_name = os.path.splitext(os.path.basename(filepath))[0]
+        self.preset_id = base_name
+        # Create fresh model
+        self.model = WavAudioProcessor()
+        self.model.set_filename(filepath)
+        # Reset markers to full file
+        self.start_marker = 0.0
+        self.end_marker = self.model.total_time
+        self.zoom_start = 0.0
+        self.zoom_end = self.model.total_time
+        # Reset marker manager with new audio length
+        self.marker_manager = MarkerManager(
+            total_samples=len(self.model.data_left),
+            sample_rate=self.model.sample_rate
+        )
+        # Clear segments
+        self.segment_manager.set_audio_context(
+            len(self.model.data_left), self.model.sample_rate
+        )
         self._update_waveform()
+        self.update_status(f"Imported: {base_name}")
 
     def _on_slice(self, measures: Optional[int], transients: Optional[int]) -> None:
         if not self.model:

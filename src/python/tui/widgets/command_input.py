@@ -163,7 +163,7 @@ class CommandInput(Input):
         # Tab completion cycling state
         self._tab_matches: list[str] = []
         self._tab_index: int = 0
-        self._tab_prefix: str = ""
+        self._tab_last: str = ""
 
     # Keys that trigger segment playback (1-0, q-p except 'i' which is reserved for insert mode)
     SEGMENT_KEYS = {'1', '2', '3', '4', '5', '6', '7', '8', '9', '0',
@@ -335,17 +335,11 @@ class CommandInput(Input):
             event.prevent_default()
 
     def _handle_tab_completion(self, reverse: bool = False) -> None:
-        """Handle Tab key for cycling through completions.
-
-        Args:
-            reverse: If True, cycle backwards (Shift+Tab)
-        """
+        """Handle Tab key for cycling through completions."""
         from tui.widgets.command_suggester import CommandSuggester
 
-        # Get the suggester if it exists and is a CommandSuggester
         suggester = getattr(self, 'suggester', None)
         if not isinstance(suggester, CommandSuggester):
-            # Fall back to accepting inline suggestion if available
             if self._suggestion:
                 self.value = self._suggestion
                 self.cursor_position = len(self.value)
@@ -353,29 +347,37 @@ class CommandInput(Input):
 
         current_value = self.value
 
-        # Check if we're continuing from a previous Tab cycle
-        # We're cycling if the current value is one of our matches
+        # Cycling if current value is one of our matches
         if self._tab_matches and current_value in self._tab_matches:
-            # Cycle to next/previous match
+            # Directory + Tab twice (didn't cycle away) = descend
+            if current_value.endswith("/") and current_value == self._tab_last:
+                new_matches = suggester.get_all_matches(current_value)
+                if new_matches:
+                    self._tab_matches = new_matches
+                    self._tab_index = 0
+                    self.value = self._tab_matches[0]
+                    self._tab_last = ""
+                    self.cursor_position = len(self.value)
+                    return
+            # Mark current before cycling (so next Tab on same dir descends)
+            self._tab_last = current_value
+            # Cycle through siblings
             if reverse:
                 self._tab_index = (self._tab_index - 1) % len(self._tab_matches)
             else:
                 self._tab_index = (self._tab_index + 1) % len(self._tab_matches)
             self.value = self._tab_matches[self._tab_index]
-            self.cursor_position = len(self.value)
         else:
-            # Get new matches for current input
+            # Fresh completion
             self._tab_matches = suggester.get_all_matches(current_value)
             if self._tab_matches:
-                # Start at end if reverse, otherwise start at beginning
                 self._tab_index = len(self._tab_matches) - 1 if reverse else 0
-                self._tab_prefix = current_value
                 self.value = self._tab_matches[self._tab_index]
-                self.cursor_position = len(self.value)
             elif self._suggestion:
-                # Fall back to inline suggestion
                 self.value = self._suggestion
-                self.cursor_position = len(self.value)
+            self._tab_last = ""
+
+        self.cursor_position = len(self.value)
 
     def _handle_search_key(self, event) -> None:
         """Handle keys in search mode."""
