@@ -171,6 +171,13 @@ class WavAudioProcessor:
         self.filename = filename
         with sf.SoundFile(filename) as sound_file:
             self.sample_rate = sound_file.samplerate
+            # Enforce 44100 Hz sample rate for consistency
+            if self.sample_rate != 44100:
+                raise ValueError(
+                    f"Unsupported sample rate: {self.sample_rate} Hz. "
+                    f"RCY requires 44100 Hz audio files. "
+                    f"Run 'python sample-packs/rhythm-lab/normalize_sample_rates.py' to convert."
+                )
             self.channels = sound_file.channels
             self.is_stereo = self.channels > 1
             self.total_time = len(sound_file) / self.sample_rate

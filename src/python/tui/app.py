@@ -215,24 +215,17 @@ class RCYApp(App):
     def _register_agent_tools(self, registry: ToolRegistry) -> None:
         """Register tool handlers with the agent's tool registry."""
         from tui.agents.tools import (
-            SliceTool, PresetTool, OpenTool, MarkersTool, MarkerTool,
+            SliceTool, PresetTool, OpenTool, MarkersTool,
             SetTool, TempoTool, PlayTool, StopTool, ExportTool,
             ZoomTool, ModeTool, HelpTool, PresetsTool, QuitTool, CutTool, NudgeTool,
-            EP133ConnectTool, EP133DisconnectTool, EP133StatusTool,
-            EP133ListSoundsTool, EP133UploadTool, EP133AssignTool,
-            EP133UploadBankTool, EP133ClearBankTool
+            EP133Tool,
         )
-        from tui.ep133_handler import (
-            ep133_connect, ep133_disconnect, ep133_status,
-            ep133_list_sounds, ep133_upload, ep133_assign,
-            ep133_upload_bank, ep133_clear_bank
-        )
+        from tui.ep133_handler import ep133_handler
 
         registry.register("slice", SliceTool, self._agent_slice)
         registry.register("preset", PresetTool, self._agent_preset)
         registry.register("open", OpenTool, self._agent_open)
         registry.register("markers", MarkersTool, self._agent_markers)
-        registry.register("marker", MarkerTool, self._agent_marker)
         registry.register("set", SetTool, self._agent_set)
         registry.register("tempo", TempoTool, self._agent_tempo)
         registry.register("play", PlayTool, self._agent_play)
@@ -246,15 +239,8 @@ class RCYApp(App):
         registry.register("cut", CutTool, self._agent_cut)
         registry.register("nudge", NudgeTool, self._agent_nudge)
 
-        # EP-133 tools
-        registry.register("ep133_connect", EP133ConnectTool, ep133_connect)
-        registry.register("ep133_disconnect", EP133DisconnectTool, ep133_disconnect)
-        registry.register("ep133_status", EP133StatusTool, ep133_status)
-        registry.register("ep133_list_sounds", EP133ListSoundsTool, ep133_list_sounds)
-        registry.register("ep133_upload", EP133UploadTool, lambda args: ep133_upload(args, self))
-        registry.register("ep133_assign", EP133AssignTool, ep133_assign)
-        registry.register("ep133_upload_bank", EP133UploadBankTool, lambda args: ep133_upload_bank(args, self))
-        registry.register("ep133_clear_bank", EP133ClearBankTool, ep133_clear_bank)
+        # EP-133 unified command
+        registry.register("ep133", EP133Tool, lambda args: ep133_handler(args, self))
 
     # Agent tool handlers
     def _agent_slice(self, args) -> str:
@@ -290,64 +276,6 @@ class RCYApp(App):
             return "Reset markers to full file"
         self._on_markers(args.start, args.end)
         return f"Markers set: L={args.start:.2f}s R={args.end:.2f}s"
-
-    def _agent_marker(self, args) -> str:
-        """Handler for /marker command - place marker at bar.beat position."""
-        if not self.model:
-            return "No audio loaded"
-
-        if self.model.source_bpm <= 0:
-            return "Tempo not set. Use /set bars <n> first"
-
-        # Parse position string (e.g., "3.2" -> bar=3, beat=2)
-        position_str = args.position
-        if "." in position_str:
-            parts = position_str.split(".")
-            bar = int(parts[0])
-            beat = float(parts[1]) if len(parts) > 1 else 1.0
-        else:
-            bar = int(position_str)
-            beat = 1.0
-
-        if bar < 1:
-            return "Bar must be >= 1"
-        if beat < 1:
-            return "Beat must be >= 1"
-
-        # Get region start in samples
-        l_marker = self.marker_manager.get_marker("L")
-        region_start_samples = l_marker.position if l_marker else 0
-
-        # Convert bar.beat to samples
-        target_samples = self.marker_manager.bar_beat_to_samples(
-            bar=bar,
-            beat=beat,
-            tempo_bpm=self.model.source_bpm,
-            beats_per_bar=4,
-            region_start_samples=region_start_samples,
-        )
-
-        # Find or create marker at position (with snap)
-        snap_samples = int(0.01 * self.model.sample_rate)  # 10ms snap
-        marker_id = self.marker_manager.find_or_create_marker_at(
-            position=target_samples,
-            snap_samples=snap_samples,
-        )
-
-        # Focus the marker
-        self.marker_manager.set_focus(marker_id)
-
-        # Sync to segment manager
-        new_boundaries = self.marker_manager.get_boundaries()
-        self.segment_manager.set_boundaries(new_boundaries)
-
-        # Invalidate cache and redraw
-        self._cached_segment_times = None
-        self._update_waveform()
-
-        # Format position for feedback
-        time_sec = target_samples / self.model.sample_rate
-        return f"Marker {marker_id} at bar {bar}.{beat:.0f} ({time_sec:.3f}s)"
 
     def _agent_set(self, args) -> str:
         return self._on_set(args.setting, args.value)
@@ -396,7 +324,6 @@ class RCYApp(App):
   /set bars <n>           Set bars
   /set release <ms>       Tail decay to zero crossing (default: 3ms)
   /markers <s> <e>        Set markers
-  /marker <bar.beat>      Place marker at bar.beat (e.g., /marker 3.2)
   /cut                    Cut audio to L/R region
   /nudge left|right       Nudge marker (--mode fine|coarse)
   /tempo <bpm>            Set tempo
@@ -411,14 +338,12 @@ class RCYApp(App):
   /quit                   Exit
 
 EP-133 Commands:
-  /ep133_connect                Connect to EP-133
-  /ep133_disconnect             Disconnect from EP-133
-  /ep133_status                 Check EP-133 status
-  /ep133_list_sounds            List sounds on device
-  /ep133_upload <slot> <seg>    Upload single segment to slot
-  /ep133_assign                 Assign sound to pad
-  /ep133_upload_bank <bank>     Upload segments to bank & assign pads
-  /ep133_clear_bank <bank>      Clear all pads in a bank"""
+  /ep133 connect        Connect to EP-133
+  /ep133 disconnect     Disconnect from EP-133
+  /ep133 status         Show connection status
+  /ep133 list           List sounds on device
+  /ep133 upload <bank>  Upload segments to bank (A/B/C/D)
+  /ep133 clear <bank>   Clear pad assignments in bank"""
 
     def _agent_presets(self, args) -> str:
         return self._on_presets()
@@ -531,6 +456,14 @@ EP-133 Commands:
             self.model = WavAudioProcessor(preset_id=self.preset_id)
             self.end_marker = self.model.total_time
             self.zoom_end = self.model.total_time
+
+            # Reset segment manager to single segment (full file)
+            self.segment_manager.set_audio_context(
+                len(self.model.data_left),
+                self.model.sample_rate
+            )
+            # Invalidate segment cache
+            self._cached_segment_times = None
 
             # Initialize marker manager with audio context
             self.marker_manager.set_audio_context(
@@ -1012,22 +945,28 @@ EP-133 Commands:
         else:
             self.action_cycle_focus_next()
 
-    def on_command_input_marker_delete(self, event: CommandInput.MarkerDelete) -> None:
-        """Handle marker delete from CommandInput (DEL key in segment mode)."""
-        success, message = self.marker_manager.delete_focused_marker()
-
-        if success:
-            # Sync boundaries back to segment_manager
-            new_boundaries = self.marker_manager.get_boundaries()
-            self.segment_manager.set_boundaries(new_boundaries)
-
-            # Invalidate cache and redraw
-            self._cached_segment_times = None
-            self._update_waveform()
-
-            self.update_status(f"Deleted marker {message}")
+    def on_command_input_space_pressed(self, event: CommandInput.SpacePressed) -> None:
+        """Handle space pressed in segment mode - toggle play/stop full sample."""
+        if not self.model:
+            return
+        # Toggle: if playing, stop. Otherwise play full sample.
+        if self.model.is_playing:
+            self.model.stop_playback()
+            self.update_status("Stopped")
         else:
-            self.update_status(message)
+            self.model.play_segment(0.0, self.model.total_time)
+            self.update_status("Playing full sample")
+
+    def on_command_input_output_scroll(self, event: CommandInput.OutputScroll) -> None:
+        """Handle up/down arrow in segment mode - scroll output panel."""
+        try:
+            output = self.query_one("#output", TextArea)
+            if event.direction == "up":
+                output.scroll_relative(y=-1)
+            else:
+                output.scroll_relative(y=1)
+        except Exception:
+            pass
 
     def on_input_submitted(self, event) -> None:
         """Handle command submission from Input widget."""

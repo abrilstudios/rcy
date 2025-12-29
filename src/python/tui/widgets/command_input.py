@@ -188,15 +188,21 @@ class CommandInput(Input):
             self.reverse = reverse
             super().__init__()
 
-    class MarkerDelete(Message):
-        """Posted when DEL key is pressed to delete focused marker."""
+    class SpacePressed(Message):
+        """Posted when space is pressed in segment mode."""
         pass
+
+    class OutputScroll(Message):
+        """Posted when up/down arrow is pressed in segment mode to scroll output."""
+        def __init__(self, direction: str) -> None:
+            self.direction = direction  # "up" or "down"
+            super().__init__()
 
     def _set_mode(self, mode: str) -> None:
         """Switch between insert and segment modes."""
         self._mode = mode
         if mode == self.MODE_SEGMENT:
-            self.placeholder = "[SEGMENT] 1-0/qwerty play | [/] focus | ←→ nudge | DEL delete | i=insert"
+            self.placeholder = "[SEGMENT] 1-0/qwerty play | ←→ nudge | ↑↓ scroll | i=insert"
         else:
             self.placeholder = "[INSERT] Type for AI, /cmd direct | ESC for segment mode"
 
@@ -252,16 +258,24 @@ class CommandInput(Input):
                 event.prevent_default()
                 return
 
-            # DEL/Backspace deletes focused marker
-            if key in ("delete", "backspace"):
-                self.post_message(self.MarkerDelete())
+            # Space plays/stops full sample
+            if key == "space":
+                self.post_message(self.SpacePressed())
                 event.stop()
                 event.prevent_default()
                 return
 
-            # Space plays the L-R region - let it bubble up to app binding
-            if key == "space":
-                return  # Don't block, let app handle it
+            # Up/Down arrows scroll the output panel
+            if key == "up":
+                self.post_message(self.OutputScroll("up"))
+                event.stop()
+                event.prevent_default()
+                return
+            if key == "down":
+                self.post_message(self.OutputScroll("down"))
+                event.stop()
+                event.prevent_default()
+                return
 
             # Block all other keys in segment mode
             event.stop()
