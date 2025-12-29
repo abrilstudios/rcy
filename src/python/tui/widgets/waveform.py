@@ -81,18 +81,27 @@ class WaveformWidget(Widget):
 
     def render(self) -> Text:
         """Render the waveform display."""
+        from tui.skin_manager import get_skin_manager
+
         # Get available width (account for borders)
         width = self.size.width - 2 if self.size.width > 4 else 70
 
         if self._audio_data is None or len(self._audio_data) == 0:
             # Show placeholder when no audio
-            lines = [
-                "┌" + "─" * (width - 2) + "┐",
-                "│" + " No audio loaded ".center(width - 2) + "│",
-                "│" + " Use /preset or /open ".center(width - 2) + "│",
-                "└" + "─" * (width - 2) + "┘",
-            ]
-            return Text("\n".join(lines))
+            skin = get_skin_manager()
+            border_color = skin.get_color("border", "normal")
+            info_color = skin.get_color("header", "info")
+
+            result = Text()
+            result.append("┌" + "─" * (width - 2) + "┐\n", style=border_color)
+            result.append("│", style=border_color)
+            result.append(" No audio loaded ".center(width - 2), style=info_color)
+            result.append("│\n", style=border_color)
+            result.append("│", style=border_color)
+            result.append(" Use /preset or /open ".center(width - 2), style=info_color)
+            result.append("│\n", style=border_color)
+            result.append("└" + "─" * (width - 2) + "┘", style=border_color)
+            return result
 
         # Render waveform using existing function
         waveform_lines = render_waveform(
@@ -109,8 +118,8 @@ class WaveformWidget(Widget):
             segment_marker_positions=self._segment_marker_positions,
         )
 
-        # Format with borders using existing function
-        display = format_display(
+        # Format with borders using existing function (returns Rich Text)
+        return format_display(
             filename=self.filename or "No file",
             bpm=self.bpm,
             bars=self.bars,
@@ -118,5 +127,3 @@ class WaveformWidget(Widget):
             waveform_lines=waveform_lines,
             width=width,
         )
-
-        return Text(display)

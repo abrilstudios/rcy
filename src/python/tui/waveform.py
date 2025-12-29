@@ -3,6 +3,10 @@
 import numpy as np
 from typing import Optional
 
+from rich.text import Text
+
+from tui.skin_manager import get_skin_manager
+
 # Block characters for waveform amplitude (8 levels)
 BLOCKS = " ▁▂▃▄▅▆▇█"
 
@@ -269,8 +273,8 @@ def format_display(
     num_slices: int,
     waveform_lines: list[str],
     width: int = 70,
-) -> str:
-    """Format complete TUI display with borders.
+) -> Text:
+    """Format complete TUI display with borders and skin colors.
 
     Args:
         filename: Audio filename
@@ -281,21 +285,108 @@ def format_display(
         width: Display width
 
     Returns:
-        Complete formatted display string
+        Rich Text object with colored display
     """
-    # Header
-    header = f" {filename}  {bpm:.1f} BPM  {bars} bars  {num_slices} slices"
-    header = header[:width - 2].ljust(width - 2)
+    skin = get_skin_manager()
 
-    lines = []
-    lines.append("┌" + "─" * (width - 2) + "┐")
-    lines.append("│" + header + "│")
-    lines.append("├" + "─" * (width - 2) + "┤")
+    # Get colors from skin
+    border_color = skin.get_color("border", "normal")
+    filename_color = skin.get_color("header", "filename")
+    bpm_color = skin.get_color("header", "bpm")
+    info_color = skin.get_color("header", "info")
+    waveform_color = skin.get_color("waveform", "foreground")
+    marker_l_color = skin.get_color("markers", "L")
+    marker_r_color = skin.get_color("markers", "R")
+    marker_seg_color = skin.get_color("markers", "segment")
+    marker_focused_color = skin.get_color("markers", "focused")
+    segment_color = skin.get_color("segments", "number")
+    time_color = skin.get_color("time_axis", "foreground")
 
-    for wf_line in waveform_lines:
+    result = Text()
+
+    # Top border
+    result.append("┌" + "─" * (width - 2) + "┐\n", style=border_color)
+
+    # Header line
+    result.append("│", style=border_color)
+    result.append(f" {filename}", style=filename_color)
+    result.append(f"  {bpm:.1f} BPM", style=bpm_color)
+    result.append(f"  {bars} bars  {num_slices} slices", style=info_color)
+    # Pad and close
+    header_content = f" {filename}  {bpm:.1f} BPM  {bars} bars  {num_slices} slices"
+    padding = " " * max(0, width - 2 - len(header_content))
+    result.append(padding)
+    result.append("│\n", style=border_color)
+
+    # Separator
+    result.append("├" + "─" * (width - 2) + "┤\n", style=border_color)
+
+    # Waveform lines with coloring
+    for i, wf_line in enumerate(waveform_lines):
+        result.append("│", style=border_color)
+
         padded = wf_line[:width - 2].ljust(width - 2)
-        lines.append("│" + padded + "│")
 
-    lines.append("└" + "─" * (width - 2) + "┘")
+        if i == 0:
+            # Marker row - color L, R, and segment markers
+            _append_marker_row(result, padded, marker_l_color, marker_r_color,
+                               marker_seg_color, marker_focused_color)
+        elif i in (1, 2):
+            # Waveform rows
+            result.append(padded, style=waveform_color)
+        elif i == 3:
+            # Segment number row
+            result.append(padded, style=segment_color)
+        elif i == 4:
+            # Time axis row
+            result.append(padded, style=time_color)
+        else:
+            result.append(padded)
 
-    return "\n".join(lines)
+        result.append("│\n", style=border_color)
+
+    # Bottom border
+    result.append("└" + "─" * (width - 2) + "┘", style=border_color)
+
+    return result
+
+
+def _append_marker_row(
+    text: Text,
+    row: str,
+    l_color: str,
+    r_color: str,
+    seg_color: str,
+    focused_color: str
+) -> None:
+    """Append marker row with appropriate colors for each marker type."""
+    i = 0
+    while i < len(row):
+        char = row[i]
+
+        # Check for focused marker patterns [L] or [R]
+        if char == '[' and i + 2 < len(row):
+            if row[i + 1] == 'L' and row[i + 2] == ']':
+                text.append("[L]", style=focused_color)
+                i += 3
+                continue
+            elif row[i + 1] == 'R' and row[i + 2] == ']':
+                text.append("[R]", style=focused_color)
+                i += 3
+                continue
+
+        # Color individual markers
+        if char == 'L':
+            text.append(char, style=l_color)
+        elif char == 'R':
+            text.append(char, style=r_color)
+        elif char in ('▼', '◆'):
+            # ◆ is focused segment marker
+            if char == '◆':
+                text.append(char, style=focused_color)
+            else:
+                text.append(char, style=seg_color)
+        else:
+            text.append(char)
+
+        i += 1

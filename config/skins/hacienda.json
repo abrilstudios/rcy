@@ -1,0 +1,45 @@
+{
+  "name": "hacienda",
+  "description": "Cool blue Hacienda theme",
+  "colors": {
+    "waveform": {
+      "background": "",
+      "foreground": "blue",
+      "peak": "bright_cyan"
+    },
+    "markers": {
+      "L": "bright_cyan",
+      "R": "bright_cyan",
+      "segment": "bright_blue",
+      "focused": "bright_white"
+    },
+    "border": {
+      "normal": "blue",
+      "focused": "bright_cyan"
+    },
+    "command_input": {
+      "background": "",
+      "foreground": "bright_cyan",
+      "prompt": "blue"
+    },
+    "output": {
+      "background": "",
+      "foreground": "cyan",
+      "error": "bright_magenta",
+      "success": "bright_green",
+      "info": "bright_blue"
+    },
+    "header": {
+      "filename": "bright_cyan",
+      "bpm": "bright_blue",
+      "info": "blue"
+    },
+    "segments": {
+      "number": "bright_blue",
+      "active": "bright_cyan"
+    },
+    "time_axis": {
+      "foreground": "blue"
+    }
+  }
+}

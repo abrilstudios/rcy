@@ -1,0 +1,45 @@
+{
+  "name": "default",
+  "description": "Default RCY color scheme - dark terminal style",
+  "colors": {
+    "waveform": {
+      "background": "",
+      "foreground": "white",
+      "peak": "bright_white"
+    },
+    "markers": {
+      "L": "cyan",
+      "R": "cyan",
+      "segment": "yellow",
+      "focused": "bright_green"
+    },
+    "border": {
+      "normal": "dim white",
+      "focused": "cyan"
+    },
+    "command_input": {
+      "background": "",
+      "foreground": "white",
+      "prompt": "cyan"
+    },
+    "output": {
+      "background": "",
+      "foreground": "white",
+      "error": "red",
+      "success": "green",
+      "info": "cyan"
+    },
+    "header": {
+      "filename": "bright_white",
+      "bpm": "yellow",
+      "info": "dim white"
+    },
+    "segments": {
+      "number": "yellow",
+      "active": "bright_green"
+    },
+    "time_axis": {
+      "foreground": "dim white"
+    }
+  }
+}

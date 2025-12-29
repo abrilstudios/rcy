@@ -22,13 +22,13 @@ install:
 install-dev:
     ./venv/bin/pip install -r requirements-dev.txt
 
-# Run the RCY application (TUI)
-run:
-    PYTHONPATH=src/python ./venv/bin/python -m tui.app
+# Run the RCY application (TUI) - pass any args (e.g., just run --skin ocean)
+run *ARGS:
+    PYTHONPATH=src/python ./venv/bin/python -m tui.app {{ARGS}}
 
 # Alias for run (TUI)
-tui:
-    PYTHONPATH=src/python ./venv/bin/python -m tui.app
+tui *ARGS:
+    PYTHONPATH=src/python ./venv/bin/python -m tui.app {{ARGS}}
 
 # Run the TUI with a specific preset
 tui-preset PRESET:

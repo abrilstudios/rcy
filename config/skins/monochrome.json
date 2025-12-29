@@ -1,0 +1,45 @@
+{
+  "name": "monochrome",
+  "description": "Minimal monochrome theme - no colors",
+  "colors": {
+    "waveform": {
+      "background": "",
+      "foreground": "white",
+      "peak": "white"
+    },
+    "markers": {
+      "L": "white",
+      "R": "white",
+      "segment": "white",
+      "focused": "bright_white"
+    },
+    "border": {
+      "normal": "dim white",
+      "focused": "white"
+    },
+    "command_input": {
+      "background": "",
+      "foreground": "white",
+      "prompt": "white"
+    },
+    "output": {
+      "background": "",
+      "foreground": "white",
+      "error": "white",
+      "success": "white",
+      "info": "white"
+    },
+    "header": {
+      "filename": "white",
+      "bpm": "white",
+      "info": "dim white"
+    },
+    "segments": {
+      "number": "white",
+      "active": "bright_white"
+    },
+    "time_axis": {
+      "foreground": "dim white"
+    }
+  }
+}

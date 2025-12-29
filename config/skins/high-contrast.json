@@ -1,0 +1,45 @@
+{
+  "name": "high-contrast",
+  "description": "High contrast theme for accessibility",
+  "colors": {
+    "waveform": {
+      "background": "black",
+      "foreground": "bright_white",
+      "peak": "bright_white"
+    },
+    "markers": {
+      "L": "bright_cyan",
+      "R": "bright_cyan",
+      "segment": "bright_yellow",
+      "focused": "bright_green"
+    },
+    "border": {
+      "normal": "white",
+      "focused": "bright_cyan"
+    },
+    "command_input": {
+      "background": "black",
+      "foreground": "bright_white",
+      "prompt": "bright_cyan"
+    },
+    "output": {
+      "background": "black",
+      "foreground": "bright_white",
+      "error": "bright_red",
+      "success": "bright_green",
+      "info": "bright_cyan"
+    },
+    "header": {
+      "filename": "bright_white",
+      "bpm": "bright_yellow",
+      "info": "white"
+    },
+    "segments": {
+      "number": "bright_yellow",
+      "active": "bright_green"
+    },
+    "time_axis": {
+      "foreground": "white"
+    }
+  }
+}

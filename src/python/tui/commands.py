@@ -20,6 +20,7 @@ class CommandType(Enum):
     MODE = "mode"
     ZOOM = "zoom"
     SET = "set"
+    SKIN = "skin"
     HELP = "help"
     QUIT = "quit"
     UNKNOWN = "unknown"
@@ -118,6 +119,7 @@ def parse_command(input_str: str) -> ParsedCommand:
         "zoom": CommandType.ZOOM,
         "z": CommandType.ZOOM,
         "set": CommandType.SET,
+        "skin": CommandType.SKIN,
         "help": CommandType.HELP,
         "h": CommandType.HELP,
         "?": CommandType.HELP,

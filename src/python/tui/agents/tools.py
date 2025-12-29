@@ -132,6 +132,15 @@ class QuitTool(BaseModel):
     pass
 
 
+class SkinTool(BaseModel):
+    """Switch or list color skins.
+
+    Args:
+        skin_name: Skin name to switch to, or 'list' to show available skins (default: list)
+    """
+    skin_name: str = Field("list", description="Skin name or 'list'")
+
+
 class CutTool(BaseModel):
     """Cut audio to L/R region in-place.
 
@@ -214,6 +223,7 @@ TOOL_SCHEMAS = {
     "help": HelpTool,
     "presets": PresetsTool,
     "quit": QuitTool,
+    "skin": SkinTool,
     "cut": CutTool,
     "nudge": NudgeTool,
     # EP-133 unified command

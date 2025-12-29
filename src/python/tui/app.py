@@ -208,7 +208,7 @@ class RCYApp(App):
             SliceTool, PresetTool, OpenTool, MarkersTool,
             SetTool, TempoTool, PlayTool, StopTool, ExportTool,
             ZoomTool, ModeTool, HelpTool, PresetsTool, QuitTool, CutTool, NudgeTool,
-            EP133Tool,
+            SkinTool, EP133Tool,
         )
         from tui.ep133_handler import ep133_handler
 
@@ -228,6 +228,7 @@ class RCYApp(App):
         registry.register("quit", QuitTool, self._agent_quit)
         registry.register("cut", CutTool, self._agent_cut)
         registry.register("nudge", NudgeTool, self._agent_nudge)
+        registry.register("skin", SkinTool, self._agent_skin)
 
         # EP-133 unified command
         registry.register("ep133", EP133Tool, lambda args: ep133_handler(args, self))
@@ -404,6 +405,30 @@ EP-133 Commands:
             self._on_marker_nudged()
             return f"[{focused.id}] moved {abs(delta)} samples"
         return "Nudge failed"
+
+    def _agent_skin(self, args) -> str:
+        """Handler for /skin command."""
+        from tui.skin_manager import get_skin_manager
+
+        skin_manager = get_skin_manager()
+
+        if args.skin_name == "list":
+            skins = skin_manager.list_skins()
+            current = skin_manager.get_current_skin()
+            lines = ["Available skins:"]
+            for skin_name in skins:
+                info = skin_manager.get_skin_info(skin_name)
+                desc = info['description'] if info else ''
+                marker = " (current)" if skin_name == current else ""
+                lines.append(f"  {skin_name}{marker}: {desc}")
+            return "\n".join(lines)
+
+        if skin_manager.load_skin(args.skin_name):
+            self._update_waveform()
+            return f"Switched to skin: {args.skin_name}"
+        else:
+            available = ", ".join(skin_manager.list_skins())
+            return f"Skin '{args.skin_name}' not found. Available: {available}"
 
     def process_command(self, command: str) -> str:
         """Process /command through default agent (fast path)."""
@@ -986,10 +1011,13 @@ EP-133 Commands:
 def main():
     """Entry point for TUI application."""
     import argparse
+    from tui.skin_manager import get_skin_manager
 
     parser = argparse.ArgumentParser(description='RCY TUI - Terminal Interface for Breakbeat Slicing')
     parser.add_argument('--preset', '-p', default='amen_classic',
                         help='Initial preset to load (default: amen_classic)')
+    parser.add_argument('--skin', '-s', default='default',
+                        help='Color skin to use (default: default). Use --skin list to show available.')
     parser.add_argument('--debug', '-d', action='store_true',
                         help='Enable debug logging')
     args = parser.parse_args()
@@ -1000,6 +1028,21 @@ def main():
     if args.debug:
         # Override console level for debug mode
         logging.getLogger().setLevel(logging.DEBUG)
+
+    # Initialize skin manager and load requested skin
+    skin_manager = get_skin_manager()
+
+    if args.skin == 'list':
+        print("Available skins:")
+        for skin_name in skin_manager.list_skins():
+            info = skin_manager.get_skin_info(skin_name)
+            desc = info['description'] if info else ''
+            print(f"  {skin_name}: {desc}")
+        return
+
+    if not skin_manager.load_skin(args.skin):
+        print(f"Warning: Skin '{args.skin}' not found. Using default.")
+        skin_manager.load_skin('default')
 
     app = RCYApp(preset_id=args.preset)
     app.run()
