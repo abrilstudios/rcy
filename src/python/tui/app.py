@@ -88,12 +88,6 @@ class PatternPlayer:
         times = [b / sample_rate for b in boundaries]
         num_segments = len(times) - 1
 
-        # Cache tempo settings
-        tempo_enabled = self.app.model.playback_tempo_enabled
-        tempo_ratio = 1.0
-        if tempo_enabled and self.app.model.source_bpm > 0:
-            tempo_ratio = self.app.model.target_bpm / self.app.model.source_bpm
-
         pattern_len = len(self.pattern)
 
         while not self._stop_event.is_set():
@@ -108,19 +102,15 @@ class PatternPlayer:
 
             start_time = times[segment_index - 1]
             end_time = times[segment_index]
-            duration = end_time - start_time
-
-            if tempo_enabled:
-                duration = duration / tempo_ratio
 
             # Play the segment (no UI update during loop - too slow)
             self.app.model.play_segment(start_time, end_time)
 
-            # Wait for segment to finish
-            sleep_time = duration
-            while sleep_time > 0 and not self._stop_event.is_set():
-                time.sleep(min(0.05, sleep_time))
-                sleep_time -= 0.05
+            # Wait for audio engine to signal playback completion
+            # Use a timeout to allow checking stop_event periodically
+            while not self._stop_event.is_set():
+                if self.app.model.playback_ended_event.wait(timeout=0.05):
+                    break  # Playback ended
 
             if self._stop_event.is_set():
                 break

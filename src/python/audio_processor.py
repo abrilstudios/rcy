@@ -4,6 +4,7 @@ import librosa
 import os
 import pathlib
 import sys
+import threading
 from typing import Any
 
 from config_manager import config
@@ -71,6 +72,7 @@ class WavAudioProcessor:
         self.preset_info = None
         self.is_playing = False
         self.playback_just_ended = False  # Flag to indicate playback has just ended
+        self.playback_ended_event = threading.Event()  # Event for waiting on playback completion
         self.is_stereo = False
         self.channels = 1
 
@@ -119,6 +121,7 @@ class WavAudioProcessor:
         """Callback from audio engine when playback ends"""
         self.playback_just_ended = True
         self.is_playing = False
+        self.playback_ended_event.set()  # Signal waiters that playback ended
 
     def load_preset(self, preset_id: str) -> PresetInfo | None:
         """Load an audio preset by its ID"""
@@ -433,6 +436,9 @@ class WavAudioProcessor:
             bool: True if playback started, False otherwise
         """
         logger.debug("### Model play_segment called with start_time=%s, end_time=%s, reverse=%s", start_time, end_time, reverse)
+
+        # Clear the completion event before starting playback
+        self.playback_ended_event.clear()
 
         # Play the segment
         self.is_playing = True
