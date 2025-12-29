@@ -29,8 +29,10 @@ just tui-preset think_break      # Launch with Think break
 ### Launch
 
 ```bash
-just tui                    # Load default (Amen break)
-just tui-preset <id>        # Load specific preset
+just run                    # Load default (Amen break)
+just run --skin hacienda    # Load with hacienda color skin
+just run --preset think_break  # Load specific preset
+just run --skin list        # List available skins
 ```
 
 ### Modal Input System
@@ -102,6 +104,8 @@ Type `/` to enter command mode, then:
 
 /export <dir>             Export SFZ + samples
 /zoom in|out              Zoom view
+/skin                     List available color skins
+/skin <name>              Switch to skin (default, high-contrast, monochrome, hacienda)
 /help                     Show help
 /quit                     Exit
 ```
@@ -211,6 +215,7 @@ Creates an SFZ file with all sliced samples mapped chromatically starting at C3.
 - **SFZ Export**: Generate SFZ files for software samplers
 - **Command History**: Bash-style history with reverse search
 - **Preset System**: Quick access to 900+ classic breaks (core + Rhythm Lab collection)
+- **Configurable Skins**: Switch color themes at runtime or via CLI (`--skin hacienda`)
 - **Agent Architecture**: Extensible command system with Pydantic validation
 
 ## Architecture
