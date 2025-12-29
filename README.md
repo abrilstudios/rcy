@@ -162,29 +162,33 @@ RCY includes direct integration with the EP-133 sampler via MIDI SysEx. Slice a 
 
 **Commands**:
 ```
-/ep133 connect        Connect to EP-133
-/ep133 status         Check connection status
-/ep133 upload A       Upload segments to bank A, assign to pads 1-12
-/ep133 upload B       Upload to bank B
-/ep133 clear A        Clear all pad assignments in bank A
-/ep133 disconnect     Disconnect from EP-133
+/ep133 connect              Connect to EP-133 (auto-detects MIDI)
+/ep133 disconnect           Disconnect from EP-133
+/ep133 status               Check connection status
+/ep133 set project <1-9>    Set target project (must match your EP-133 selection)
+/ep133 list                 List sounds on device
+/ep133 upload <bank> <slot> Upload segments to bank (A/B/C/D) starting at slot
+/ep133 clear <bank>         Clear all pad assignments in bank
 ```
 
 **Workflow example**:
 ```
-/preset amen_classic  # Load the Amen break
-/slice 8              # Slice into 8 segments
-/ep133 connect        # Connect to EP-133
-/ep133 upload A       # Upload segments 1-8 to project 1, bank A
+/preset amen_classic       # Load the Amen break
+/slice 8                   # Slice into 8 segments
+/ep133 connect             # Connect to EP-133
+/ep133 set project 9       # Target project 9 (match your EP-133 dial)
+/ep133 upload A 700        # Upload segments to bank A, slots 700+
 ```
 
-The agent also understands natural language: "slice into 16 pieces and upload the first 12 to bank A"
+Samples are named `{preset}_{segment:03d}` (e.g., `amen_classic_001`) for easy identification on the device.
+
+The agent also understands natural language: "slice into 16 pieces and upload the first 12 to bank A starting at slot 800"
 
 **EP-133 Structure**:
-- 9 projects (1-9)
+- 9 projects (1-9) — set via `/ep133 set project <n>` (no SysEx for project switching; manual: Main + pad 1-9)
 - 4 banks per project (A, B, C, D)
 - 12 pads per bank
-- 999 sound slots (USER1: 700-799 used by default)
+- 999 sound slots (USER1: 700-799 recommended)
 
 ### SFZ Export
 
@@ -201,10 +205,12 @@ Creates an SFZ file with all sliced samples mapped chromatically starting at C3.
 - **Breakbeat Slicing**: Slice by measures or transient detection
 - **Pattern Playback**: Play segments in custom sequences with looping
 - **ASCII Waveform**: Visual display with L/R markers and slice points
-- **Hardware Integration**: Direct upload to EP-133 K.O. II
+- **Vim-Style Modal Input**: SEGMENT mode for instant playback, INSERT mode for commands
+- **Marker Nudging**: Fine-tune slice points with arrow keys (normal/fine/coarse)
+- **Hardware Integration**: Direct upload to EP-133 K.O. II with project/bank/slot control
 - **SFZ Export**: Generate SFZ files for software samplers
 - **Command History**: Bash-style history with reverse search
-- **Preset System**: Quick access to classic breaks
+- **Preset System**: Quick access to 900+ classic breaks (core + Rhythm Lab collection)
 - **Agent Architecture**: Extensible command system with Pydantic validation
 
 ## Architecture
