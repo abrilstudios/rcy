@@ -54,6 +54,10 @@ RCY uses a **vim-style modal input** with two modes:
 |-----|--------|
 | `1-0` | Play segments 1-10 |
 | `qwertyuop` | Play segments 11-19 (`i` reserved for mode switch) |
+| `←/→` | Nudge focused marker (~10ms) |
+| `Shift+←/→` | Fine nudge (~1ms) |
+| `Ctrl+←/→` | Coarse nudge (~100ms) |
+| `[` / `]` | Cycle focus through markers (L, segments, R) |
 | `i` | Switch to INSERT mode |
 | `ESC` | Switch to INSERT mode |
 
@@ -84,6 +88,8 @@ Type `/` to enter command mode, then:
 /set release <ms>         Set tail fade duration (default: 3ms)
 /markers <start> <end>    Set L/R markers (seconds)
 /markers --reset          Reset markers to full file
+/cut                      Cut audio to L/R region in-place
+/nudge left|right         Nudge focused marker (use with --fine or --coarse)
 
 /tempo <bpm>              Set adjusted playback tempo
 /tempo --measures <n>     Calculate source tempo from measures
@@ -156,20 +162,20 @@ RCY includes direct integration with the EP-133 sampler via MIDI SysEx. Slice a 
 
 **Commands**:
 ```
-/ep133_connect              Connect to EP-133
-/ep133_status               Check connection status
-/ep133_upload_bank A        Upload segments to bank A, assign to pads 1-12
-/ep133_upload_bank B --slot 750   Upload to bank B starting at slot 750
-/ep133_clear_bank A         Clear all pad assignments in bank A
-/ep133_disconnect           Disconnect from EP-133
+/ep133 connect        Connect to EP-133
+/ep133 status         Check connection status
+/ep133 upload A       Upload segments to bank A, assign to pads 1-12
+/ep133 upload B       Upload to bank B
+/ep133 clear A        Clear all pad assignments in bank A
+/ep133 disconnect     Disconnect from EP-133
 ```
 
 **Workflow example**:
 ```
-/preset amen_classic        # Load the Amen break
-/slice 8                    # Slice into 8 segments
-/ep133_connect              # Connect to EP-133
-/ep133_upload_bank A        # Upload segments 1-8 to project 1, bank A
+/preset amen_classic  # Load the Amen break
+/slice 8              # Slice into 8 segments
+/ep133 connect        # Connect to EP-133
+/ep133 upload A       # Upload segments 1-8 to project 1, bank A
 ```
 
 The agent also understands natural language: "slice into 16 pieces and upload the first 12 to bank A"

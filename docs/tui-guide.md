@@ -58,6 +58,17 @@ This modal approach eliminates conflicts between typing and playback keys.
 
 Note: `i` is reserved for switching to INSERT mode.
 
+### Marker Navigation (SEGMENT Mode Only)
+
+| Key | Action |
+|-----|--------|
+| `←/→` | Nudge focused marker (~10ms) |
+| `Shift+←/→` | Fine nudge (~1ms) |
+| `Ctrl+←/→` | Coarse nudge (~100ms) |
+| `[` / `]` | Cycle focus through markers (L, segments, R) |
+
+Focused markers are highlighted with brackets: `[L]`, `[R]`, or `◆` for segments.
+
 ### Mode Switching
 
 | Key | Action |
@@ -116,12 +127,16 @@ All commands start with `/` and are entered in INSERT mode.
 /set release <ms>         Set tail fade duration in milliseconds
 ```
 
-### Markers
+### Markers & Editing
 
 ```
 /markers <start> <end>    Set L/R markers (in seconds)
 /markers --reset          Reset markers to full file
+/cut                      Cut audio to L/R region in-place
+/nudge left|right         Nudge focused marker programmatically
 ```
+
+Note: In SEGMENT mode, use arrow keys for nudging and `[`/`]` for focus cycling.
 
 ### Export
 
