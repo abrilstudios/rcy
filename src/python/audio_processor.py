@@ -202,7 +202,9 @@ class WavAudioProcessor:
         self.audio_engine.set_source_audio(
             self.data_left, self.data_right, self.sample_rate, self.is_stereo
         )
-        self.audio_engine.start_stream()
+        # Only start stream if not already running (allows preset switching without restart)
+        if not self.audio_engine.is_streaming:
+            self.audio_engine.start_stream()
 
     def _set_measures_and_calculate_bpm(self) -> None:
         """Extract measures from preset info and calculate source BPM."""

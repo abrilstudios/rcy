@@ -16,7 +16,6 @@ class MockConfigManager:
     def __init__(self, presets=None):
         self._presets = presets or [
             ("amen_classic", "Amen Break"),
-            ("think_break", "Think (About It)"),
             ("apache_break", "Apache"),
             ("rl_hot_pants", "Hot Pants"),
             ("rl_walk_this_way", "Walk This Way"),

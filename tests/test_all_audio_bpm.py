@@ -6,7 +6,7 @@ import os
 import glob
 from audio_processor import WavAudioProcessor
 
-def test_bpm_calculation(file_path, measure_values=[1]):
+def run_bpm_calculation(file_path, measure_values=[1]):
     """Test BPM calculation with different measure values."""
     print(f"\n===== BPM CALCULATION TEST FOR: {os.path.basename(file_path)} =====")
     
@@ -59,7 +59,7 @@ if __name__ == "__main__":
     file_results = []
     
     for file_path in wav_files:
-        duration = test_bpm_calculation(file_path, measure_values)
+        duration = run_bpm_calculation(file_path, measure_values)
         if duration:
             file_results.append({
                 'file': os.path.basename(file_path),

@@ -5,12 +5,6 @@
     "artist": "The Winstons",
     "measures": 4
   },
-  "think_break": {
-    "filepath": "presets/think_break/think.wav",
-    "name": "Think (About It)",
-    "artist": "Lyn Collins",
-    "measures": 1
-  },
   "apache_break": {
     "filepath": "presets/apache_break/apache.wav",
     "name": "Apache",

@@ -10,7 +10,7 @@ import numpy as np
 class TestPlaybackTempo:
     """Test suite for playback tempo adjustment feature."""
     
-    @pytest.fixture(params=['amen_classic', 'think_break', 'apache_break'])
+    @pytest.fixture(params=['amen_classic', 'apache_break'])
     def processor(self, request):
         """Fixture to create a WavAudioProcessor with the specified preset."""
         return WavAudioProcessor(preset_id=request.param)
@@ -25,7 +25,6 @@ class TestPlaybackTempo:
         
         expected_measures = {
             'amen_classic': 4,
-            'think_break': 1,
             'apache_break': 2
         }
         
@@ -48,7 +47,6 @@ class TestPlaybackTempo:
         # Expected approximate values for each preset
         expected_approx = {
             'amen_classic': 138.0,  # ~137.72 actual
-            'think_break': 114.0,   # ~114.00 actual (1 measure, not 4)
             'apache_break': 120.0   # ~120.00 actual
         }
         

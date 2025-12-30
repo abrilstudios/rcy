@@ -6,7 +6,7 @@ This will load the given file and test different measure values to see how BPM c
 import os
 from audio_processor import WavAudioProcessor
 
-def test_bpm_calculation(file_path, measure_values):
+def run_bpm_calculation(file_path, measure_values):
     """Test BPM calculation with different measure values."""
     print(f"\n===== BPM CALCULATION TEST FOR: {file_path} =====")
     print(f"File: {os.path.basename(file_path)}")
@@ -46,6 +46,6 @@ if __name__ == "__main__":
     
     for file_path in files:
         if os.path.exists(file_path):
-            test_bpm_calculation(file_path, measure_values)
+            run_bpm_calculation(file_path, measure_values)
         else:
             print(f"File not found: {file_path}")

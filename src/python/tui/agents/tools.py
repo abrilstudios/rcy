@@ -21,7 +21,7 @@ class PresetTool(BaseModel):
     """Load a breakbeat preset.
 
     Args:
-        preset_id: The ID of the preset to load (e.g., 'amen_classic', 'think_break')
+        preset_id: The ID of the preset to load (e.g., 'amen_classic', 'apache_break')
     """
     preset_id: str = Field(..., description="Preset ID to load")
 
@@ -206,6 +206,41 @@ class EP133Tool(BaseModel):
     slot: Optional[int] = Field(None, ge=1, le=988, description="Starting slot for upload")
 
 
+class ViewTool(BaseModel):
+    """Switch notebook page view.
+
+    The TUI has three pages that behave like a notebook:
+    - waveform: Audition and temporal reasoning (default)
+    - bank: EP-133 pad layout (4 banks × 12 pads)
+    - sounds: Full sound inventory (999 slots)
+
+    Args:
+        page: Page to switch to (waveform, bank, sounds)
+        bank: For bank page, which bank to focus (A/B/C/D)
+    """
+    page: str = Field(..., pattern="^(waveform|bank|sounds)$", description="Page: waveform, bank, or sounds")
+    bank: Optional[str] = Field(None, pattern="^[A-Da-d]$", description="Bank to focus (A/B/C/D)")
+
+
+class PickTool(BaseModel):
+    """Pick up a sound from the current context.
+
+    On Sounds page: picks the focused sound
+    On Waveform page: picks the current slice as a sound
+    On Bank page: picks the sound assigned to focused pad
+    """
+    pass
+
+
+class DropTool(BaseModel):
+    """Drop the held sound onto the current target.
+
+    On Bank page: assigns held sound to focused pad
+    On Sounds page: copies held sound to focused empty slot
+    """
+    pass
+
+
 # Map of tool names to their schemas
 TOOL_SCHEMAS = {
     "slice": SliceTool,
@@ -228,6 +263,10 @@ TOOL_SCHEMAS = {
     "nudge": NudgeTool,
     # EP-133 unified command
     "ep133": EP133Tool,
+    # Notebook pages
+    "view": ViewTool,
+    "pick": PickTool,
+    "drop": DropTool,
 }
 
 # Aliases for convenience
@@ -245,4 +284,5 @@ TOOL_ALIASES = {
     "x": "stop",
     "c": "cut",
     "n": "nudge",
+    "v": "view",
 }
