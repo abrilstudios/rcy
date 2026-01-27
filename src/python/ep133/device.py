@@ -188,8 +188,26 @@ class EP133Device:
 
         return None
 
+    def drain_pending(self) -> int:
+        """Drain all pending messages from the receive buffer.
+
+        Returns:
+            Number of messages drained
+        """
+        drained = 0
+        while True:
+            raw = self._recv_raw(timeout=0.01)
+            if raw is None:
+                break
+            drained += 1
+            logger.debug(f"Drained pending message: {raw.hex()[:40]}...")
+        return drained
+
     def send_and_receive(self, data: bytes, timeout: float | None = None) -> dict | None:
         """Send message and wait for response.
+
+        The EP-133 sends async notifications (cmd not in 0x2x range) that we skip.
+        We wait for the first actual response (is_response=True).
 
         Args:
             data: Complete SysEx message
@@ -198,10 +216,11 @@ class EP133Device:
         Returns:
             Parsed response dict, or None on timeout
         """
+        # Drain any pending messages before sending
+        self.drain_pending()
+
         self._send_raw(data)
 
-        # Keep receiving until we get an actual response (not NOTIFY)
-        # NOTIFY messages have cmd=0x40, responses have cmd in 0x2x range
         timeout = timeout or self._timeout
         start = time.time()
 
@@ -212,10 +231,13 @@ class EP133Device:
 
             parsed = parse_te_response(raw_response)
             if parsed is None:
+                logger.warning(f"Invalid response format: {raw_response.hex()}")
                 continue
 
-            # Skip NOTIFY messages (cmd=0x40), wait for actual response
-            if parsed.get("cmd") == 0x40:
+            # Skip non-response messages (notifications from device)
+            # Responses have cmd in 0x2x range (is_response=True)
+            if not parsed.get("is_response", False):
+                logger.debug(f"Skipping non-response: cmd=0x{parsed.get('cmd', 0):02x}")
                 continue
 
             return parsed

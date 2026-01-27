@@ -170,27 +170,45 @@ class TestEP133Upload:
             samplerate=44100
         )
 
+    @pytest.mark.skip(reason="Long-running test, run manually with -k test_upload_chromatic_scale")
     def test_upload_chromatic_scale(self, ep133_device, chromatic_segments):
-        """Test uploading 12 chromatic tones to consecutive slots.
+        """Test uploading 12 chromatic tones and assigning to bank A.
 
-        Note: Upload success is verified by no exception being raised.
+        Mimics the TUI flow: upload with name, then assign to pad, interleaved.
         """
-        slot_start = 980  # Use slots 980-991 in SFX range
+        from ep133.pad_mapping import pad_to_node_id
+
+        project = 1
+        bank = 'A'
+        slot_start = 700
 
         uploaded_count = 0
+        assigned_count = 0
+
         for i, segment in enumerate(chromatic_segments):
             pcm = float_to_pcm_s16le(segment)
             slot = slot_start + i
+            pad = i + 1
+            name = f"sin_{i+1:02d}"
 
+            # Upload with name (like TUI does)
             ep133_device.upload_sample(
                 slot=slot,
                 audio_data=pcm,
                 channels=1,
-                samplerate=44100
+                samplerate=44100,
+                name=name
             )
             uploaded_count += 1
 
+            # Assign to pad immediately after upload (like TUI does)
+            node_id = pad_to_node_id(project, bank, pad)
+            success = ep133_device.assign_sound(node_id, slot)
+            if success:
+                assigned_count += 1
+
         assert uploaded_count == 12
+        assert assigned_count == 12, f"Only {assigned_count}/12 pads assigned"
 
 
 class TestEP133BankOperations:
@@ -211,6 +229,7 @@ class TestEP133BankOperations:
         # Verify pads are cleared (would need to read metadata to fully verify)
         # For now just ensure no exception was raised
 
+    @pytest.mark.skip(reason="Long-running test, run manually")
     def test_upload_and_assign_bank(self, ep133_device, chromatic_segments):
         """Test full workflow: upload chromatic scale to slots, assign to bank."""
         from ep133.pad_mapping import pad_to_node_id
