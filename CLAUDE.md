@@ -115,6 +115,45 @@ RCY uses a modular directory layout with absolute imports and explicit runtime c
 - Ensure tests pass before merging
 - Update documentation when changing functionality
 
+## S2800/S3000/S3200 SysEx Protocol Reference
+
+When working on S2800/S3000/S3200 SysEx code, use `tools/bin/s2800-agent` to look up protocol details. This tool queries the complete specification and gives exact parameter offsets, sizes, ranges, and model differences. **Always use this instead of guessing protocol values.**
+
+```bash
+# Look up a parameter by name
+tools/bin/s2800-agent param FILFRQ
+tools/bin/s2800-agent param FILFRQ keygroup
+
+# Reverse lookup: what parameter is at this byte offset?
+tools/bin/s2800-agent offset keygroup 34
+
+# List all parameters in a header (program, keygroup, or sample)
+tools/bin/s2800-agent list program
+tools/bin/s2800-agent list keygroup filter
+
+# Build a SysEx message
+tools/bin/s2800-agent build 0x27 0 0 0 3 12
+
+# Decode a raw SysEx hex string
+tools/bin/s2800-agent decode "F0 47 00 27 48 00 00 00 03 00 0C 00 F7"
+
+# Compare model differences (S2800 vs S3000 vs S3200)
+tools/bin/s2800-agent models
+tools/bin/s2800-agent models OUTPUT
+
+# Live device (requires S2800 connected via MIDI):
+tools/bin/s2800-agent programs              # List programs on device
+tools/bin/s2800-agent samples               # List samples on device
+tools/bin/s2800-agent read POLYPH           # Read current polyphony from program 0
+tools/bin/s2800-agent read LEGATO 0         # Read legato setting from program 0
+tools/bin/s2800-agent read-kg FILFRQ 0 0    # Read filter freq from keygroup 0
+tools/bin/s2800-agent summary               # Full summary of program 0 settings
+```
+
+The structured spec data lives in `src/python/s2800/agent/spec.py`. The tool functions are in `src/python/s2800/agent/tools.py`. The live device tools use the `S2800` class from `src/python/s2800/sampler.py` (read-only).
+
+---
+
 ## 📝 Issue Management
 
 - When working on issues, always update the issue with your progress

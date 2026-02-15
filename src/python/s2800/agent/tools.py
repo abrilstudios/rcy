@@ -1,9 +1,12 @@
 """Tool functions for the S2800/S3000/S3200 SysEx expert agent.
 
 These tools provide precise, non-hallucinated answers by querying the
-structured specification data and using the existing protocol module
-for message construction and parsing.
+structured specification data, using the existing protocol module for
+message construction and parsing, and reading live values from a
+connected S2800 sampler over MIDI.
 """
+
+import logging
 
 from s2800.agent.spec import (
     ALL_HEADERS,
@@ -19,6 +22,8 @@ from s2800.protocol import (
     nibble_decode,
     nibble_encode,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _format_parameter(param: Parameter, header_name: str = "") -> str:
@@ -519,3 +524,586 @@ def _opcode_to_header_type(opcode: int) -> str | None:
         0x2C: "sample",
     }
     return mapping.get(opcode)
+
+
+# ---------------------------------------------------------------------------
+# Live device tools
+# ---------------------------------------------------------------------------
+
+def _interpret_value(param: Parameter, raw_value: int) -> str:
+    """Interpret a raw byte value using the parameter's range description."""
+    range_desc = param.range_desc.lower()
+
+    # Boolean/enum style: "0=OFF, 1=ON"
+    if "=" in param.range_desc:
+        for part in param.range_desc.split(","):
+            part = part.strip()
+            if "=" in part:
+                val_str, label = part.split("=", 1)
+                try:
+                    if int(val_str.strip()) == raw_value:
+                        return f"{raw_value} ({label.strip()})"
+                except ValueError:
+                    pass
+
+    # Signed range like "-50 to +50"
+    if "to" in range_desc and "-" in range_desc:
+        if raw_value > 127:
+            signed = raw_value - 256
+        elif raw_value > 50 and "+50" in range_desc:
+            signed = raw_value - 256 if raw_value > 127 else raw_value
+        else:
+            signed = raw_value
+        return str(signed)
+
+    # "represents 1-32 voices" style
+    if "represents" in range_desc and "voices" in range_desc:
+        return f"{raw_value} (= {raw_value + 1} voices)"
+
+    # Mod source
+    if "mod source" in range_desc:
+        for src in MODULATION_SOURCES:
+            if src.value == raw_value:
+                return f"{raw_value} ({src.name})"
+
+    return str(raw_value)
+
+
+class _SamplerConnection:
+    """Lazy singleton connection to the S2800.
+
+    Connects on first use and keeps the connection open for subsequent
+    tool calls within the same process. Reconnects automatically if the
+    connection is lost.
+    """
+
+    def __init__(self):
+        self._sampler = None
+
+    def get(self):
+        """Get the shared S2800 connection, connecting if needed."""
+        from s2800.sampler import S2800
+
+        if self._sampler is not None:
+            # Verify the connection is still alive
+            try:
+                if self._sampler._port_in and self._sampler._port_out:
+                    return self._sampler
+            except Exception:
+                pass
+            # Connection lost, reconnect
+            self.close()
+
+        self._sampler = S2800()
+        self._sampler.open()
+        logger.info("Connected to S2800 (persistent connection)")
+        return self._sampler
+
+    def close(self):
+        """Explicitly close the connection."""
+        if self._sampler is not None:
+            try:
+                self._sampler.close()
+            except Exception:
+                pass
+            self._sampler = None
+
+
+_sampler_conn = _SamplerConnection()
+
+
+def _get_sampler():
+    """Get the shared S2800 connection."""
+    return _sampler_conn.get()
+
+
+def read_device_programs() -> str:
+    """List all programs currently on the connected S2800.
+
+    Connects to the S2800 over MIDI and retrieves the program list.
+    No parameters required.
+
+    Returns:
+        List of program names with their indices, or an error message
+        if the device is not connected.
+    """
+    try:
+        sampler = _get_sampler()
+    except Exception as e:
+        return f"Could not connect to S2800: {e}"
+
+    try:
+        programs = sampler.list_programs()
+        if not programs:
+            return "No programs found on device."
+        lines = [f"Programs on device ({len(programs)}):"]
+        for i, name in enumerate(programs):
+            lines.append(f"  {i}: {name}")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error reading programs: {e}"
+
+
+def read_device_samples() -> str:
+    """List all samples currently on the connected S2800.
+
+    Connects to the S2800 over MIDI and retrieves the sample list.
+    No parameters required.
+
+    Returns:
+        List of sample names with their indices, or an error message
+        if the device is not connected.
+    """
+    try:
+        sampler = _get_sampler()
+    except Exception as e:
+        return f"Could not connect to S2800: {e}"
+
+    try:
+        samples = sampler.list_samples()
+        if not samples:
+            return "No samples found on device."
+        lines = [f"Samples on device ({len(samples)}):"]
+        for i, name in enumerate(samples):
+            lines.append(f"  {i}: {name}")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error reading samples: {e}"
+
+
+def read_program_parameter(
+    parameter_name: str,
+    program_number: int = 0,
+) -> str:
+    """Read a parameter's current value from a program on the connected S2800.
+
+    Connects to the device, reads the program header, extracts the
+    parameter value, and cross-references it with the spec to give
+    a meaningful interpretation.
+
+    Args:
+        parameter_name: Parameter name (e.g. "POLYPH", "LEGATO", "PRNAME").
+        program_number: Program index (0-based, default 0).
+
+    Returns:
+        The current value with interpretation, or an error message.
+    """
+    # Find the parameter in the program header spec
+    header = ALL_HEADERS["program"]
+    param = None
+    for p in header.parameters:
+        if p.name.lower() == parameter_name.strip().lower():
+            param = p
+            break
+
+    if param is None:
+        # Try fuzzy match
+        matches = []
+        for p in header.parameters:
+            if _fuzzy_match(parameter_name, p.name):
+                matches.append(p)
+        if len(matches) == 1:
+            param = matches[0]
+        elif matches:
+            names = ", ".join(m.name for m in matches)
+            return f"Ambiguous parameter '{parameter_name}'. Matches: {names}"
+        else:
+            return (f"Parameter '{parameter_name}' not found in program header. "
+                    f"Use list_parameters('program') to see all parameters.")
+
+    try:
+        sampler = _get_sampler()
+    except Exception as e:
+        return f"Could not connect to S2800: {e}"
+
+    try:
+        raw_header = sampler.read_program_header(program_number)
+        if raw_header is None:
+            return f"No response from device for program {program_number}."
+
+        if param.offset + param.size > len(raw_header):
+            return (f"Header too short ({len(raw_header)} bytes) to read "
+                    f"{param.name} at offset {param.offset}.")
+
+        raw_bytes = raw_header[param.offset:param.offset + param.size]
+
+        # Format the result
+        lines = [f"Program {program_number}, {param.name}:"]
+
+        if param.size == 1:
+            value = raw_bytes[0]
+            interpreted = _interpret_value(param, value)
+            lines.append(f"  Current value: {interpreted}")
+        elif param.name == "PRNAME" or "name" in param.name.lower():
+            name = decode_akai_name(raw_bytes)
+            lines.append(f"  Current value: \"{name}\"")
+        elif param.size == 2:
+            value = raw_bytes[0] | (raw_bytes[1] << 8)
+            lines.append(f"  Current value: {value} (raw: 0x{raw_bytes[0]:02X} 0x{raw_bytes[1]:02X})")
+        else:
+            hex_str = " ".join(f"0x{b:02X}" for b in raw_bytes)
+            lines.append(f"  Current value (raw): {hex_str}")
+
+        lines.append(f"  Range: {param.range_desc}")
+        lines.append(f"  Description: {param.description}")
+        if param.notes:
+            lines.append(f"  Notes: {param.notes}")
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        return f"Error reading from device: {e}"
+
+
+def read_keygroup_parameter(
+    parameter_name: str,
+    program_number: int = 0,
+    keygroup_number: int = 0,
+) -> str:
+    """Read a parameter's current value from a keygroup on the connected S2800.
+
+    Connects to the device, reads the keygroup header, extracts the
+    parameter value, and cross-references it with the spec.
+
+    Args:
+        parameter_name: Parameter name (e.g. "FILFRQ", "SNAME1", "LONOTE").
+        program_number: Program index (0-based, default 0).
+        keygroup_number: Keygroup index (0-based, default 0).
+
+    Returns:
+        The current value with interpretation, or an error message.
+    """
+    header = ALL_HEADERS["keygroup"]
+    param = None
+    for p in header.parameters:
+        if p.name.lower() == parameter_name.strip().lower():
+            param = p
+            break
+
+    if param is None:
+        matches = []
+        for p in header.parameters:
+            if _fuzzy_match(parameter_name, p.name):
+                matches.append(p)
+        if len(matches) == 1:
+            param = matches[0]
+        elif matches:
+            names = ", ".join(m.name for m in matches)
+            return f"Ambiguous parameter '{parameter_name}'. Matches: {names}"
+        else:
+            return (f"Parameter '{parameter_name}' not found in keygroup header. "
+                    f"Use list_parameters('keygroup') to see all parameters.")
+
+    try:
+        sampler = _get_sampler()
+    except Exception as e:
+        return f"Could not connect to S2800: {e}"
+
+    try:
+        raw_header = sampler.read_keygroup(program_number, keygroup_number)
+        if raw_header is None:
+            return (f"No response from device for program {program_number}, "
+                    f"keygroup {keygroup_number}.")
+
+        if param.offset + param.size > len(raw_header):
+            return (f"Header too short ({len(raw_header)} bytes) to read "
+                    f"{param.name} at offset {param.offset}.")
+
+        raw_bytes = raw_header[param.offset:param.offset + param.size]
+
+        lines = [f"Program {program_number} / Keygroup {keygroup_number}, {param.name}:"]
+
+        if "name" in param.name.lower() or "SNAME" in param.name:
+            name = decode_akai_name(raw_bytes)
+            lines.append(f"  Current value: \"{name}\"")
+        elif param.size == 1:
+            value = raw_bytes[0]
+            interpreted = _interpret_value(param, value)
+            lines.append(f"  Current value: {interpreted}")
+        elif param.size == 2:
+            value = raw_bytes[0] | (raw_bytes[1] << 8)
+            lines.append(f"  Current value: {value} (raw: 0x{raw_bytes[0]:02X} 0x{raw_bytes[1]:02X})")
+        else:
+            hex_str = " ".join(f"0x{b:02X}" for b in raw_bytes)
+            lines.append(f"  Current value (raw): {hex_str}")
+
+        lines.append(f"  Range: {param.range_desc}")
+        lines.append(f"  Description: {param.description}")
+        if param.notes:
+            lines.append(f"  Notes: {param.notes}")
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        return f"Error reading from device: {e}"
+
+
+def read_program_summary(program_number: int = 0) -> str:
+    """Read key settings from a program on the connected S2800.
+
+    Reads the full program header and returns a summary of the most
+    important parameters: name, MIDI channel, polyphony, priority,
+    play range, output routing, loudness, LFO settings, legato mode,
+    and keygroup count.
+
+    Args:
+        program_number: Program index (0-based, default 0).
+
+    Returns:
+        Formatted summary of program settings.
+    """
+    try:
+        sampler = _get_sampler()
+    except Exception as e:
+        return f"Could not connect to S2800: {e}"
+
+    try:
+        raw = sampler.read_program_header(program_number)
+        if raw is None:
+            return f"No response from device for program {program_number}."
+
+        header = ALL_HEADERS["program"]
+
+        lines = [f"Program {program_number} Summary:", ""]
+
+        # Read key parameters by name
+        key_params = [
+            "PRNAME", "PRGNUM", "PMCHAN", "POLYPH", "PRIORT",
+            "PLAYLO", "PLAYHI", "OUTPUT", "PANPOS", "PRLOUD",
+            "LFORAT", "LFODEP", "B_PTCH", "B_PTCHD", "KXFADE",
+            "GROUPS", "LEGATO", "B_MODE", "TRANSPOSE", "PFXCHAN",
+        ]
+
+        for pname in key_params:
+            for p in header.parameters:
+                if p.name == pname:
+                    if p.offset + p.size > len(raw):
+                        continue
+                    raw_bytes = raw[p.offset:p.offset + p.size]
+
+                    if pname == "PRNAME":
+                        val_str = f"\"{decode_akai_name(raw_bytes)}\""
+                    elif p.size == 1:
+                        val_str = _interpret_value(p, raw_bytes[0])
+                    elif p.size == 2:
+                        val = raw_bytes[0] | (raw_bytes[1] << 8)
+                        val_str = str(val)
+                    else:
+                        val_str = " ".join(f"0x{b:02X}" for b in raw_bytes)
+
+                    lines.append(f"  {pname:<12} = {val_str:<20} ({p.description})")
+                    break
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        return f"Error reading from device: {e}"
+
+
+# ---------------------------------------------------------------------------
+# Live device tools (write)
+# ---------------------------------------------------------------------------
+
+def _find_param(header_name: str, parameter_name: str) -> Parameter | str:
+    """Find a parameter by name in a header. Returns Parameter or error string."""
+    header = ALL_HEADERS[header_name]
+    query = parameter_name.strip().lower()
+
+    for p in header.parameters:
+        if p.name.lower() == query:
+            return p
+
+    matches = [p for p in header.parameters if _fuzzy_match(query, p.name)]
+    if len(matches) == 1:
+        return matches[0]
+    if matches:
+        names = ", ".join(m.name for m in matches)
+        return f"Ambiguous parameter '{parameter_name}'. Matches: {names}"
+    return (f"Parameter '{parameter_name}' not found in {header_name} header. "
+            f"Use list_parameters('{header_name}') to see all parameters.")
+
+
+def _write_raw_bytes(sampler, opcode: int, program_number: int,
+                     selector: int, offset: int, data: bytes) -> str | None:
+    """Write raw bytes to a header via S3K partial write. Returns error or None."""
+    import time
+    from s2800.protocol import FUNC_REPLY, REPLY_OK
+
+    nibbled = nibble_encode(data)
+    payload = bytearray([
+        program_number & 0x7F,
+        (program_number >> 7) & 0x7F,
+        selector & 0x7F,
+        offset & 0x7F,
+        (offset >> 7) & 0x7F,
+        len(data) & 0x7F,
+        (len(data) >> 7) & 0x7F,
+    ])
+    payload.extend(nibbled)
+    sampler._send(opcode, bytes(payload))
+
+    result = sampler._recv(timeout=3.0)
+    time.sleep(0.1)
+
+    if result and result[0] == FUNC_REPLY:
+        code = result[1][0] if result[1] else 0
+        if code != REPLY_OK:
+            return f"Device rejected write (error code {code})"
+    return None
+
+
+def write_program_parameter(
+    parameter_name: str,
+    value: int,
+    program_number: int = 0,
+) -> str:
+    """Write a value to a program parameter on the connected S2800.
+
+    Looks up the parameter in the spec, validates it, writes the value
+    via S3K partial write (opcode 0x28), then reads it back to confirm.
+
+    Args:
+        parameter_name: Parameter name (e.g. "POLYPH", "LEGATO", "PANPOS").
+        value: Value to write (integer, 0-255 for single-byte parameters).
+        program_number: Program index (0-based, default 0).
+
+    Returns:
+        Confirmation with before/after values, or an error message.
+    """
+    from s2800.protocol import FUNC_S3K_PDATA
+
+    result = _find_param("program", parameter_name)
+    if isinstance(result, str):
+        return result
+    param = result
+
+    if "read-only" in param.notes.lower() or "internal" in param.notes.lower():
+        return (f"Parameter {param.name} is {param.notes}. "
+                f"Writing to it may be ignored by the device.")
+
+    if param.size > 2:
+        return (f"Parameter {param.name} is {param.size} bytes. "
+                f"Use write_program_parameter only for 1-2 byte parameters.")
+
+    try:
+        sampler = _get_sampler()
+    except Exception as e:
+        return f"Could not connect to S2800: {e}"
+
+    try:
+        # Read current value first
+        raw_header = sampler.read_program_header(program_number)
+        if raw_header is None:
+            return f"No response from device for program {program_number}."
+
+        old_bytes = raw_header[param.offset:param.offset + param.size]
+        old_val = old_bytes[0] if param.size == 1 else (old_bytes[0] | (old_bytes[1] << 8))
+
+        # Write new value
+        if param.size == 1:
+            data = bytes([value & 0xFF])
+        else:
+            data = bytes([value & 0xFF, (value >> 8) & 0xFF])
+
+        err = _write_raw_bytes(sampler, FUNC_S3K_PDATA, program_number,
+                               0x00, param.offset, data)
+        if err:
+            return f"Write failed for {param.name}: {err}"
+
+        # Read back to confirm
+        new_header = sampler.read_program_header(program_number)
+        if new_header:
+            new_bytes = new_header[param.offset:param.offset + param.size]
+            new_val = new_bytes[0] if param.size == 1 else (new_bytes[0] | (new_bytes[1] << 8))
+            old_str = _interpret_value(param, old_val)
+            new_str = _interpret_value(param, new_val)
+            return (f"Program {program_number}, {param.name}:\n"
+                    f"  Before: {old_str}\n"
+                    f"  After:  {new_str}\n"
+                    f"  ({param.description})")
+        else:
+            return (f"Wrote {param.name} = {value} on program {program_number} "
+                    f"(could not read back to confirm).")
+
+    except Exception as e:
+        return f"Error writing to device: {e}"
+
+
+def write_keygroup_parameter(
+    parameter_name: str,
+    value: int,
+    program_number: int = 0,
+    keygroup_number: int = 0,
+) -> str:
+    """Write a value to a keygroup parameter on the connected S2800.
+
+    Looks up the parameter in the spec, validates it, writes the value
+    via S3K partial write (opcode 0x2A), then reads it back to confirm.
+
+    Args:
+        parameter_name: Parameter name (e.g. "kgmute", "FILFRQ", "LONOTE").
+        value: Value to write (integer, 0-255 for single-byte parameters).
+        program_number: Program index (0-based, default 0).
+        keygroup_number: Keygroup index (0-based, default 0).
+
+    Returns:
+        Confirmation with before/after values, or an error message.
+    """
+    from s2800.protocol import FUNC_S3K_KDATA
+
+    result = _find_param("keygroup", parameter_name)
+    if isinstance(result, str):
+        return result
+    param = result
+
+    if "internal" in param.notes.lower():
+        return (f"Parameter {param.name} is {param.notes}. "
+                f"Writing to it may be ignored by the device.")
+
+    if param.size > 2:
+        return (f"Parameter {param.name} is {param.size} bytes. "
+                f"Use write_keygroup_parameter only for 1-2 byte parameters.")
+
+    try:
+        sampler = _get_sampler()
+    except Exception as e:
+        return f"Could not connect to S2800: {e}"
+
+    try:
+        # Read current value first
+        raw_header = sampler.read_keygroup(program_number, keygroup_number)
+        if raw_header is None:
+            return (f"No response from device for program {program_number}, "
+                    f"keygroup {keygroup_number}.")
+
+        old_bytes = raw_header[param.offset:param.offset + param.size]
+        old_val = old_bytes[0] if param.size == 1 else (old_bytes[0] | (old_bytes[1] << 8))
+
+        # Write new value
+        if param.size == 1:
+            data = bytes([value & 0xFF])
+        else:
+            data = bytes([value & 0xFF, (value >> 8) & 0xFF])
+
+        err = _write_raw_bytes(sampler, FUNC_S3K_KDATA, program_number,
+                               keygroup_number, param.offset, data)
+        if err:
+            return f"Write failed for {param.name}: {err}"
+
+        # Read back to confirm
+        new_header = sampler.read_keygroup(program_number, keygroup_number)
+        if new_header:
+            new_bytes = new_header[param.offset:param.offset + param.size]
+            new_val = new_bytes[0] if param.size == 1 else (new_bytes[0] | (new_bytes[1] << 8))
+            old_str = _interpret_value(param, old_val)
+            new_str = _interpret_value(param, new_val)
+            return (f"Program {program_number} / Keygroup {keygroup_number}, {param.name}:\n"
+                    f"  Before: {old_str}\n"
+                    f"  After:  {new_str}\n"
+                    f"  ({param.description})")
+        else:
+            return (f"Wrote {param.name} = {value} on program {program_number} / "
+                    f"keygroup {keygroup_number} (could not read back to confirm).")
+
+    except Exception as e:
+        return f"Error writing to device: {e}"

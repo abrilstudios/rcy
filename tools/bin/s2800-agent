@@ -1,0 +1,189 @@
+#!/usr/bin/env bash
+# S2800/S3000/S3200 SysEx protocol tool
+#
+# Spec lookup:
+#   s2800-agent param FILFRQ                    # Look up a parameter by name
+#   s2800-agent param FILFRQ keygroup           # Look up in specific header
+#   s2800-agent offset keygroup 34              # What parameter is at offset 34?
+#   s2800-agent list program                    # List all program header params
+#   s2800-agent list keygroup filter            # List params matching "filter"
+#   s2800-agent build 0x27 0 0 0 3 12           # Build a SysEx message
+#   s2800-agent decode "F0 47 00 27 48 ..."     # Decode a SysEx hex string
+#   s2800-agent models                          # Compare S2800/S3000/S3200
+#   s2800-agent models OUTPUT                   # Compare models for a parameter
+#
+# Live device (requires S2800 connected via MIDI):
+#   s2800-agent programs                        # List programs on device
+#   s2800-agent samples                         # List samples on device
+#   s2800-agent read POLYPH                     # Read a program parameter
+#   s2800-agent read POLYPH 0                   # Read from specific program
+#   s2800-agent read-kg FILFRQ 0 0              # Read a keygroup parameter
+#   s2800-agent summary                         # Full program summary
+#   s2800-agent summary 0                       # Summary of specific program
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+VENV="$PROJECT_ROOT/venv"
+PYTHON="$VENV/bin/python"
+
+if [ ! -f "$PYTHON" ]; then
+    echo "Error: Virtual environment not found at $VENV"
+    echo "Run 'just setup' to create it."
+    exit 1
+fi
+
+export PYTHONPATH="$PROJECT_ROOT/src/python"
+
+CMD="${1:-help}"
+shift 2>/dev/null || true
+
+case "$CMD" in
+    param|parameter|lookup)
+        NAME="${1:?Usage: s2800-agent param <name> [header_type]}"
+        HEADER="${2:-}"
+        "$PYTHON" -c "
+from s2800.agent.tools import lookup_parameter
+print(lookup_parameter('$NAME', '$HEADER'))
+"
+        ;;
+    offset)
+        HEADER="${1:?Usage: s2800-agent offset <header_type> <offset>}"
+        OFFSET="${2:?Usage: s2800-agent offset <header_type> <offset>}"
+        "$PYTHON" -c "
+from s2800.agent.tools import lookup_by_offset
+print(lookup_by_offset('$HEADER', $OFFSET))
+"
+        ;;
+    list)
+        HEADER="${1:?Usage: s2800-agent list <header_type> [filter]}"
+        FILTER="${2:-}"
+        "$PYTHON" -c "
+from s2800.agent.tools import list_parameters
+print(list_parameters('$HEADER', '$FILTER'))
+"
+        ;;
+    build)
+        OP="${1:?Usage: s2800-agent build <opcode> <channel> <item> <selector> <offset> <length> [data...]}"
+        CHAN="${2:?Missing channel}"
+        ITEM="${3:?Missing item_index}"
+        SEL="${4:?Missing selector}"
+        OFF="${5:?Missing offset}"
+        LEN="${6:?Missing length}"
+        shift 6
+        if [ $# -gt 0 ]; then
+            DATA="[$(IFS=,; echo "$*")]"
+        else
+            DATA="None"
+        fi
+        "$PYTHON" -c "
+from s2800.agent.tools import build_sysex_message
+print(build_sysex_message('$OP', $CHAN, $ITEM, $SEL, $OFF, $LEN, $DATA))
+"
+        ;;
+    decode)
+        HEX="${1:?Usage: s2800-agent decode \"F0 47 ...\"}"
+        "$PYTHON" -c "
+from s2800.agent.tools import decode_sysex_message
+print(decode_sysex_message('$HEX'))
+"
+        ;;
+    models|compare)
+        PARAM="${1:-}"
+        "$PYTHON" -c "
+from s2800.agent.tools import compare_models
+print(compare_models('$PARAM'))
+"
+        ;;
+    programs)
+        "$PYTHON" -c "
+from s2800.agent.tools import read_device_programs
+print(read_device_programs())
+"
+        ;;
+    samples)
+        "$PYTHON" -c "
+from s2800.agent.tools import read_device_samples
+print(read_device_samples())
+"
+        ;;
+    read)
+        NAME="${1:?Usage: s2800-agent read <parameter> [program_number]}"
+        PROG="${2:-0}"
+        "$PYTHON" -c "
+from s2800.agent.tools import read_program_parameter
+print(read_program_parameter('$NAME', $PROG))
+"
+        ;;
+    read-kg)
+        NAME="${1:?Usage: s2800-agent read-kg <parameter> [program] [keygroup]}"
+        PROG="${2:-0}"
+        KG="${3:-0}"
+        "$PYTHON" -c "
+from s2800.agent.tools import read_keygroup_parameter
+print(read_keygroup_parameter('$NAME', $PROG, $KG))
+"
+        ;;
+    summary)
+        PROG="${1:-0}"
+        "$PYTHON" -c "
+from s2800.agent.tools import read_program_summary
+print(read_program_summary($PROG))
+"
+        ;;
+    write)
+        NAME="${1:?Usage: s2800-agent write <parameter> <value> [program]}"
+        VALUE="${2:?Usage: s2800-agent write <parameter> <value> [program]}"
+        PROG="${3:-0}"
+        "$PYTHON" -c "
+from s2800.agent.tools import write_program_parameter
+print(write_program_parameter('$NAME', $VALUE, $PROG))
+"
+        ;;
+    write-kg)
+        NAME="${1:?Usage: s2800-agent write-kg <parameter> <value> [program] [keygroup]}"
+        VALUE="${2:?Usage: s2800-agent write-kg <parameter> <value> [program] [keygroup]}"
+        PROG="${3:-0}"
+        KG="${4:-0}"
+        "$PYTHON" -c "
+from s2800.agent.tools import write_keygroup_parameter
+print(write_keygroup_parameter('$NAME', $VALUE, $PROG, $KG))
+"
+        ;;
+    help|--help|-h)
+        echo "S2800/S3000/S3200 SysEx Protocol Tool"
+        echo ""
+        echo "Spec Lookup:"
+        echo "  param <name> [header]        Look up parameter by name"
+        echo "  offset <header> <offset>     What parameter is at this offset?"
+        echo "  list <header> [filter]       List parameters (program|keygroup|sample)"
+        echo "  build <op> <ch> <item> <sel> <off> <len> [data...]"
+        echo "                               Build a SysEx message"
+        echo "  decode \"<hex>\"               Decode a SysEx hex string"
+        echo "  models [param]               Compare S2800/S3000/S3200"
+        echo ""
+        echo "Live Device (requires S2800 connected via MIDI):"
+        echo "  programs                     List programs on device"
+        echo "  samples                      List samples on device"
+        echo "  read <param> [program]       Read a program parameter value"
+        echo "  read-kg <param> [prog] [kg]  Read a keygroup parameter value"
+        echo "  summary [program]            Full program settings summary"
+        echo "  write <param> <value> [prog]            Write a program parameter"
+        echo "  write-kg <param> <value> [prog] [kg]    Write a keygroup parameter"
+        echo ""
+        echo "Examples:"
+        echo "  s2800-agent param FILFRQ"
+        echo "  s2800-agent read POLYPH"
+        echo "  s2800-agent read LEGATO 0"
+        echo "  s2800-agent read-kg FILFRQ 0 0"
+        echo "  s2800-agent summary"
+        echo "  s2800-agent write POLYPH 15 0"
+        echo "  s2800-agent write-kg kgmute 1 2 2       # Set KG2 to mute group 1"
+        echo "  s2800-agent write-kg kgmute 255 2 0     # Disable mute on KG0"
+        ;;
+    *)
+        echo "Unknown command: $CMD (try 's2800-agent help')"
+        exit 1
+        ;;
+esac

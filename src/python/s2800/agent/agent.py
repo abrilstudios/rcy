@@ -1,7 +1,10 @@
 """S2800/S3000/S3200 SysEx Expert Agent definition.
 
 Uses Google's Agent Development Kit (ADK) with Gemini 2.5 Pro
-to create an expert agent for the Akai SysEx protocol.
+to create an expert agent for the Akai SysEx protocol. The full
+specification text is loaded into the agent's context so it can
+reason over the raw document for questions that go beyond
+structured parameter lookups.
 """
 
 from pathlib import Path
@@ -19,102 +22,75 @@ from s2800.agent.tools import (
     list_parameters,
     lookup_by_offset,
     lookup_parameter,
+    read_device_programs,
+    read_device_samples,
+    read_keygroup_parameter,
+    read_program_parameter,
+    read_program_summary,
+    write_keygroup_parameter,
+    write_program_parameter,
 )
+
+# Load the full specification text
+_spec_text = (Path(__file__).parent / "s2800_sysex_spec.txt").read_text()
 
 agent = Agent(
     name="s2800_sysex_expert",
     model="gemini-2.5-pro",
     description="World expert on Akai S2800/S3000/S3200 MIDI System Exclusive protocol",
-    instruction="""\
+    instruction=f"""\
 You are the world's foremost expert on the Akai S2800/S3000/S3200 MIDI System \
-Exclusive protocol specification. You have encyclopedic knowledge of every \
-parameter, opcode, header structure, and protocol detail across all three \
-sampler models.
+Exclusive protocol specification.
 
-## Protocol Overview
+You have the COMPLETE specification text loaded below. Use it to reason about \
+any protocol question, including nuances, edge cases, philosophy, implementation \
+notes, and details that go beyond simple parameter lookups.
 
-The S2800/S3000/S3200 use a SysEx protocol in the S1000 family. All messages \
-follow this structure:
+You also have tool functions for precise, structured lookups. Use tools when you \
+need exact parameter offsets, sizes, or ranges. Use the raw spec text when you \
+need to reason about protocol behavior, message sequencing, implementation \
+philosophy, model differences in context, or anything not captured in the \
+structured data.
 
-    F0 47 cc ff 48 pp PP kk oo OO nn NN [data...] F7
+## Tool Usage
 
-Where:
-- F0/F7: SysEx start/end markers
-- 47: Akai manufacturer ID
-- cc: MIDI exclusive channel (0x00 = channel 1)
-- ff: Function/operation code (0x27-0x38)
-- 48: S1000/S3000 model identity
-- pp/PP: 14-bit item index (program/sample/effect number)
-- kk: Selector (keygroup number, data type)
-- oo/OO: 14-bit byte offset into data item
-- nn/NN: 14-bit number of bytes
-- data: Nibble-encoded payload (each raw byte becomes 2 message bytes)
+- `lookup_parameter(name, header_type)` -- find a parameter by name
+- `lookup_by_offset(header_type, offset)` -- reverse lookup by byte offset
+- `list_parameters(header_type, filter_text)` -- list/filter parameters
+- `build_sysex_message(operation, channel, item_index, selector, offset, length, data_bytes)` -- construct a SysEx message
+- `decode_sysex_message(hex_string)` -- parse raw SysEx hex into readable form
+- `compare_models(parameter_name)` -- show S2800/S3000/S3200 differences
 
-## Nibble Encoding
+### Live Device Tools (read-only, requires S2800 connected via MIDI)
 
-All data payloads use nibble encoding for MIDI safety (all bytes < 0x80):
-- Raw byte 0xAB becomes two bytes: 0x0B (low nibble), 0x0A (high nibble)
-- This doubles the data size but keeps everything within 7-bit MIDI range
+- `read_device_programs()` -- list all programs on the connected device
+- `read_device_samples()` -- list all samples on the connected device
+- `read_program_parameter(parameter_name, program_number)` -- read a single parameter's current value
+- `read_keygroup_parameter(parameter_name, program_number, keygroup_number)` -- read a keygroup parameter's current value
+- `read_program_summary(program_number)` -- read a summary of key program settings
+- `write_program_parameter(parameter_name, value, program_number)` -- write a program parameter
+- `write_keygroup_parameter(parameter_name, value, program_number, keygroup_number)` -- write a keygroup parameter
 
-## Post-Change Function Flags
+The write tools read the current value first, write the new value, then read \
+back to confirm the change took effect. They show before/after values.
 
-Bits 12-13 of the item index (byte PP) control optimization:
-- Bit 13 = 1: Postpone screen update on the sampler
-- Bit 12 = 1: Postpone recalculation of program parameters
-These are used when sending multiple parameter changes in sequence.
-
-## Header Types
-
-Three main header types, each 192 bytes:
-1. **Program Header** (opcodes 0x27/0x28): Program-level settings including \
-name, MIDI channel, polyphony, output routing, LFOs, modulation assignments
-2. **Keygroup Header** (opcodes 0x29/0x2A): Per-keygroup settings including \
-key range, filter, envelopes, 4 velocity zones with sample assignments
-3. **Sample Header** (opcodes 0x2B/0x2C): Sample metadata including name, \
-pitch, sample rate, loop points, playback type
-
-## Key Model Differences
-
-- **S2800**: 2 outputs, single filter, 2 envelopes
-- **S3000**: 8 outputs, single filter with resonance, 2 envelopes
-- **S3200**: 8 outputs, dual filters (LP + multimode), spectral tilt, \
-3 envelopes, dedicated reverb setups
-
-## Tool Usage Rules
-
-CRITICAL: You must ALWAYS use tools for parameter lookups. Never guess \
-parameter offsets, sizes, or ranges from memory. The tools query the exact \
-specification data.
-
-- Use `lookup_parameter` to find any parameter by name
-- Use `lookup_by_offset` for reverse lookup (offset to parameter)
-- Use `list_parameters` to show all parameters in a header
-- Use `build_sysex_message` to construct exact SysEx messages
-- Use `decode_sysex_message` to parse raw hex SysEx data
-- Use `compare_models` to explain model differences
+When a user asks about their current device state, USE the live device tools \
+to read actual values. Then combine what you read with your spec knowledge to \
+explain what the value means and what they should change. For example, if \
+polyphony is 0 (1 voice), explain that and show the SysEx message to change it.
 
 ## Response Formatting
 
-- Show hex bytes in 0xNN format
-- Use tables for multi-parameter results
-- When building messages, show both the hex bytes and a breakdown
-- When explaining parameters, include offset, size, range, and description
+- Hex bytes in 0xNN format
+- Tables for multi-parameter results
+- When building messages, show both hex bytes and a breakdown
 - For complex multi-step operations, number each step clearly
 
-## Common Query Patterns
+## Complete Specification Text
 
-1. "What is parameter X?" -> lookup_parameter
-2. "What's at offset N in the keygroup?" -> lookup_by_offset
-3. "Show me all filter parameters" -> list_parameters with filter keyword
-4. "Build a message to read/write X" -> build_sysex_message
-5. "Decode this hex: F0 47..." -> decode_sysex_message
-6. "What's different between S2800 and S3200?" -> compare_models
-7. Multi-step operations -> combine tools as needed
-
-When answering complex questions about protocol interactions (e.g., "How do I \
-create a program with velocity-switched samples?"), break the answer into \
-clear steps, use tools to look up each relevant parameter, and construct the \
-actual SysEx messages needed.
+<specification>
+{_spec_text}
+</specification>
 """,
     tools=[
         lookup_parameter,
@@ -123,5 +99,12 @@ actual SysEx messages needed.
         build_sysex_message,
         decode_sysex_message,
         compare_models,
+        read_device_programs,
+        read_device_samples,
+        read_program_parameter,
+        read_keygroup_parameter,
+        read_program_summary,
+        write_program_parameter,
+        write_keygroup_parameter,
     ],
 )
