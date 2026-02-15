@@ -6,7 +6,8 @@ The RCY TUI (Terminal User Interface) is the primary interface for slicing, play
 
 ```bash
 just run                     # Launch with default preset (Amen break)
-just tui-preset think_break  # Launch with specific preset
+just run --preset think_break  # Launch with specific preset
+just run --skin hacienda     # Launch with color skin
 ```
 
 ## Modal Input System
@@ -25,10 +26,79 @@ When you see `[INSERT]` in the status bar:
 
 When you see `[SEGMENT]` in the status bar:
 - Keys directly trigger segment playback (no typing required)
-- Press **i** to return to INSERT mode
-- Press **ESC** to return to INSERT mode
+- Arrow keys nudge markers
+- Tab/Shift+Tab cycle through notebook pages
+- Press **i** or **ESC** to return to INSERT mode
 
 This modal approach eliminates conflicts between typing and playback keys.
+
+## Notebook Pages
+
+RCY uses a **notebook-style page system**. The top display area switches between three pages, like flipping through a notebook. Context (held sounds, playback, selection) is preserved when switching pages.
+
+| Page | Command | Purpose |
+|------|---------|---------|
+| **Waveform** | `/view waveform` | Slice, audition, temporal editing |
+| **Bank** | `/view bank [A-D]` | EP-133 pad layout and assignment |
+| **Sounds** | `/view sounds` | EP-133 sound inventory (999 slots) |
+
+### Page Switching
+
+In SEGMENT mode:
+- **Tab**: Next page (Waveform → Bank → Sounds → Waveform)
+- **Shift+Tab**: Previous page
+
+Or use commands:
+- `/view waveform` or `/v waveform`
+- `/view bank` or `/view bank A`
+- `/view sounds`
+
+### Waveform Page
+
+The default page showing the audio waveform with:
+- L/R markers defining the working region
+- Slice markers dividing the region into segments
+- Segment numbers for playback reference
+- Time axis
+
+### Bank Page
+
+Shows EP-133 pad layout (4x3 grid = 12 pads per bank):
+- Navigate with arrow keys
+- Focused pad is highlighted
+- Shows assigned sound name or empty state
+- Drop target indicator when holding a sound
+
+### Sounds Page
+
+Paginated list of all EP-133 sounds (slots 1-999):
+- Navigate with j/k or arrow keys
+- Shows slot number, name, duration
+- Pick sounds to hold for placement
+- PgUp/PgDn for page navigation
+
+## Pick / Hold / Drop
+
+Move sounds between pages without losing context. This mirrors drag-and-drop with keyboard:
+
+1. **Pick**: Select a sound (`/pick` or Enter on Sounds page)
+2. **Hold**: Sound stays "held" while navigating pages
+3. **Drop**: Assign held sound to target (`/drop` or Enter on Bank page)
+
+Status bar shows: `Held: <sound_name>` when holding a sound.
+
+Press **ESC** to cancel and clear the held sound.
+
+### Example Workflow
+
+```
+1. /view sounds          # Go to sounds inventory
+2. Navigate to a sound
+3. /pick                  # Pick up the sound
+4. Tab                    # Switch to Bank page
+5. Navigate to target pad
+6. /drop                  # Assign sound to pad
+```
 
 ## Keyboard Reference
 
@@ -58,7 +128,7 @@ This modal approach eliminates conflicts between typing and playback keys.
 
 Note: `i` is reserved for switching to INSERT mode.
 
-### Marker Navigation (SEGMENT Mode Only)
+### Navigation & Editing (SEGMENT Mode Only)
 
 | Key | Action |
 |-----|--------|
@@ -66,6 +136,10 @@ Note: `i` is reserved for switching to INSERT mode.
 | `Shift+←/→` | Fine nudge (~1ms) |
 | `Ctrl+←/→` | Coarse nudge (~100ms) |
 | `[` / `]` | Cycle focus through markers (L, segments, R) |
+| `Tab` | Next notebook page |
+| `Shift+Tab` | Previous notebook page |
+| `Space` | Play/stop full sample |
+| `↑/↓` | Scroll output panel |
 
 Focused markers are highlighted with brackets: `[L]`, `[R]`, or `◆` for segments.
 
@@ -85,6 +159,8 @@ Focused markers are highlighted with brackets: `[L]`, `[R]`, or `◆` for segmen
 | `Down` | Next command in history |
 | `Ctrl-R` | Reverse search history |
 | `Ctrl-S` | Forward search (in search mode) |
+| `Tab` | Cycle through completions |
+| `Shift+Tab` | Cycle backwards through completions |
 | `Enter` | Submit command |
 
 ## Commands
@@ -94,7 +170,7 @@ All commands start with `/` and are entered in INSERT mode.
 ### File Operations
 
 ```
-/open <file.wav>          Load an audio file
+/import <file.wav>        Load an audio file (44100Hz required)
 /preset <id>              Load a preset by ID
 /presets                  List available presets
 ```
@@ -134,9 +210,22 @@ All commands start with `/` and are entered in INSERT mode.
 /markers --reset          Reset markers to full file
 /cut                      Cut audio to L/R region in-place
 /nudge left|right         Nudge focused marker programmatically
+/nudge left --fine        Fine nudge (~1ms)
+/nudge right --coarse     Coarse nudge (~100ms)
 ```
 
 Note: In SEGMENT mode, use arrow keys for nudging and `[`/`]` for focus cycling.
+
+### Notebook Pages
+
+```
+/view waveform            Switch to waveform page
+/view bank                Switch to bank page (current bank)
+/view bank A              Switch to bank page, focus bank A
+/view sounds              Switch to sounds page
+/pick                     Pick up sound from current context
+/drop                     Drop held sound onto current target
+```
 
 ### Export
 
@@ -144,11 +233,13 @@ Note: In SEGMENT mode, use arrow keys for nudging and `[`/`]` for focus cycling.
 /export <directory>       Export SFZ + WAV samples to directory
 ```
 
-### View
+### View & Appearance
 
 ```
 /zoom in                  Zoom in on waveform
 /zoom out                 Zoom out on waveform
+/skin                     List available color skins
+/skin <name>              Switch skin (default, high-contrast, monochrome, hacienda)
 ```
 
 ### System
@@ -157,6 +248,45 @@ Note: In SEGMENT mode, use arrow keys for nudging and `[`/`]` for focus cycling.
 /help                     Show help information
 /quit                     Exit RCY
 ```
+
+## EP-133 K.O. II Integration
+
+RCY includes direct integration with the Teenage Engineering EP-133 sampler via MIDI SysEx.
+
+### Setup
+
+Connect EP-133 via USB. No additional configuration needed.
+
+### Commands
+
+```
+/ep133 connect              Connect to EP-133 (auto-detects MIDI)
+/ep133 disconnect           Disconnect from EP-133
+/ep133 status               Check connection status
+/ep133 set project <1-9>    Set target project (must match your EP-133 selection)
+/ep133 list                 List sounds on device
+/ep133 upload <bank> <slot> Upload segments to bank (A/B/C/D) starting at slot
+/ep133 clear <bank>         Clear all pad assignments in bank
+```
+
+### EP-133 Structure
+
+- 9 projects (1-9) — set via `/ep133 set project <n>`
+- 4 banks per project (A, B, C, D)
+- 12 pads per bank
+- 999 sound slots (USER1: 700-799 recommended)
+
+### Workflow Example
+
+```bash
+/preset amen_classic       # Load the Amen break
+/slice 8                   # Slice into 8 segments
+/ep133 connect             # Connect to EP-133
+/ep133 set project 9       # Target project 9 (match your EP-133 dial)
+/ep133 upload A 700        # Upload segments to bank A, slots 700+
+```
+
+Samples are named `{preset}_{segment:03d}` (e.g., `amen_classic_001`) for easy identification on the device.
 
 ## AI-Powered Commands
 
@@ -220,9 +350,26 @@ The LLM agent is lazy-loaded on first natural language input to avoid startup la
 
 ### Working with Tempo
 
-1. Load audio: `/open my_break.wav`
+1. Import audio: `/import my_break.wav`
 2. Set the bar count: `/set bars 4`
 3. Adjust playback tempo: `/tempo 170`
+
+### Marker Editing
+
+1. Enter SEGMENT mode: **ESC**
+2. Use `[` and `]` to focus on a marker
+3. Nudge with arrow keys (Shift for fine, Ctrl for coarse)
+4. Cut to region: `/cut`
+
+### EP-133 Sound Placement (Notebook Pages)
+
+1. Connect: `/ep133 connect`
+2. Go to sounds: `/view sounds` or **Tab**
+3. Navigate to desired sound
+4. Pick it: `/pick`
+5. Go to bank: `/view bank A` or **Tab**
+6. Navigate to target pad
+7. Drop it: `/drop`
 
 ### Using History
 
@@ -260,6 +407,17 @@ The tail fade applies a short fade-out at the end of each segment to prevent cli
 
 Adjust with `/set release <ms>`.
 
+### Color Skins
+
+RCY includes several color skins:
+
+- `default`: Standard colors
+- `high-contrast`: Maximum visibility
+- `monochrome`: Minimal grayscale
+- `hacienda`: Inspired by The Hacienda
+
+Switch at runtime with `/skin <name>` or launch with `--skin <name>`.
+
 ## Troubleshooting
 
 ### Segment keys not working
@@ -277,3 +435,11 @@ Check that the audio file is loaded and sliced. The waveform display should show
 ### LLM agent errors
 
 Verify your `OPENROUTER_API_KEY` is valid in the `.env` file.
+
+### Import fails with sample rate error
+
+RCY requires 44100Hz audio files. Convert your file before importing.
+
+### Tab not cycling pages
+
+Tab cycles pages only in SEGMENT mode. In INSERT mode, Tab is used for command completion.

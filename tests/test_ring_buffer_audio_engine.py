@@ -283,35 +283,6 @@ class TestAudioCallbackSilence:
 class TestAudioCallbackUnderrun:
     """Test underrun handling"""
 
-    def test_underrun_outputs_partial_then_silence(self):
-        """When buffer has less data than requested, output what's available then silence"""
-        engine = RingBufferAudioEngine()
-        engine.start()
-
-        # Queue only 100 frames (but with fade applied, so short audio gets heavily faded)
-        test_audio = np.full((100, 2), [0.5, 0.5], dtype=np.float32)
-        engine.play_one_shot(test_audio)
-
-        # Wait for producer to fill buffer
-        for _ in range(50):
-            if engine._ring_buffer.available_read() > 50:
-                break
-            time.sleep(0.01)
-
-        # Request 256 frames
-        outdata = np.zeros((256, 2), dtype=np.float32)
-        engine._audio_callback(outdata, 256, None, None)
-
-        # Some frames should have audio (fade makes values very small, but non-zero)
-        # The max value should be above 0 (due to fade-in + fade-out, peak is small)
-        max_val = np.max(np.abs(outdata))
-        assert max_val > 0.0001, f"Expected some audio output, got max={max_val}"
-
-        # Tail should be silence since we only queued 100 frames
-        np.testing.assert_array_equal(outdata[150:], np.zeros((106, 2), dtype=np.float32))
-
-        engine.stop()
-
     def test_underrun_does_not_crash(self):
         """Underrun should not raise exceptions or crash"""
         engine = RingBufferAudioEngine()

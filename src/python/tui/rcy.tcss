@@ -4,7 +4,24 @@ Screen {
     layout: vertical;
 }
 
+/* Hidden class for notebook page switching */
+.hidden {
+    display: none;
+}
+
 WaveformWidget {
+    height: auto;
+    margin: 0;
+    padding: 0;
+}
+
+BankWidget {
+    height: auto;
+    margin: 0;
+    padding: 0;
+}
+
+SoundsWidget {
     height: auto;
     margin: 0;
     padding: 0;

@@ -17,7 +17,7 @@ from tui.agents.base import ToolRegistry, AgentResponse
 from tui.agents.default import DefaultAgent
 from tui.agents.factory import create_agent, get_available_agents
 from tui.agents.tools import (
-    SliceTool, PresetTool, OpenTool, MarkersTool,
+    SliceTool, PresetTool, ImportTool, MarkersTool,
     SetTool, TempoTool, PlayTool, ExportTool, ZoomTool,
     TOOL_SCHEMAS, TOOL_ALIASES
 )

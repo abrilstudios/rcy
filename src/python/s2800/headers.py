@@ -118,8 +118,8 @@ def build_program_header(name: str, num_keygroups: int = 1,
     # MIDI channel at offset 16
     header[0x10] = midi_channel & 0xFF
 
-    # Polyphony at offset 17 (15 = 16 voices)
-    header[0x11] = 15
+    # Polyphony at offset 17 (31 = 32 voices for full polyphony)
+    header[0x11] = 31
 
     # Priority at offset 18 (1 = normal)
     header[0x12] = 1
@@ -145,6 +145,9 @@ def build_program_header(name: str, num_keygroups: int = 1,
 
     # GROUPS at offset 42 (read-only, but set as hint)
     header[0x2A] = min(num_keygroups, 99)
+
+    # Voice assignment at offset 61 (0 = OLDEST for drum kits)
+    header[0x3D] = 0
 
     return bytes(header)
 
@@ -232,6 +235,11 @@ def build_keygroup(low_note: int, high_note: int, sample_name: str,
 
     # Playback type at offset 53 (0x35)
     header[0x35] = 0     # ZPLAY1: as sample
+
+    # Mute group at offset 160 (0xA0)
+    # 0xFF = OFF (no mute group), 0-31 = mute group number
+    # For drum kits, typically set to OFF so drums don't cut each other
+    header[0xA0] = 0xFF
 
     # Zones 2-4: leave sample names empty (all zeros = no sample assigned)
     # The device will ignore empty zones.

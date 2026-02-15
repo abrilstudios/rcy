@@ -415,6 +415,150 @@ def ep133_clear_bank(args) -> str:
     return f"Cleared all 12 pads in {project}/{bank}"
 
 
+def ep133_debug_pad(project: int, bank: str, pad: int) -> str:
+    """Read and display all metadata for a specific pad.
+
+    Args:
+        project: Project number (1-9)
+        bank: Bank letter (A, B, C, D)
+        pad: Pad number (1-12)
+
+    Returns:
+        Formatted string with all pad metadata
+    """
+    if _device is None or not _device.is_connected:
+        return "Not connected to EP-133. Use ep133_connect first."
+
+    from ep133.pad_mapping import pad_to_node_id, format_pad_address
+
+    EP133Error, _, EP133Timeout = _get_errors()
+
+    try:
+        node_id = pad_to_node_id(project, bank, pad)
+        addr = format_pad_address(project, bank, pad)
+
+        # Get all metadata for this pad
+        metadata = _device.get_metadata(node_id)
+
+        if metadata is None:
+            return f"Pad {addr} (node {node_id}): No metadata found"
+
+        # Format the metadata nicely
+        lines = [
+            f"Pad {addr} (node {node_id}):",
+            "-" * 40,
+        ]
+
+        # Known fields and their meanings
+        field_descriptions = {
+            "sym": "Sound slot assigned",
+            "vol": "Volume",
+            "pan": "Pan position",
+            "pit": "Pitch/tune",
+            "atk": "Attack",
+            "dec": "Decay",
+            "sus": "Sustain",
+            "rel": "Release",
+            "flt": "Filter cutoff",
+            "res": "Filter resonance",
+            "fx1": "Effect 1 send",
+            "fx2": "Effect 2 send",
+            "rev": "Reverb send",
+            "del": "Delay send",
+            "cho": "Chorus",
+            "lfo": "LFO amount",
+            "mod": "Modulation",
+        }
+
+        for key, value in metadata.items():
+            desc = field_descriptions.get(key, "Unknown field")
+            lines.append(f"  {key}: {value}  ({desc})")
+
+        # Check for potential issues
+        lines.append("")
+        lines.append("Potential issues:")
+
+        issues_found = False
+
+        if metadata.get("sym", 0) == 0:
+            lines.append("  - sym=0: No sound assigned!")
+            issues_found = True
+
+        if "flt" in metadata and metadata["flt"] < 20:
+            lines.append(f"  - flt={metadata['flt']}: Filter cutoff very low, sound may be muted!")
+            issues_found = True
+
+        if "vol" in metadata and metadata["vol"] < 10:
+            lines.append(f"  - vol={metadata['vol']}: Volume very low!")
+            issues_found = True
+
+        if not issues_found:
+            lines.append("  None detected from metadata")
+
+        return "\n".join(lines)
+
+    except ValueError as e:
+        return f"Invalid pad address: {e}"
+    except EP133Timeout:
+        return "Timeout reading pad metadata"
+    except EP133Error as e:
+        return f"Error: {e}"
+
+
+def ep133_debug_bank(project: int, bank: str) -> str:
+    """Read and display summary metadata for all pads in a bank.
+
+    Args:
+        project: Project number (1-9)
+        bank: Bank letter (A, B, C, D)
+
+    Returns:
+        Formatted string with bank summary
+    """
+    if _device is None or not _device.is_connected:
+        return "Not connected to EP-133. Use ep133_connect first."
+
+    from ep133.pad_mapping import pad_to_node_id, format_pad_address
+
+    EP133Error, _, EP133Timeout = _get_errors()
+
+    lines = [
+        f"Bank {project}/{bank} pad summary:",
+        "-" * 50,
+        "Pad  | Sound | Vol | Flt | Other fields",
+        "-" * 50,
+    ]
+
+    for pad_num in range(1, 13):
+        try:
+            node_id = pad_to_node_id(project, bank, pad_num)
+            metadata = _device.get_metadata(node_id)
+
+            if metadata is None:
+                lines.append(f" {pad_num:2d}  | (no metadata)")
+                continue
+
+            sym = metadata.get("sym", "-")
+            vol = metadata.get("vol", "-")
+            flt = metadata.get("flt", "-")
+
+            # Collect other fields
+            other = []
+            for key, value in metadata.items():
+                if key not in ("sym", "vol", "flt"):
+                    other.append(f"{key}={value}")
+
+            other_str = ", ".join(other) if other else "-"
+            lines.append(f" {pad_num:2d}  | {str(sym):5s} | {str(vol):3s} | {str(flt):3s} | {other_str}")
+
+        except EP133Timeout:
+            lines.append(f" {pad_num:2d}  | (timeout)")
+        except EP133Error as e:
+            lines.append(f" {pad_num:2d}  | (error: {e})")
+
+    return "\n".join(lines)
+
+
 def _float_to_pcm_s16le(audio: np.ndarray) -> bytes:
     """Convert float32 audio to s16le PCM bytes."""
     # Clip to [-1, 1] and scale to int16 range
@@ -521,6 +665,47 @@ def ep133_handler(args, app: 'RCYApp') -> str:
         clear_args.bank = bank
         return ep133_clear_bank(clear_args)
 
+    elif subcommand == "debug":
+        # /ep133 debug <bank> [pad]
+        # Examples: /ep133 debug A, /ep133 debug A 1, /ep133 debug A1
+        arg = args.arg1
+        if not arg:
+            return f"Usage: /ep133 debug <bank> [pad]\nExamples:\n  /ep133 debug A      Show all pads in bank A\n  /ep133 debug A 1    Show details for pad A1\n  /ep133 debug A1     Show details for pad A1\nCurrent project: {_current_project}"
+
+        # Parse the argument - could be "A", "A1", "A 1"
+        arg = arg.strip()
+        bank = None
+        pad = None
+
+        # Check if first char is bank letter
+        if arg[0].upper() in ('A', 'B', 'C', 'D'):
+            bank = arg[0].upper()
+            rest = arg[1:].strip()
+            if rest:
+                # Pad number attached: "A1" or "A12"
+                try:
+                    pad = int(rest)
+                except ValueError:
+                    return f"Invalid pad number: {rest}"
+            elif args.arg2:
+                # Pad number as separate arg: "A 1"
+                try:
+                    pad = int(args.arg2)
+                except ValueError:
+                    return f"Invalid pad number: {args.arg2}"
+        else:
+            return f"Invalid bank: {arg[0]}. Must be A, B, C, or D."
+
+        # Validate pad if specified
+        if pad is not None and not (1 <= pad <= 12):
+            return f"Pad must be 1-12, got {pad}"
+
+        # Call the appropriate debug function
+        if pad is not None:
+            return ep133_debug_pad(_current_project, bank, pad)
+        else:
+            return ep133_debug_bank(_current_project, bank)
+
     else:
         return f"""Unknown subcommand: {subcommand}
 
@@ -532,10 +717,13 @@ Usage:
   /ep133 list                 List sounds on device
   /ep133 upload <bank> <slot> Upload segments to bank starting at slot
   /ep133 clear <bank>         Clear pad assignments in bank
+  /ep133 debug <bank> [pad]   Debug pad metadata (filter, volume, etc.)
 
 Current project: {_current_project}
 
 Examples:
   /ep133 set project 9       Target project 9 on EP-133
   /ep133 upload A 700        Upload to bank A, slots 700+
-  /ep133 clear B             Clear bank B assignments"""
+  /ep133 clear B             Clear bank B assignments
+  /ep133 debug A             Show all pad metadata in bank A
+  /ep133 debug A1            Show detailed metadata for pad A1"""

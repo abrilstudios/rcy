@@ -160,6 +160,7 @@ class CommandInput(Input):
         self._search_query = ""
         self._search_match = ""
         self._mode = self.MODE_INSERT  # Start in insert mode
+        self._current_page = "waveform"  # Current notebook page
         # Tab completion cycling state
         self._tab_matches: list[str] = []
         self._tab_index: int = 0
@@ -198,13 +199,39 @@ class CommandInput(Input):
             self.direction = direction  # "up" or "down"
             super().__init__()
 
+    class PageCycle(Message):
+        """Posted when Tab/Shift+Tab is pressed in segment mode to cycle pages."""
+        def __init__(self, reverse: bool = False) -> None:
+            self.reverse = reverse
+            super().__init__()
+
+    # Page-specific placeholders for segment mode
+    PAGE_PLACEHOLDERS = {
+        "waveform": "[WAVEFORM] 1-0/qw play | ←→ nudge | []=marker | Tab=page | i=insert",
+        "bank": "[BANK] 1-0/qw pad | ←→ pad | ↑↓ bank | Space=pick/drop | Tab=page | i=insert",
+        "sounds": "[SOUNDS] ←→ sound | ↑↓ category | []=category | Space=pick | Tab=page | i=insert",
+    }
+
+    def set_page(self, page: str) -> None:
+        """Set the current notebook page and update placeholder if in segment mode."""
+        self._current_page = page.lower()
+        if self._mode == self.MODE_SEGMENT:
+            self._update_placeholder()
+
+    def _update_placeholder(self) -> None:
+        """Update placeholder based on current mode and page."""
+        if self._mode == self.MODE_SEGMENT:
+            self.placeholder = self.PAGE_PLACEHOLDERS.get(
+                self._current_page,
+                "[SEGMENT] Tab=page | i=insert"
+            )
+        else:
+            self.placeholder = "[INSERT] Type for AI, /cmd direct | ESC for segment mode"
+
     def _set_mode(self, mode: str) -> None:
         """Switch between insert and segment modes."""
         self._mode = mode
-        if mode == self.MODE_SEGMENT:
-            self.placeholder = "[SEGMENT] 1-0/qwerty play | ←→ nudge | ↑↓ scroll | i=insert"
-        else:
-            self.placeholder = "[INSERT] Type for AI, /cmd direct | ESC for segment mode"
+        self._update_placeholder()
 
     def on_key(self, event) -> None:
         """Handle special keys for history and search."""
@@ -265,14 +292,26 @@ class CommandInput(Input):
                 event.prevent_default()
                 return
 
-            # Up/Down arrows scroll the output panel
+            # Up/Down arrows - route through MarkerNudge (app decides per-page behavior)
             if key == "up":
-                self.post_message(self.OutputScroll("up"))
+                self.post_message(self.MarkerNudge("up"))
                 event.stop()
                 event.prevent_default()
                 return
             if key == "down":
-                self.post_message(self.OutputScroll("down"))
+                self.post_message(self.MarkerNudge("down"))
+                event.stop()
+                event.prevent_default()
+                return
+
+            # Tab/Shift+Tab cycles notebook pages
+            if key == "tab":
+                self.post_message(self.PageCycle(reverse=False))
+                event.stop()
+                event.prevent_default()
+                return
+            if key == "shift+tab":
+                self.post_message(self.PageCycle(reverse=True))
                 event.stop()
                 event.prevent_default()
                 return
