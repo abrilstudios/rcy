@@ -1,183 +1,273 @@
-# 🧭 RCY Coding Standards & Session Initialization Guidance
+# RCY Development Guide
 
-This document outlines best practices and session setup expectations for contributing to the RCY codebase. It is primarily written for Claude (and other code agents) to follow during development, review, and refactoring tasks. It can also be used by human contributors to ensure consistency and clarity in the codebase.
+Core principles for working effectively in this codebase.
 
 ---
 
-## 🚨 **HOW TO RUN THE APPLICATION**
+## 🎯 Core Principle: Use Tools, Not Scripts
 
-**IMPORTANT: When asked to "run the app", ALWAYS use this exact command:**
+**CRITICAL: Prefer composable CLI tools over writing Python code.**
 
+### Bad (writing Python for everything):
+```python
+from s2800 import S2800
+s = S2800()
+s.open()
+for kg in range(12):
+    # inline parameter writes...
+s.close()
+```
+
+### Good (using existing tools):
+```bash
+for kg in {0..11}; do
+  ./venv/bin/python3 tools/bin/s2800-agent write-kg ZPLAY1 4 1 $kg
+  ./venv/bin/python3 tools/bin/s2800-agent write-kg VPANO1 0 1 $kg
+done
+```
+
+**Why this matters:**
+- Tools are composable and reusable
+- Each command is visible and debuggable
+- Failures are isolated and recoverable
+- No import boilerplate or error handling needed
+- Easier to modify and adapt
+
+---
+
+## 🔧 Available Tools
+
+### Project Tools
+- `just run` - Run the TUI application (**always use this, never run Python directly**)
+- `just test` - Run all tests
+- `just test-file <file>` - Run specific test file
+- `just setup` - Set up virtual environment
+- `./tools/bin/env` - Show environment info
+
+### Hardware Tools
+- `tools/bin/ep133` - EP-133 device operations
+- `tools/bin/s2800` - S2800 sample upload/list/delete
+- `tools/bin/s2800-agent` - S2800 protocol spec and live device parameters
+
+### Audio Tools
+- `audio-trim <file.wav>` - Analyze and suggest trim points for drum samples
+- `audio-viz <file.wav> --open` - Visualize waveform with trim analysis
+
+---
+
+## 🎹 S2800 Agent Tool
+
+The s2800-agent is your primary interface for S2800 protocol work. **Use it instead of writing Python.**
+
+### Common Operations
+
+```bash
+# Spec lookup (fast, offline)
+tools/bin/s2800-agent param ZPLAY1           # What is ZPLAY1?
+tools/bin/s2800-agent list keygroup pan      # Find pan-related params
+tools/bin/s2800-agent offset keygroup 53     # What's at byte offset 53?
+
+# Device operations (requires S2800 connected)
+tools/bin/s2800-agent programs               # List programs
+tools/bin/s2800-agent samples                # List samples
+tools/bin/s2800-agent read-kg ZPLAY1 1 0     # Read prog 1, keygroup 0, ZPLAY1
+tools/bin/s2800-agent write-kg ZPLAY1 4 1 0  # Write value 4 to ZPLAY1
+tools/bin/s2800-agent summary 1              # Full program 1 summary
+```
+
+### Example: Configure 12 Keygroups for One-Shot Playback
+
+```bash
+# Set all keygroups to play-to-end mode with center pan
+for kg in {0..11}; do
+  ./venv/bin/python3 tools/bin/s2800-agent write-kg ZPLAY1 4 1 $kg    # Play to end
+  ./venv/bin/python3 tools/bin/s2800-agent write-kg VPANO1 0 1 $kg    # Center pan
+  ./venv/bin/python3 tools/bin/s2800-agent write-kg CP1 1 1 $kg       # Constant pitch
+  echo "Configured keygroup $kg"
+done
+```
+
+### When to Write Python vs Use Tools
+
+| Task | Use |
+|------|-----|
+| Upload samples | `tools/bin/s2800 upload` |
+| Configure keygroup params | `tools/bin/s2800-agent write-kg` in a loop |
+| Read current settings | `tools/bin/s2800-agent read-kg` |
+| Look up protocol details | `tools/bin/s2800-agent param` |
+| Create new S2800 features | Write Python (then expose as CLI tool) |
+
+---
+
+## 📋 Task Lists for Fault Tolerance
+
+**CRITICAL: Break long operations into tasks. Don't write monolithic scripts.**
+
+### Bad (monolithic):
+```python
+# One big script that uploads 12 samples
+# If it fails at sample 8, you lose all progress
+for sample in samples:
+    upload_sample(sample)  # 30 seconds each
+```
+
+### Good (task-based):
+```python
+# Create 12 separate tasks
+for i, sample in enumerate(samples):
+    TaskCreate(
+        subject=f"Upload {sample.name}",
+        description=f"Upload {sample.path} to S2800",
+        activeForm=f"Uploading {sample.name}"
+    )
+# Then execute tasks one by one
+# If task 8 fails, tasks 1-7 are already complete
+```
+
+**Benefits:**
+- Progress is preserved across failures
+- Easy to see what's done vs pending
+- Can resume from interruption
+- User can see progress in real-time
+
+---
+
+## 🚨 Critical Rules
+
+### Running the Application
 ```bash
 just run
 ```
+**That's it.** Don't use `python3 -m main`, don't activate venv, don't set PYTHONPATH manually.
 
-**That's it. Just use `just run`. Do not overthink it.**
+### Before Long Operations
+**Ask the user before operations >5 minutes.**
 
-**DO NOT:**
-- Use `python3 -m main`
-- Use system Python
-- Use full paths to venv/bin/python
-- Try to manually set PYTHONPATH
-- Try to activate the virtual environment
+Examples:
+- Uploading 12 samples to S2800 (~4-5 minutes)
+- Running full test suite
+- Bulk audio processing
 
-**The Justfile handles everything. Just use `just run`.**
+### Git Workflow
+- Never commit without explicit permission or passing tests
+- Never work directly on main unless requested
+- Use descriptive branch names: `feature/`, `fix/`, `enhancement/`
+
+### Error Handling
+- Never use `hasattr()` to check if a method exists
+- Let errors fail explicitly rather than silently degrade
+- Better to crash with a clear error than skip functionality
 
 ---
 
-## 🔧 **Environment Information Tool**
+## 🏗️ Project Structure
 
-For detailed environment information, run:
-
-```bash
-./tools/bin/env
+```
+src/python/          # All source code (use absolute imports)
+config/              # JSON configuration files
+tests/               # Test files
+tools/bin/           # CLI tools (prefer these over writing Python)
 ```
 
-This script provides:
-- Python environment details
-- How to run Python/pytest with the venv
-- OS information
-- Git status
-- Installed dependencies
-
-**Key Commands:**
-- `just run` - Run the TUI application
-- `just test` - Run all tests
-- `just test-file <file>` - Run a specific test file
-- `just setup` - Set up/reinstall the virtual environment
+### Import Hygiene
+- All imports at the top of the file
+- Never modify `sys.path` dynamically
+- Use absolute imports: `from s2800 import S2800`
 
 ---
 
-## 🔊 **Audio Utilities**
+## 🎛️ S2800 Workflow Patterns
 
-**Analyzing and trimming audio samples:**
-
+### Pattern 1: Check Before Upload
 ```bash
-# Analyze a drum sample and suggest trim point
-audio-trim sounds/606/606_09_tom_lo.wav
+# Always list samples first
+./venv/bin/python3 tools/bin/s2800 list
 
-# Visualize waveform with suggested trim point
-audio-viz sounds/606/606_09_tom_lo.wav --open
-
-# Actually trim the file
-audio-trim sounds/606/606_09_tom_lo.wav --trim sounds/606-trimmed/tom_lo.wav
+# Only upload if needed
+if ! grep -q "KICK" samples.txt; then
+  ./venv/bin/python3 tools/bin/s2800 upload sounds/kick.wav --name "KICK"
+fi
 ```
 
-These tools analyze amplitude envelopes to detect where drum hits end and reverb tails begin, suggesting optimal trim points to reduce file size while preserving the useful audio. Particularly useful for preparing samples for hardware samplers with limited memory (like the Akai S2800).
-
----
-
-## 📦 Project Structure
-
-RCY uses a modular directory layout with absolute imports and explicit runtime configuration.
-
-- All source code lives under: `src/python/`
-- All configuration lives under: `config/`
-- Tests are under: `tests/`
-- RCY expects `PYTHONPATH` to be set to the `src` directory when running any scripts or applications.
-
----
-
-## ✅ Import Hygiene
-
-- All `import` statements must appear at the **top of the file**, not inside functions or conditional blocks.
-- **Do not modify `sys.path`** dynamically inside application files.
-- Assume the developer has set `PYTHONPATH=rcy/src` (or equivalent) before running any scripts. Use absolute imports based on this setup.
-- Do not add fallback import paths or multi-level resolution logic.
-- Example of correct imports:
-  ```python
-  from config_manager import config
-  from audio_processor import WavAudioProcessor
-  ```
-
-## 🛑 Error Handling
-
-- **Never use `hasattr()` to condition on a method existing**
-- Always explicitly call the function
-- This makes code failures explicit rather than silently degrading
-- It's better for the application to fail with a clear error than to silently skip functionality
-
----
-
-## 🔄 Configuration Management
-
-- Configuration files are stored in the `config/` directory in JSON format
-- Use the `config_manager.py` module to access configuration values
-- Avoid hardcoding configuration values in the application code
-- Provide sensible defaults for all configuration parameters
-
----
-
-## 🧪 Testing Practices
-
-- All tests should be placed in the `tests/` directory
-- When writing tests, ensure PYTHONPATH is correctly set to include the src directory
-- Mock external dependencies when appropriate
-- Include tests for new features and bug fixes
-- Run tests before submitting pull requests
-
----
-
-## 🚀 Development Workflow
-
-- **Never do work directly on the main branch unless specifically requested to do so**
-- Create feature branches from main for new work
-- Use descriptive branch names with prefixes like `feature/`, `fix/`, `enhancement/`, etc.
-- **CRITICAL: Never stage or commit code without explicit permission or successful tests**
-  - Do not use `git add` or `git commit` before either:
-    1. Running and validating that all relevant tests pass successfully, OR
-    2. Receiving explicit confirmation from the developer that it's OK to commit
-  - This prevents committing broken code and ensures the repository stays in a working state
-  - Always prioritize testing and verification over committing changes
-- Follow the git commit message conventions
-- Use pull requests for code review
-- Ensure tests pass before merging
-- Update documentation when changing functionality
-
-## S2800/S3000/S3200 SysEx Protocol Reference
-
-When working on S2800/S3000/S3200 SysEx code, use `tools/bin/s2800-agent` to look up protocol details. This tool queries the complete specification and gives exact parameter offsets, sizes, ranges, and model differences. **Always use this instead of guessing protocol values.**
+### Pattern 2: Programs vs Samples
+**Samples and programs are independent.**
+- Samples persist in S2800 memory
+- Programs reference samples by name
+- Changing a program mapping does NOT require re-uploading samples
 
 ```bash
-# Look up a parameter by name
-tools/bin/s2800-agent param FILFRQ
-tools/bin/s2800-agent param FILFRQ keygroup
+# GOOD: Just change the program
+# (samples already exist)
+delete_program(2)
+create_program("NEW MAPPING", new_keygroups)
 
-# Reverse lookup: what parameter is at this byte offset?
-tools/bin/s2800-agent offset keygroup 34
-
-# List all parameters in a header (program, keygroup, or sample)
-tools/bin/s2800-agent list program
-tools/bin/s2800-agent list keygroup filter
-
-# Build a SysEx message
-tools/bin/s2800-agent build 0x27 0 0 0 3 12
-
-# Decode a raw SysEx hex string
-tools/bin/s2800-agent decode "F0 47 00 27 48 00 00 00 03 00 0C 00 F7"
-
-# Compare model differences (S2800 vs S3000 vs S3200)
-tools/bin/s2800-agent models
-tools/bin/s2800-agent models OUTPUT
-
-# Live device (requires S2800 connected via MIDI):
-tools/bin/s2800-agent programs              # List programs on device
-tools/bin/s2800-agent samples               # List samples on device
-tools/bin/s2800-agent read POLYPH           # Read current polyphony from program 0
-tools/bin/s2800-agent read LEGATO 0         # Read legato setting from program 0
-tools/bin/s2800-agent read-kg FILFRQ 0 0    # Read filter freq from keygroup 0
-tools/bin/s2800-agent summary               # Full summary of program 0 settings
+# BAD: Don't do this!
+delete_all_samples()           # Wastes time
+upload_all_samples()           # Wastes 4-5 minutes
+create_program(...)
 ```
 
-The structured spec data lives in `src/python/s2800/agent/spec.py`. The tool functions are in `src/python/s2800/agent/tools.py`. The live device tools use the `S2800` class from `src/python/s2800/sampler.py` (read-only).
+### Pattern 3: Verify Settings
+```bash
+# After configuring keygroups, spot-check a few
+for kg in 0 5 11; do
+  ./venv/bin/python3 tools/bin/s2800-agent read-kg ZPLAY1 1 $kg
+  ./venv/bin/python3 tools/bin/s2800-agent read-kg VPANO1 1 $kg
+done
+```
 
 ---
 
-## 📝 Issue Management
+## 🧪 Testing
 
-- When working on issues, always update the issue with your progress
-- After resolving an issue, add a detailed comment explaining the solution
-- Link to relevant commits in your issue comments
-- Update the issue description if needed to reflect the actual problem and solution
-- **Important**: You do not get credit for your work if you don't update the issue!
+```bash
+just test                          # Run all tests
+just test-file tests/test_s2800.py # Run specific file
+pytest -m s2800                    # Run S2800 hardware tests
+```
 
+- Write tests for new features
+- Run tests before committing
+- Hardware tests require devices connected
+
+---
+
+## 🎵 Audio Sample Workflow
+
+### Analyzing Samples
+```bash
+# Check if sample needs trimming
+audio-trim sounds/606/kick.wav
+
+# Visualize the waveform
+audio-viz sounds/606/kick.wav --open
+
+# Trim if needed
+audio-trim sounds/606/kick.wav --trim sounds/606-trimmed/kick.wav
+```
+
+### Playing Samples Locally
+```bash
+afplay sounds/606-trimmed/kick.wav
+```
+
+---
+
+## 📝 Key Takeaways
+
+1. **Use tools, not scripts** - CLI tools are composable and debuggable
+2. **Break into tasks** - Long operations should use task lists
+3. **Check before acting** - List samples/programs before uploading/creating
+4. **Use s2800-agent** - Don't guess protocol values, look them up
+5. **Bash loops > Python loops** - For simple iterations, bash is clearer
+6. **Ask before long ops** - Get permission for >5 minute operations
+7. **just run** - That's how you run the app. Period.
+
+---
+
+## 🔍 When You're Stuck
+
+1. Check available tools: `ls tools/bin/`
+2. Read tool help: `tools/bin/s2800-agent help`
+3. Look up parameters: `tools/bin/s2800-agent param <name>`
+4. Ask the user before writing new Python code
