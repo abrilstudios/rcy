@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+export PYTHONPATH="$PROJECT_ROOT/src/python"
+exec "$PROJECT_ROOT/venv/bin/python3" "$SCRIPT_DIR/audio-viz.py" "$@"

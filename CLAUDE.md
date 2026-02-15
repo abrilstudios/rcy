@@ -48,6 +48,25 @@ This script provides:
 
 ---
 
+## 🔊 **Audio Utilities**
+
+**Analyzing and trimming audio samples:**
+
+```bash
+# Analyze a drum sample and suggest trim point
+audio-trim sounds/606/606_09_tom_lo.wav
+
+# Visualize waveform with suggested trim point
+audio-viz sounds/606/606_09_tom_lo.wav --open
+
+# Actually trim the file
+audio-trim sounds/606/606_09_tom_lo.wav --trim sounds/606-trimmed/tom_lo.wav
+```
+
+These tools analyze amplitude envelopes to detect where drum hits end and reverb tails begin, suggesting optimal trim points to reduce file size while preserving the useful audio. Particularly useful for preparing samples for hardware samplers with limited memory (like the Akai S2800).
+
+---
+
 ## 📦 Project Structure
 
 RCY uses a modular directory layout with absolute imports and explicit runtime configuration.
