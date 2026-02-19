@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>909 S2800 Controller</title>
+<title>S2800 Controller</title>
 <script src="https://cdn.jsdelivr.net/npm/webmidi@3/dist/iife/webmidi.iife.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -15,15 +15,27 @@ body {
   user-select: none;
   -webkit-user-select: none;
 }
-header { margin-bottom: 10px; }
-h1 { font-size: 11px; letter-spacing: 4px; color: #f0a020; text-transform: uppercase; }
-#midi-bar    { font-size: 9px; color: #555; letter-spacing: 1px; margin: 3px 0; }
-#status      { font-size: 9px; color: #666; letter-spacing: 1px; height: 14px; }
+header { margin-bottom: 10px; display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+h1 { font-size: 11px; letter-spacing: 4px; color: #f0a020; text-transform: uppercase; white-space: nowrap; }
+#prog-select {
+  background: #2a2a2a;
+  color: #e8e0c8;
+  border: 1px solid #444;
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 9px;
+  letter-spacing: 1px;
+  padding: 3px 6px;
+  cursor: pointer;
+  min-width: 180px;
+}
+#prog-select:focus { outline: 1px solid #f0a020; }
+#midi-bar    { font-size: 9px; color: #555; letter-spacing: 1px; width: 100%; }
+#status      { font-size: 9px; color: #666; letter-spacing: 1px; height: 14px; width: 100%; }
 #status.ok   { color: #4a4; }
 #status.err  { color: #a44; }
 #status.info { color: #88a; }
 
-/* Section labels */
 .section-label {
   font-size: 8px;
   letter-spacing: 3px;
@@ -36,6 +48,7 @@ h1 { font-size: 11px; letter-spacing: 4px; color: #f0a020; text-transform: upper
 #prog-panel {
   display: flex;
   gap: 12px;
+  flex-wrap: wrap;
   background: #1e1e1e;
   border: 1px solid #333;
   border-radius: 4px;
@@ -61,6 +74,14 @@ h1 { font-size: 11px; letter-spacing: 4px; color: #f0a020; text-transform: upper
   border: 1px solid #333;
   border-radius: 4px;
   padding: 12px;
+  min-height: 60px;
+}
+#panel-loading {
+  font-size: 9px;
+  color: #555;
+  letter-spacing: 2px;
+  padding: 8px;
+  align-self: center;
 }
 .voice {
   display: flex;
@@ -80,9 +101,15 @@ h1 { font-size: 11px; letter-spacing: 4px; color: #f0a020; text-transform: upper
   color: #f0a020;
   text-align: center;
   min-height: 22px;
+  word-break: break-all;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+.voice-note {
+  font-size: 7px;
+  color: #555;
+  letter-spacing: 1px;
 }
 .knob-row   { display: flex; flex-direction: column; align-items: center; gap: 1px; }
 .knob-label { font-size: 7px; letter-spacing: 1px; color: #888; text-transform: uppercase; }
@@ -110,7 +137,8 @@ canvas[data-param] { display: block; cursor: ns-resize; }
 <body>
 
 <header>
-  <h1>TR-909 &mdash; S2800 &mdash; PROGRAM <span id="prog-num">?</span></h1>
+  <h1>S2800</h1>
+  <select id="prog-select"><option>-- connect MIDI --</option></select>
   <div id="midi-bar">WebMIDI: initializing...</div>
   <div id="status" class="info">Waiting for MIDI...</div>
 </header>
@@ -119,34 +147,30 @@ canvas[data-param] { display: block; cursor: ns-resize; }
 <div id="prog-panel"></div>
 
 <div class="section-label">Per Keygroup</div>
-<div id="panel"></div>
+<div id="panel"><span id="panel-loading">connecting...</span></div>
 
 <script>
 // ── S2800 SysEx constants ────────────────────────────────────────────────────
-const AKAI_MFR         = 0x47;
-const AKAI_MODEL       = 0x48;
-const AKAI_CHANNEL     = 0;
-const FUNC_S3K_RPDATA  = 0x27;   // request program header
-const FUNC_S3K_PDATA   = 0x28;   // send/receive program header
-const FUNC_S3K_RKDATA  = 0x29;   // request keygroup header
-const FUNC_S3K_KDATA   = 0x2A;   // send/receive keygroup header
-const MIDI_DRUM_CH     = 10;     // WebMIDI.js uses 1-16
+const AKAI_MFR        = 0x47;
+const AKAI_MODEL      = 0x48;
+const AKAI_CHANNEL    = 0;
+const FUNC_RPLIST     = 0x02;   // request program list
+const FUNC_PLIST      = 0x03;   // program list response
+const FUNC_S3K_RPDATA = 0x27;   // request program header
+const FUNC_S3K_PDATA  = 0x28;   // send/receive program header
+const FUNC_S3K_RKDATA = 0x29;   // request keygroup header
+const FUNC_S3K_KDATA  = 0x2A;   // send/receive keygroup header
+const MIDI_DRUM_CH    = 10;     // WebMIDI.js uses 1-16
 
-// ── Kit layout (TR-909 panel order) ─────────────────────────────────────────
-const VOICES = [
-  { label: "BASS DRUM", name: "BD909TUBE", kg: 0, note: 36 },
-  { label: "SNARE",     name: "SD909",     kg: 2, note: 38 },
-  { label: "LO TOM",    name: "TOMLO909",  kg: 4, note: 41 },
-  { label: "MID TOM",   name: "TOMMID909", kg: 6, note: 45 },
-  { label: "HI TOM",    name: "TOMHI909",  kg: 8, note: 48 },
-  { label: "RIM SHOT",  name: "RIM909",    kg: 1, note: 37 },
-  { label: "CLAP",      name: "CLAP909",   kg: 3, note: 39 },
-  { label: "CL. HAT",   name: "CH909",     kg: 5, note: 42 },
-  { label: "OP. HAT",   name: "OH909",     kg: 7, note: 46 },
-  { label: "CRASH",     name: "CRASH909",  kg: 9, note: 49 },
-];
+// ── Akai character encoding ──────────────────────────────────────────────────
+const AKAI_CHARS = '0123456789 ABCDEFGHIJKLMNOPQRSTUVWXYZ#+-./'
 
-// Program-level parameters (apply to the whole program)
+const decodeAkaiName = bytes =>
+  Array.from(bytes, b => b < AKAI_CHARS.length ? AKAI_CHARS[b] : '?')
+       .join('').trimEnd();
+
+// ── Parameter definitions ────────────────────────────────────────────────────
+// Program-level parameters read from the 192-byte program header.
 const PROG_PARAMS = [
   { name: "PANPOS", label: "PAN",     offset: 24, size: 1, signed: true,  min: -50, max: 50,  center: 0    },
   { name: "PRLOUD", label: "LOUD",    offset: 25, size: 1, signed: false, min: 0,   max: 99,  center: null },
@@ -158,9 +182,8 @@ const PROG_PARAMS = [
   { name: "PANDEP", label: "PAN DEP", offset: 30, size: 1, signed: false, min: 0,   max: 99,  center: null },
 ];
 
-// Per-keygroup parameters (one column per voice)
-// Note: DECAY only has audible effect when SUSTN is low (e.g. 0).
-// Default kit has SUSTN=99, so drag SUSTN down first to hear DECAY work.
+// Per-keygroup parameters read from each 191-byte keygroup header.
+// DECAY only has audible effect when SUSTN is low (drag SUSTN to 0 first).
 const PARAMS = [
   { name: "KGTUNO", label: "TUNE",   offset: 5,  size: 2, signed: true,  min: -50, max: 50,  center: 0,    scale: 100 },
   { name: "VLOUD1", label: "LEVEL",  offset: 50, size: 1, signed: true,  min: -50, max: 50,  center: 0    },
@@ -172,16 +195,28 @@ const PARAMS = [
   { name: "FILFRQ", label: "FILTER", offset: 7,  size: 1, signed: false, min: 0,   max: 99,  center: null },
 ];
 
+// Keygroup metadata offsets (read alongside params, not editable here)
+const KG_META = {
+  LONOTE: 3,            // 1 byte: lower key range (MIDI note), used as trigger note
+  SNAME1: [34, 12],     // 12 bytes: Akai-encoded sample name for zone 1
+};
+
+// Program header metadata offsets
+const PROG_META = {
+  PRNAME: [3, 12],      // 12 bytes: program name
+  GROUPS: 42,           // 1 byte: number of keygroups
+};
+
 // ── App state ────────────────────────────────────────────────────────────────
-const program = parseInt(new URLSearchParams(location.search).get('program') ?? '3');
-document.getElementById('prog-num').textContent = program;
-
-let output    = null;
-let input     = null;
-let state     = {};     // kg -> { paramName -> value }
+let program  = parseInt(new URLSearchParams(location.search).get('program') ?? '0');
+let voices   = [];      // built dynamically: [{ label, kg, note }]
+let state    = {};      // kg -> { paramName -> value }
 let progState = {};     // paramName -> value
+let output   = null;
+let input    = null;
+let loadId   = 0;       // increments on each loadState call; stale loads abort
 
-// ── SysEx codec ─────────────────────────────────────────────────────────────
+// ── SysEx codec ──────────────────────────────────────────────────────────────
 const nibbleEncode = bytes =>
   bytes.flatMap(b => [b & 0x0F, (b >> 4) & 0x0F]);
 
@@ -192,7 +227,6 @@ const nibbleDecode = nibbles => {
   return out;
 };
 
-// scale: divide raw value into display units (e.g. KGTUNO stores cents, scale=100 -> semitones)
 const extractField = (raw, { offset, size, signed, scale = 1 }) => {
   let v = size === 1 ? raw[offset] : raw[offset] | (raw[offset + 1] << 8);
   if (signed && size === 1 && v > 127)   v -= 256;
@@ -206,50 +240,69 @@ const fieldToBytes = (value, { size, scale = 1 }) => {
 };
 
 // ── Pending SysEx reads ──────────────────────────────────────────────────────
-const pendingReads    = new Map();   // `kg_${prog}_${kg}` -> { resolve, reject, timer }
-let   pendingProgRead = null;        // { resolve, reject, timer }
+const pendingReads  = new Map();  // `kg_${prog}_${kg}` -> { resolve, reject, timer }
+let pendingProgRead = null;
+let pendingProgList = null;
 
 function onSysex(e) {
   const d = e.message.data;
   if (d[0] !== 0xF0 || d[1] !== AKAI_MFR || d[4] !== AKAI_MODEL) return;
   const func    = d[3];
-  const payload = d.slice(5, -1);   // strip F0...F7 wrapper and model prefix
+  const payload = d.slice(5, -1);
 
+  // Program list response: count(2) + name[12] * count
+  if (func === FUNC_PLIST && pendingProgList) {
+    clearTimeout(pendingProgList.timer);
+    const entry = pendingProgList;
+    pendingProgList = null;
+    const count = payload[0] | (payload[1] << 8);
+    const names = Array.from({ length: count }, (_, i) =>
+      decodeAkaiName(payload.slice(2 + i * 12, 14 + i * 12))
+    );
+    entry.resolve(names);
+    return;
+  }
+
+  // Program header response: pp PP 00 oo_lo oo_hi nn_lo nn_hi nibbled...
   if (func === FUNC_S3K_PDATA && pendingProgRead) {
-    // Program header response: pp PP 00 oo_lo oo_hi nn_lo nn_hi nibbled...
     clearTimeout(pendingProgRead.timer);
     const entry = pendingProgRead;
     pendingProgRead = null;
     entry.resolve(nibbleDecode(Array.from(payload.slice(7))));
+    return;
   }
 
+  // Keygroup header response: pp PP kk oo_lo oo_hi nn_lo nn_hi nibbled...
   if (func === FUNC_S3K_KDATA) {
-    // Keygroup header response: pp PP kk oo_lo oo_hi nn_lo nn_hi nibbled...
     const prog = payload[0] | (payload[1] << 8);
     const kg   = payload[2];
-    const key  = `kg_${prog}_${kg}`;
-    const entry = pendingReads.get(key);
+    const entry = pendingReads.get(`kg_${prog}_${kg}`);
     if (!entry) return;
     clearTimeout(entry.timer);
-    pendingReads.delete(key);
+    pendingReads.delete(`kg_${prog}_${kg}`);
     entry.resolve(nibbleDecode(Array.from(payload.slice(7))));
   }
 }
 
 // ── Read functions ───────────────────────────────────────────────────────────
+function listPrograms() {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { pendingProgList = null; reject(new Error('Timeout')); }, 5000);
+    pendingProgList = { resolve, reject, timer };
+    output.sendSysex(AKAI_MFR, [AKAI_CHANNEL, FUNC_RPLIST, AKAI_MODEL]);
+  });
+}
+
 function readProgHeader(prog) {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      pendingProgRead = null;
-      reject(new Error('Timeout reading program header'));
-    }, 5000);
+    const timer = setTimeout(() => { pendingProgRead = null; reject(new Error('Timeout')); }, 5000);
     pendingProgRead = { resolve, reject, timer };
     output.sendSysex(AKAI_MFR, [
       AKAI_CHANNEL, FUNC_S3K_RPDATA, AKAI_MODEL,
       prog & 0x7F, (prog >> 7) & 0x7F,
-      0x00,                        // reserved (selector=0 for program)
-      0x00, 0x00,                  // offset = 0
-      192 & 0x7F, 1,               // count = 192
+      0x00,
+      0x00, 0x00,
+      192 & 0x7F, 1,
     ]);
   });
 }
@@ -257,17 +310,14 @@ function readProgHeader(prog) {
 function readKg(prog, kg) {
   return new Promise((resolve, reject) => {
     const key = `kg_${prog}_${kg}`;
-    const timer = setTimeout(() => {
-      pendingReads.delete(key);
-      reject(new Error(`Timeout prog=${prog} kg=${kg}`));
-    }, 5000);
+    const timer = setTimeout(() => { pendingReads.delete(key); reject(new Error('Timeout')); }, 5000);
     pendingReads.set(key, { resolve, reject, timer });
     output.sendSysex(AKAI_MFR, [
       AKAI_CHANNEL, FUNC_S3K_RKDATA, AKAI_MODEL,
       prog & 0x7F, (prog >> 7) & 0x7F,
       kg & 0x7F,
-      0x00, 0x00,                  // offset = 0
-      191 & 0x7F, 1,               // count = 191
+      0x00, 0x00,
+      191 & 0x7F, 1,
     ]);
   });
 }
@@ -276,18 +326,16 @@ function readKg(prog, kg) {
 const writeTimers = new Map();
 
 function scheduleWrite(target, key, param, value) {
-  // target: 'prog' or 'kg'
   const timerKey = `${target}_${key}_${param.name}`;
   clearTimeout(writeTimers.get(timerKey));
   writeTimers.set(timerKey, setTimeout(() => {
     writeTimers.delete(timerKey);
     const raw = fieldToBytes(value, param);
-
     if (target === 'prog') {
       output.sendSysex(AKAI_MFR, [
         AKAI_CHANNEL, FUNC_S3K_PDATA, AKAI_MODEL,
         program & 0x7F, (program >> 7) & 0x7F,
-        0x00,                          // reserved
+        0x00,
         param.offset & 0x7F, (param.offset >> 7) & 0x7F,
         raw.length & 0x7F, (raw.length >> 7) & 0x7F,
         ...nibbleEncode(raw),
@@ -308,38 +356,105 @@ function scheduleWrite(target, key, param, value) {
   }, 30));
 }
 
+// ── Program selector ─────────────────────────────────────────────────────────
+async function populateProgramSelector() {
+  try {
+    const names = await listPrograms();
+    const sel = document.getElementById('prog-select');
+    sel.innerHTML = '';
+    names.forEach((name, i) => {
+      const opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = `${i}  ${name}`;
+      if (i === program) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    if (!names.length) sel.innerHTML = '<option>no programs</option>';
+  } catch {
+    // leave selector as-is, device may not have responded
+  }
+}
+
+document.getElementById('prog-select').addEventListener('change', e => {
+  program = parseInt(e.target.value);
+  history.replaceState(null, '', `?program=${program}`);
+  cancelPendingReads();
+  loadState();
+});
+
+function cancelPendingReads() {
+  if (pendingProgRead) { clearTimeout(pendingProgRead.timer); pendingProgRead = null; }
+  if (pendingProgList) { clearTimeout(pendingProgList.timer); pendingProgList = null; }
+  pendingReads.forEach(e => clearTimeout(e.timer));
+  pendingReads.clear();
+}
+
 // ── State load ───────────────────────────────────────────────────────────────
+// loadId prevents a superseded load from updating the UI after a program switch.
 async function loadState() {
+  const myId = ++loadId;
+
+  state = {};
+  voices = [];
+  document.getElementById('panel').innerHTML =
+    '<span id="panel-loading">loading...</span>';
+
+  // 1. Read program header: prog params + name + keygroup count
   setStatus('Reading program header...', 'info');
+  let numKg = 0;
   try {
     const raw = await readProgHeader(program);
-    progState = Object.fromEntries(PROG_PARAMS.map(p => [p.name, extractField(raw, p)]));
+    if (loadId !== myId) return;
+    progState   = Object.fromEntries(PROG_PARAMS.map(p => [p.name, extractField(raw, p)]));
+    numKg       = raw[PROG_META.GROUPS] || 0;
+    const name  = decodeAkaiName(raw.slice(PROG_META.PRNAME[0], PROG_META.PRNAME[0] + PROG_META.PRNAME[1]));
+    // Update selector to show the real name (in case it wasn't listed yet)
+    const opt = document.querySelector(`#prog-select option[value="${program}"]`);
+    if (opt && !opt.textContent.includes(name)) opt.textContent = `${program}  ${name}`;
     refreshProgPanel();
-  } catch (err) {
-    setStatus(`Program header timeout`, 'err');
+  } catch {
+    if (loadId !== myId) return;
     progState = Object.fromEntries(PROG_PARAMS.map(p => [p.name, 0]));
     refreshProgPanel();
+    setStatus('Program header timeout', 'err');
   }
 
+  if (!numKg) {
+    setStatus('No keygroups in this program', 'err');
+    buildPanel();
+    return;
+  }
+
+  // 2. Read each keygroup: extract metadata (name, note) AND params in one pass
   let loaded = 0;
-  for (const voice of VOICES) {
-    setStatus(`Reading keygroups ${loaded}/${VOICES.length}...`, 'info');
+  for (let kgIdx = 0; kgIdx < numKg; kgIdx++) {
+    if (loadId !== myId) return;
+    setStatus(`Reading keygroup ${kgIdx + 1}/${numKg}...`, 'info');
     try {
-      const raw = await readKg(program, voice.kg);
-      state[voice.kg] = Object.fromEntries(PARAMS.map(p => [p.name, extractField(raw, p)]));
+      const raw    = await readKg(program, kgIdx);
+      if (loadId !== myId) return;
+      const sname  = decodeAkaiName(raw.slice(KG_META.SNAME1[0], KG_META.SNAME1[0] + KG_META.SNAME1[1]));
+      const loNote = raw[KG_META.LONOTE];
+      voices.push({ label: sname || `KG ${kgIdx}`, kg: kgIdx, note: loNote });
+      state[kgIdx] = Object.fromEntries(PARAMS.map(p => [p.name, extractField(raw, p)]));
       loaded++;
     } catch {
-      state[voice.kg] = Object.fromEntries(PARAMS.map(p => [p.name, 0]));
+      if (loadId !== myId) return;
+      voices.push({ label: `KG ${kgIdx}`, kg: kgIdx, note: 60 });
+      state[kgIdx] = Object.fromEntries(PARAMS.map(p => [p.name, 0]));
     }
-    refreshVoice(voice);
   }
+
+  // 3. Build panel from discovered voices, then populate knob values
+  buildPanel();
+  for (const voice of voices) refreshVoice(voice);
   setStatus(
-    `${loaded}/${VOICES.length} keygroups loaded. Drag knobs to edit, double-click to reset.`,
+    `${loaded}/${numKg} keygroups loaded. Drag knobs to edit, double-click to reset.`,
     loaded > 0 ? 'ok' : 'err'
   );
 }
 
-// ── UI: program panel (horizontal row) ───────────────────────────────────────
+// ── UI: program panel ─────────────────────────────────────────────────────────
 function buildProgPanel() {
   const panel = document.getElementById('prog-panel');
   panel.innerHTML = '';
@@ -381,11 +496,11 @@ function refreshProgPanel() {
   }
 }
 
-// ── UI: keygroup panel (one column per voice) ─────────────────────────────────
+// ── UI: keygroup panel (built from dynamic voices) ────────────────────────────
 function buildPanel() {
   const panel = document.getElementById('panel');
   panel.innerHTML = '';
-  for (const voice of VOICES) panel.appendChild(buildColumn(voice));
+  for (const voice of voices) panel.appendChild(buildColumn(voice));
 }
 
 function buildColumn(voice) {
@@ -396,6 +511,11 @@ function buildColumn(voice) {
   lbl.className = 'voice-label';
   lbl.textContent = voice.label;
   col.appendChild(lbl);
+
+  const noteLbl = document.createElement('div');
+  noteLbl.className = 'voice-note';
+  noteLbl.textContent = `n${voice.note}`;
+  col.appendChild(noteLbl);
 
   for (const param of PARAMS) {
     const row  = document.createElement('div');
@@ -425,7 +545,7 @@ function buildColumn(voice) {
   pad.className = 'pad';
   pad.dataset.note = voice.note;
   pad.textContent = '\u25b6';
-  pad.title = `${voice.label} \u2014 MIDI note ${voice.note}`;
+  pad.title = `${voice.label} \u2014 note ${voice.note}`;
   col.appendChild(pad);
 
   return col;
@@ -463,12 +583,9 @@ function drawKnob(cvs, value, param) {
   const norm  = (value - param.min) / (param.max - param.min);
   const angle = A0 + norm * SWEEP;
 
-  // Program knobs use a different accent color
-  const arcColor = cvs.dataset.target === 'prog' ? '#4a8fff' : '#f0a020';
-
   ctx.beginPath();
   ctx.arc(cx, cy, r - 3, A0, angle);
-  ctx.strokeStyle = arcColor;
+  ctx.strokeStyle = cvs.dataset.target === 'prog' ? '#4a8fff' : '#f0a020';
   ctx.lineWidth = 3;
   ctx.stroke();
 
@@ -480,32 +597,33 @@ function drawKnob(cvs, value, param) {
   ctx.stroke();
 }
 
-// ── Unified drag handler ─────────────────────────────────────────────────────
+// ── Unified drag handler ──────────────────────────────────────────────────────
 let drag = null;
 
 document.body.addEventListener('mousedown', e => {
-  const cvs   = e.target.closest('canvas[data-param]');
   const isPad = e.target.closest('.pad');
   if (isPad) { isPad.classList.add('active'); return; }
+
+  const cvs = e.target.closest('canvas[data-param]');
   if (!cvs) return;
 
-  const target  = cvs.dataset.target;          // 'prog' or 'kg'
-  const paramName = cvs.dataset.param;
+  const target  = cvs.dataset.target;
   const paramList = target === 'prog' ? PROG_PARAMS : PARAMS;
-  const param   = paramList.find(p => p.name === paramName);
+  const param   = paramList.find(p => p.name === cvs.dataset.param);
   if (!param) return;
 
+  const kg       = parseInt(cvs.dataset.kg);
   const startVal = target === 'prog'
-    ? progState[paramName] ?? 0
-    : (state[parseInt(cvs.dataset.kg)] ?? {})[paramName] ?? 0;
+    ? progState[param.name] ?? 0
+    : (state[kg] ?? {})[param.name] ?? 0;
 
-  drag = { cvs, target, param, startY: e.clientY, startVal };
+  drag = { cvs, target, kg, param, startY: e.clientY, startVal };
   e.preventDefault();
 });
 
 window.addEventListener('mousemove', e => {
   if (!drag) return;
-  const { cvs, target, param, startY, startVal } = drag;
+  const { cvs, target, kg, param, startY, startVal } = drag;
   const delta  = (startY - e.clientY) * (param.max - param.min) / 150;
   const newVal = Math.max(param.min, Math.min(param.max, Math.round(startVal + delta)));
 
@@ -513,17 +631,14 @@ window.addEventListener('mousemove', e => {
     progState[param.name] = newVal;
     const vEl = document.getElementById(`pv_${param.name}`);
     if (vEl) vEl.textContent = newVal;
-    drawKnob(cvs, newVal, param);
-    if (output) scheduleWrite('prog', 'prog', param, newVal);
   } else {
-    const kg = parseInt(cvs.dataset.kg);
     if (!state[kg]) state[kg] = {};
     state[kg][param.name] = newVal;
     const vEl = document.getElementById(`kv_${kg}_${param.name}`);
     if (vEl) vEl.textContent = newVal;
-    drawKnob(cvs, newVal, param);
-    if (output) scheduleWrite('kg', kg, param, newVal);
   }
+  drawKnob(cvs, newVal, param);
+  if (output) scheduleWrite(target, target === 'prog' ? 'prog' : kg, param, newVal);
 });
 
 window.addEventListener('mouseup', () => {
@@ -534,10 +649,11 @@ window.addEventListener('mouseup', () => {
 document.body.addEventListener('dblclick', e => {
   const cvs = e.target.closest('canvas[data-param]');
   if (!cvs) return;
-  const target  = cvs.dataset.target;
+  const target    = cvs.dataset.target;
   const paramList = target === 'prog' ? PROG_PARAMS : PARAMS;
-  const param   = paramList.find(p => p.name === cvs.dataset.param);
+  const param     = paramList.find(p => p.name === cvs.dataset.param);
   if (!param) return;
+  const kg  = parseInt(cvs.dataset.kg);
   const def = param.center !== null
     ? param.center
     : Math.round((param.min + param.max) / 2);
@@ -546,20 +662,17 @@ document.body.addEventListener('dblclick', e => {
     progState[param.name] = def;
     const vEl = document.getElementById(`pv_${param.name}`);
     if (vEl) vEl.textContent = def;
-    drawKnob(cvs, def, param);
-    if (output) scheduleWrite('prog', 'prog', param, def);
   } else {
-    const kg = parseInt(cvs.dataset.kg);
     if (!state[kg]) state[kg] = {};
     state[kg][param.name] = def;
     const vEl = document.getElementById(`kv_${kg}_${param.name}`);
     if (vEl) vEl.textContent = def;
-    drawKnob(cvs, def, param);
-    if (output) scheduleWrite('kg', kg, param, def);
   }
+  drawKnob(cvs, def, param);
+  if (output) scheduleWrite(target, target === 'prog' ? 'prog' : kg, param, def);
 });
 
-// ── Hits ─────────────────────────────────────────────────────────────────────
+// ── Hits ──────────────────────────────────────────────────────────────────────
 document.body.addEventListener('click', e => {
   const pad = e.target.closest('.pad');
   if (!pad || !output) return;
@@ -595,7 +708,6 @@ WebMidi.enable({ sysex: true }).then(() => {
       'No MIDI ports found. Connect S2800 and reload.';
     setStatus('No MIDI device', 'err');
     buildProgPanel();
-    buildPanel();
     return;
   }
 
@@ -603,14 +715,12 @@ WebMidi.enable({ sysex: true }).then(() => {
   if (input) input.addListener('sysex', onSysex);
 
   buildProgPanel();
-  buildPanel();
-  loadState();
+  populateProgramSelector().then(() => loadState());
 
 }).catch(err => {
   document.getElementById('midi-bar').textContent = `WebMIDI failed: ${err.message}`;
   setStatus('MIDI unavailable. Check browser permissions.', 'err');
   buildProgPanel();
-  buildPanel();
 });
 </script>
 </body>
