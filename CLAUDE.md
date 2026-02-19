@@ -21,8 +21,8 @@ s.close()
 ### Good (using existing tools):
 ```bash
 for kg in {0..11}; do
-  ./venv/bin/python3 tools/bin/s2800-agent write-kg ZPLAY1 4 1 $kg
-  ./venv/bin/python3 tools/bin/s2800-agent write-kg VPANO1 0 1 $kg
+  just s2800-agent write-kg ZPLAY1 4 1 $kg
+  just s2800-agent write-kg VPANO1 0 1 $kg
 done
 ```
 
@@ -47,7 +47,10 @@ done
 ### Hardware Tools
 - `tools/bin/ep133` - EP-133 device operations
 - `tools/bin/s2800` - S2800 sample upload/list/delete
-- `tools/bin/s2800-agent` - S2800 protocol spec and live device parameters
+- `just s2800-agent` - S2800 protocol spec and live device parameters
+- `just controller [PROG]` - TR-909 web GUI for real-time S2800 sound design (no server required)
+- `just agent-start` / `just agent-stop` - ADK agent server
+- `just ask <agent> <query>` - Query a running ADK agent
 
 ### Audio Tools
 - `audio-trim <file.wav>` - Analyze and suggest trim points for drum samples
@@ -63,16 +66,16 @@ The s2800-agent is your primary interface for S2800 protocol work. **Use it inst
 
 ```bash
 # Spec lookup (fast, offline)
-tools/bin/s2800-agent param ZPLAY1           # What is ZPLAY1?
-tools/bin/s2800-agent list keygroup pan      # Find pan-related params
-tools/bin/s2800-agent offset keygroup 53     # What's at byte offset 53?
+just s2800-agent param ZPLAY1           # What is ZPLAY1?
+just s2800-agent list keygroup pan      # Find pan-related params
+just s2800-agent offset keygroup 53     # What's at byte offset 53?
 
 # Device operations (requires S2800 connected)
-tools/bin/s2800-agent programs               # List programs
-tools/bin/s2800-agent samples                # List samples
-tools/bin/s2800-agent read-kg ZPLAY1 1 0     # Read prog 1, keygroup 0, ZPLAY1
-tools/bin/s2800-agent write-kg ZPLAY1 4 1 0  # Write value 4 to ZPLAY1
-tools/bin/s2800-agent summary 1              # Full program 1 summary
+just s2800-agent programs               # List programs
+just s2800-agent samples                # List samples
+just s2800-agent read-kg ZPLAY1 1 0     # Read prog 1, keygroup 0, ZPLAY1
+just s2800-agent write-kg ZPLAY1 4 1 0  # Write value 4 to ZPLAY1
+just s2800-agent summary 1              # Full program 1 summary
 ```
 
 ### Example: Configure 12 Keygroups for One-Shot Playback
@@ -80,9 +83,9 @@ tools/bin/s2800-agent summary 1              # Full program 1 summary
 ```bash
 # Set all keygroups to play-to-end mode with center pan
 for kg in {0..11}; do
-  ./venv/bin/python3 tools/bin/s2800-agent write-kg ZPLAY1 4 1 $kg    # Play to end
-  ./venv/bin/python3 tools/bin/s2800-agent write-kg VPANO1 0 1 $kg    # Center pan
-  ./venv/bin/python3 tools/bin/s2800-agent write-kg CP1 1 1 $kg       # Constant pitch
+  just s2800-agent write-kg ZPLAY1 4 1 $kg    # Play to end
+  just s2800-agent write-kg VPANO1 0 1 $kg    # Center pan
+  just s2800-agent write-kg CP1 1 1 $kg       # Constant pitch
   echo "Configured keygroup $kg"
 done
 ```
@@ -92,43 +95,54 @@ done
 | Task | Use |
 |------|-----|
 | Upload samples | `tools/bin/s2800 upload` |
-| Configure keygroup params | `tools/bin/s2800-agent write-kg` in a loop |
-| Read current settings | `tools/bin/s2800-agent read-kg` |
-| Look up protocol details | `tools/bin/s2800-agent param` |
+| Configure keygroup params | `just s2800-agent write-kg` in a loop |
+| Read current settings | `just s2800-agent read-kg` |
+| Look up protocol details | `just s2800-agent param` |
 | Create new S2800 features | Write Python (then expose as CLI tool) |
 
 ---
 
 ## 📋 Task Lists for Fault Tolerance
 
-**CRITICAL: Break long operations into tasks. Don't write monolithic scripts.**
+**CRITICAL: Break long operations into tasks that call CLI tools. Never write monolithic Python.**
 
-### Bad (monolithic):
+### Bad (monolithic Python):
 ```python
-# One big script that uploads 12 samples
-# If it fails at sample 8, you lose all progress
-for sample in samples:
-    upload_sample(sample)  # 30 seconds each
+# One giant script -- if it fails at step 15, you restart from scratch
+s = S2800(); s.open()
+for path, pitch, name in drum_map:
+    audio = librosa.load(path, ...)
+    s.upload_sample(pcm, 44100, name)
+s.create_program("606 KIT", keygroups, ...)
+# ... 50 more lines
+s.close()
 ```
 
-### Good (task-based):
-```python
-# Create 12 separate tasks
-for i, sample in enumerate(samples):
-    TaskCreate(
-        subject=f"Upload {sample.name}",
-        description=f"Upload {sample.path} to S2800",
-        activeForm=f"Uploading {sample.name}"
-    )
-# Then execute tasks one by one
-# If task 8 fails, tasks 1-7 are already complete
+### Good (task list + CLI tools):
 ```
+Task 1: "Delete all programs"     -> s2800 delete-all
+Task 2: "Upload KICK"             -> s2800 upload sounds/606-trimmed/606_01_kick.wav
+Task 3: "Upload SNARE"            -> s2800 upload sounds/606-trimmed/606_03_snare.wav
+...
+Task 13: "Upload THK 001"         -> s2800 upload exports/think_break/001.wav
+...
+Task 21: "Create 606 KIT program" -> (create_program call)
+Task 22: "Create THINK BRK"       -> (create_program call)
+Task 23: "Set PRGNUM=0 on all"    -> just s2800-agent write PRGNUM 0 0 && just s2800-agent write PRGNUM 0 1
+Task 24: "Set PANPOS center"      -> just s2800-agent write PANPOS 0 1 && just s2800-agent write PANPOS 0 2
+Task 25: "Set pan center on KGs"  -> for kg in {0..11}; do just s2800-agent write-kg VPANO1 0 1 $kg; done
+```
+
+Each task is atomic: if task 13 fails, tasks 1-12 are already complete. Resume
+from task 13 instead of restarting everything.
 
 **Benefits:**
 - Progress is preserved across failures
 - Easy to see what's done vs pending
 - Can resume from interruption
 - User can see progress in real-time
+- Each step is visible and debuggable
+- No monolithic Python with import boilerplate
 
 ---
 
@@ -207,12 +221,39 @@ upload_all_samples()           # Wastes 4-5 minutes
 create_program(...)
 ```
 
-### Pattern 3: Verify Settings
+### Pattern 3: Multi-Timbral Setup (Multiple Programs via MIDI)
+The S2800 (non-XL) has no dedicated MULTI mode. To play multiple programs
+simultaneously on different MIDI channels:
+
+1. Set all programs to the **same PRGNUM**
+2. Give each program a **different PMCHAN**
+3. **Select that PRGNUM on the front panel** (critical -- the S2800 only plays
+   programs matching the currently selected program number)
+
+```bash
+# Set all 4 programs to PRGNUM=0
+for prog in 0 1 2 3; do
+  just s2800-agent write PRGNUM 0 $prog
+done
+
+# Verify channels are distinct
+for prog in 0 1 2 3; do
+  just s2800-agent read PMCHAN $prog
+done
+
+# Then select program 0 on the S2800 front panel
+```
+
+If you group programs under PRGNUM=0 but the front panel still shows an old
+program number (e.g., 3), only the program that was at PRGNUM=3 will respond.
+You must re-select the shared PRGNUM after grouping.
+
+### Pattern 4: Verify Settings
 ```bash
 # After configuring keygroups, spot-check a few
 for kg in 0 5 11; do
-  ./venv/bin/python3 tools/bin/s2800-agent read-kg ZPLAY1 1 $kg
-  ./venv/bin/python3 tools/bin/s2800-agent read-kg VPANO1 1 $kg
+  just s2800-agent read-kg ZPLAY1 1 $kg
+  just s2800-agent read-kg VPANO1 1 $kg
 done
 ```
 
@@ -267,7 +308,7 @@ afplay sounds/606-trimmed/kick.wav
 
 ## 🔍 When You're Stuck
 
-1. Check available tools: `ls tools/bin/`
-2. Read tool help: `tools/bin/s2800-agent help`
-3. Look up parameters: `tools/bin/s2800-agent param <name>`
+1. Check available tools: `just --list`
+2. Read tool help: `just s2800-agent --help`
+3. Look up parameters: `just s2800-agent param <name>`
 4. Ask the user before writing new Python code

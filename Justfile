@@ -90,6 +90,29 @@ clean-all: clean
 build:
     ./venv/bin/python -m build
 
+# S2800 SysEx protocol tool (spec lookup, device read/write, presets)
+s2800-agent *ARGS:
+    PYTHONPATH=src/python ./venv/bin/python -m s2800.agent {{ARGS}}
+
+# Start the ADK agent server
+agent-start PORT="8000":
+    PYTHONPATH=src/python ./venv/bin/adk api_server \
+        --session_service_uri "sqlite:///.agent-sessions.db" \
+        --auto_create_session --port {{PORT}} \
+        agents
+
+# Stop the ADK agent server
+agent-stop:
+    pkill -f "adk api_server" && echo "Stopped." || echo "Not running."
+
+# Send a query to a running ADK agent
+ask AGENT QUERY SESSION="default":
+    tools/bin/agent-ask {{AGENT}} {{QUERY}} {{SESSION}}
+
+# Launch TR-909 style web controller for an S2800 program (standalone HTML, no server)
+controller PROG="3":
+    open -a "Google Chrome" "file://{{justfile_directory()}}/tools/bin/909-controller.html?program={{PROG}}"
+
 # Show project info
 info:
     @echo "RCY - Breakbeat Loop Slicer"

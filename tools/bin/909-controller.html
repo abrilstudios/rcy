@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>909 S2800 Controller</title>
+<script src="https://cdn.jsdelivr.net/npm/webmidi@3/dist/iife/webmidi.iife.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #1a1a1a;
+  color: #e8e0c8;
+  font-family: 'Courier New', monospace;
+  min-height: 100vh;
+  padding: 16px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+header { margin-bottom: 10px; }
+h1 { font-size: 11px; letter-spacing: 4px; color: #f0a020; text-transform: uppercase; }
+#midi-bar    { font-size: 9px; color: #555; letter-spacing: 1px; margin: 3px 0; }
+#status      { font-size: 9px; color: #666; letter-spacing: 1px; height: 14px; }
+#status.ok   { color: #4a4; }
+#status.err  { color: #a44; }
+#status.info { color: #88a; }
+
+/* Section labels */
+.section-label {
+  font-size: 8px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: #555;
+  margin: 12px 0 6px;
+}
+
+/* Program-level knob row */
+#prog-panel {
+  display: flex;
+  gap: 12px;
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 10px 14px;
+  align-items: center;
+}
+.prog-knob-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.prog-knob-label { font-size: 7px; letter-spacing: 1px; color: #777; text-transform: uppercase; }
+.prog-knob-name  { font-size: 7px; letter-spacing: 1px; color: #555; text-transform: uppercase; }
+.prog-knob-value { font-size: 8px; color: #bbb; min-width: 30px; text-align: center; }
+
+/* Per-keygroup panel */
+#panel {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  background: #242424;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 12px;
+}
+.voice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  min-width: 70px;
+  padding: 8px 4px;
+  border: 1px solid #333;
+  border-radius: 3px;
+  background: #2a2a2a;
+}
+.voice-label {
+  font-size: 7px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #f0a020;
+  text-align: center;
+  min-height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.knob-row   { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.knob-label { font-size: 7px; letter-spacing: 1px; color: #888; text-transform: uppercase; }
+canvas[data-param] { display: block; cursor: ns-resize; }
+.knob-value { font-size: 8px; color: #bbb; min-width: 30px; text-align: center; }
+.pad {
+  margin-top: 6px;
+  width: 50px;
+  height: 24px;
+  background: #3a3a3a;
+  border: 1px solid #555;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+  color: #aaa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.05s, color 0.05s;
+}
+.pad:hover  { border-color: #888; color: #ccc; }
+.pad.active { background: #f0a020; color: #111; border-color: #f0a020; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>TR-909 &mdash; S2800 &mdash; PROGRAM <span id="prog-num">?</span></h1>
+  <div id="midi-bar">WebMIDI: initializing...</div>
+  <div id="status" class="info">Waiting for MIDI...</div>
+</header>
+
+<div class="section-label">Program</div>
+<div id="prog-panel"></div>
+
+<div class="section-label">Per Keygroup</div>
+<div id="panel"></div>
+
+<script>
+// ── S2800 SysEx constants ────────────────────────────────────────────────────
+const AKAI_MFR         = 0x47;
+const AKAI_MODEL       = 0x48;
+const AKAI_CHANNEL     = 0;
+const FUNC_S3K_RPDATA  = 0x27;   // request program header
+const FUNC_S3K_PDATA   = 0x28;   // send/receive program header
+const FUNC_S3K_RKDATA  = 0x29;   // request keygroup header
+const FUNC_S3K_KDATA   = 0x2A;   // send/receive keygroup header
+const MIDI_DRUM_CH     = 10;     // WebMIDI.js uses 1-16
+
+// ── Kit layout (TR-909 panel order) ─────────────────────────────────────────
+const VOICES = [
+  { label: "BASS DRUM", name: "BD909TUBE", kg: 0, note: 36 },
+  { label: "SNARE",     name: "SD909",     kg: 2, note: 38 },
+  { label: "LO TOM",    name: "TOMLO909",  kg: 4, note: 41 },
+  { label: "MID TOM",   name: "TOMMID909", kg: 6, note: 45 },
+  { label: "HI TOM",    name: "TOMHI909",  kg: 8, note: 48 },
+  { label: "RIM SHOT",  name: "RIM909",    kg: 1, note: 37 },
+  { label: "CLAP",      name: "CLAP909",   kg: 3, note: 39 },
+  { label: "CL. HAT",   name: "CH909",     kg: 5, note: 42 },
+  { label: "OP. HAT",   name: "OH909",     kg: 7, note: 46 },
+  { label: "CRASH",     name: "CRASH909",  kg: 9, note: 49 },
+];
+
+// Program-level parameters (apply to the whole program)
+const PROG_PARAMS = [
+  { name: "PANPOS", label: "PAN",     offset: 24, size: 1, signed: true,  min: -50, max: 50,  center: 0    },
+  { name: "PRLOUD", label: "LOUD",    offset: 25, size: 1, signed: false, min: 0,   max: 99,  center: null },
+  { name: "STEREO", label: "STEREO",  offset: 23, size: 1, signed: false, min: 0,   max: 99,  center: null },
+  { name: "PTUNO",  label: "TUNE",    offset: 65, size: 2, signed: true,  min: -50, max: 50,  center: 0,    scale: 100 },
+  { name: "LFORAT", label: "LFO RT",  offset: 33, size: 1, signed: false, min: 0,   max: 99,  center: null },
+  { name: "LFODEP", label: "LFO DEP", offset: 34, size: 1, signed: false, min: 0,   max: 99,  center: null },
+  { name: "PANRAT", label: "PAN RT",  offset: 29, size: 1, signed: false, min: 0,   max: 99,  center: null },
+  { name: "PANDEP", label: "PAN DEP", offset: 30, size: 1, signed: false, min: 0,   max: 99,  center: null },
+];
+
+// Per-keygroup parameters (one column per voice)
+// Note: DECAY only has audible effect when SUSTN is low (e.g. 0).
+// Default kit has SUSTN=99, so drag SUSTN down first to hear DECAY work.
+const PARAMS = [
+  { name: "KGTUNO", label: "TUNE",   offset: 5,  size: 2, signed: true,  min: -50, max: 50,  center: 0,    scale: 100 },
+  { name: "VLOUD1", label: "LEVEL",  offset: 50, size: 1, signed: true,  min: -50, max: 50,  center: 0    },
+  { name: "VPANO1", label: "PAN",    offset: 52, size: 1, signed: true,  min: -50, max: 50,  center: 0    },
+  { name: "ATTAK1", label: "ATTACK", offset: 12, size: 1, signed: false, min: 0,   max: 99,  center: null },
+  { name: "DECAY1", label: "DECAY",  offset: 13, size: 1, signed: false, min: 0,   max: 99,  center: null },
+  { name: "SUSTN1", label: "SUSTN",  offset: 14, size: 1, signed: false, min: 0,   max: 99,  center: null },
+  { name: "RELSE1", label: "RELSE",  offset: 15, size: 1, signed: false, min: 0,   max: 99,  center: null },
+  { name: "FILFRQ", label: "FILTER", offset: 7,  size: 1, signed: false, min: 0,   max: 99,  center: null },
+];
+
+// ── App state ────────────────────────────────────────────────────────────────
+const program = parseInt(new URLSearchParams(location.search).get('program') ?? '3');
+document.getElementById('prog-num').textContent = program;
+
+let output    = null;
+let input     = null;
+let state     = {};     // kg -> { paramName -> value }
+let progState = {};     // paramName -> value
+
+// ── SysEx codec ─────────────────────────────────────────────────────────────
+const nibbleEncode = bytes =>
+  bytes.flatMap(b => [b & 0x0F, (b >> 4) & 0x0F]);
+
+const nibbleDecode = nibbles => {
+  const out = [];
+  for (let i = 0; i + 1 < nibbles.length; i += 2)
+    out.push((nibbles[i] & 0x0F) | ((nibbles[i + 1] & 0x0F) << 4));
+  return out;
+};
+
+// scale: divide raw value into display units (e.g. KGTUNO stores cents, scale=100 -> semitones)
+const extractField = (raw, { offset, size, signed, scale = 1 }) => {
+  let v = size === 1 ? raw[offset] : raw[offset] | (raw[offset + 1] << 8);
+  if (signed && size === 1 && v > 127)   v -= 256;
+  if (signed && size === 2 && v > 32767) v -= 65536;
+  return Math.round(v / scale);
+};
+
+const fieldToBytes = (value, { size, scale = 1 }) => {
+  const raw = Math.round(value * scale);
+  return size === 1 ? [raw & 0xFF] : [raw & 0xFF, (raw >> 8) & 0xFF];
+};
+
+// ── Pending SysEx reads ──────────────────────────────────────────────────────
+const pendingReads    = new Map();   // `kg_${prog}_${kg}` -> { resolve, reject, timer }
+let   pendingProgRead = null;        // { resolve, reject, timer }
+
+function onSysex(e) {
+  const d = e.message.data;
+  if (d[0] !== 0xF0 || d[1] !== AKAI_MFR || d[4] !== AKAI_MODEL) return;
+  const func    = d[3];
+  const payload = d.slice(5, -1);   // strip F0...F7 wrapper and model prefix
+
+  if (func === FUNC_S3K_PDATA && pendingProgRead) {
+    // Program header response: pp PP 00 oo_lo oo_hi nn_lo nn_hi nibbled...
+    clearTimeout(pendingProgRead.timer);
+    const entry = pendingProgRead;
+    pendingProgRead = null;
+    entry.resolve(nibbleDecode(Array.from(payload.slice(7))));
+  }
+
+  if (func === FUNC_S3K_KDATA) {
+    // Keygroup header response: pp PP kk oo_lo oo_hi nn_lo nn_hi nibbled...
+    const prog = payload[0] | (payload[1] << 8);
+    const kg   = payload[2];
+    const key  = `kg_${prog}_${kg}`;
+    const entry = pendingReads.get(key);
+    if (!entry) return;
+    clearTimeout(entry.timer);
+    pendingReads.delete(key);
+    entry.resolve(nibbleDecode(Array.from(payload.slice(7))));
+  }
+}
+
+// ── Read functions ───────────────────────────────────────────────────────────
+function readProgHeader(prog) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pendingProgRead = null;
+      reject(new Error('Timeout reading program header'));
+    }, 5000);
+    pendingProgRead = { resolve, reject, timer };
+    output.sendSysex(AKAI_MFR, [
+      AKAI_CHANNEL, FUNC_S3K_RPDATA, AKAI_MODEL,
+      prog & 0x7F, (prog >> 7) & 0x7F,
+      0x00,                        // reserved (selector=0 for program)
+      0x00, 0x00,                  // offset = 0
+      192 & 0x7F, 1,               // count = 192
+    ]);
+  });
+}
+
+function readKg(prog, kg) {
+  return new Promise((resolve, reject) => {
+    const key = `kg_${prog}_${kg}`;
+    const timer = setTimeout(() => {
+      pendingReads.delete(key);
+      reject(new Error(`Timeout prog=${prog} kg=${kg}`));
+    }, 5000);
+    pendingReads.set(key, { resolve, reject, timer });
+    output.sendSysex(AKAI_MFR, [
+      AKAI_CHANNEL, FUNC_S3K_RKDATA, AKAI_MODEL,
+      prog & 0x7F, (prog >> 7) & 0x7F,
+      kg & 0x7F,
+      0x00, 0x00,                  // offset = 0
+      191 & 0x7F, 1,               // count = 191
+    ]);
+  });
+}
+
+// ── Write functions (debounced 30ms, fire-and-forget) ────────────────────────
+const writeTimers = new Map();
+
+function scheduleWrite(target, key, param, value) {
+  // target: 'prog' or 'kg'
+  const timerKey = `${target}_${key}_${param.name}`;
+  clearTimeout(writeTimers.get(timerKey));
+  writeTimers.set(timerKey, setTimeout(() => {
+    writeTimers.delete(timerKey);
+    const raw = fieldToBytes(value, param);
+
+    if (target === 'prog') {
+      output.sendSysex(AKAI_MFR, [
+        AKAI_CHANNEL, FUNC_S3K_PDATA, AKAI_MODEL,
+        program & 0x7F, (program >> 7) & 0x7F,
+        0x00,                          // reserved
+        param.offset & 0x7F, (param.offset >> 7) & 0x7F,
+        raw.length & 0x7F, (raw.length >> 7) & 0x7F,
+        ...nibbleEncode(raw),
+      ]);
+      setStatus(`PROG ${param.name} \u2192 ${value}`, 'ok');
+    } else {
+      const kg = parseInt(key);
+      output.sendSysex(AKAI_MFR, [
+        AKAI_CHANNEL, FUNC_S3K_KDATA, AKAI_MODEL,
+        program & 0x7F, (program >> 7) & 0x7F,
+        kg & 0x7F,
+        param.offset & 0x7F, (param.offset >> 7) & 0x7F,
+        raw.length & 0x7F, (raw.length >> 7) & 0x7F,
+        ...nibbleEncode(raw),
+      ]);
+      setStatus(`${param.label} kg${kg} \u2192 ${value}`, 'ok');
+    }
+  }, 30));
+}
+
+// ── State load ───────────────────────────────────────────────────────────────
+async function loadState() {
+  setStatus('Reading program header...', 'info');
+  try {
+    const raw = await readProgHeader(program);
+    progState = Object.fromEntries(PROG_PARAMS.map(p => [p.name, extractField(raw, p)]));
+    refreshProgPanel();
+  } catch (err) {
+    setStatus(`Program header timeout`, 'err');
+    progState = Object.fromEntries(PROG_PARAMS.map(p => [p.name, 0]));
+    refreshProgPanel();
+  }
+
+  let loaded = 0;
+  for (const voice of VOICES) {
+    setStatus(`Reading keygroups ${loaded}/${VOICES.length}...`, 'info');
+    try {
+      const raw = await readKg(program, voice.kg);
+      state[voice.kg] = Object.fromEntries(PARAMS.map(p => [p.name, extractField(raw, p)]));
+      loaded++;
+    } catch {
+      state[voice.kg] = Object.fromEntries(PARAMS.map(p => [p.name, 0]));
+    }
+    refreshVoice(voice);
+  }
+  setStatus(
+    `${loaded}/${VOICES.length} keygroups loaded. Drag knobs to edit, double-click to reset.`,
+    loaded > 0 ? 'ok' : 'err'
+  );
+}
+
+// ── UI: program panel (horizontal row) ───────────────────────────────────────
+function buildProgPanel() {
+  const panel = document.getElementById('prog-panel');
+  panel.innerHTML = '';
+  for (const param of PROG_PARAMS) {
+    const group = document.createElement('div');
+    group.className = 'prog-knob-group';
+
+    const lbl = document.createElement('div');
+    lbl.className = 'prog-knob-label';
+    lbl.textContent = param.label;
+
+    const cvs = document.createElement('canvas');
+    cvs.width = cvs.height = 44;
+    cvs.dataset.target = 'prog';
+    cvs.dataset.param  = param.name;
+    cvs.title = `${param.name}: ${param.min} to ${param.max}`;
+
+    const vEl = document.createElement('div');
+    vEl.className = 'prog-knob-value';
+    vEl.id = `pv_${param.name}`;
+    vEl.textContent = '0';
+
+    const nameLbl = document.createElement('div');
+    nameLbl.className = 'prog-knob-name';
+    nameLbl.textContent = param.name;
+
+    group.append(lbl, cvs, vEl, nameLbl);
+    panel.appendChild(group);
+  }
+}
+
+function refreshProgPanel() {
+  for (const param of PROG_PARAMS) {
+    const val = progState[param.name] ?? 0;
+    const vEl = document.getElementById(`pv_${param.name}`);
+    const cvs = document.querySelector(`canvas[data-target="prog"][data-param="${param.name}"]`);
+    if (vEl) vEl.textContent = val;
+    if (cvs) drawKnob(cvs, val, param);
+  }
+}
+
+// ── UI: keygroup panel (one column per voice) ─────────────────────────────────
+function buildPanel() {
+  const panel = document.getElementById('panel');
+  panel.innerHTML = '';
+  for (const voice of VOICES) panel.appendChild(buildColumn(voice));
+}
+
+function buildColumn(voice) {
+  const col = document.createElement('div');
+  col.className = 'voice';
+
+  const lbl = document.createElement('div');
+  lbl.className = 'voice-label';
+  lbl.textContent = voice.label;
+  col.appendChild(lbl);
+
+  for (const param of PARAMS) {
+    const row  = document.createElement('div');
+    row.className = 'knob-row';
+
+    const klbl = document.createElement('div');
+    klbl.className = 'knob-label';
+    klbl.textContent = param.label;
+
+    const cvs = document.createElement('canvas');
+    cvs.width = cvs.height = 48;
+    cvs.dataset.target = 'kg';
+    cvs.dataset.kg     = voice.kg;
+    cvs.dataset.param  = param.name;
+    cvs.title = `${param.label} (${param.min} to ${param.max})`;
+
+    const vEl = document.createElement('div');
+    vEl.className = 'knob-value';
+    vEl.id = `kv_${voice.kg}_${param.name}`;
+    vEl.textContent = '0';
+
+    row.append(klbl, cvs, vEl);
+    col.appendChild(row);
+  }
+
+  const pad = document.createElement('button');
+  pad.className = 'pad';
+  pad.dataset.note = voice.note;
+  pad.textContent = '\u25b6';
+  pad.title = `${voice.label} \u2014 MIDI note ${voice.note}`;
+  col.appendChild(pad);
+
+  return col;
+}
+
+function refreshVoice(voice) {
+  for (const param of PARAMS) {
+    const val = (state[voice.kg] ?? {})[param.name] ?? 0;
+    const vEl = document.getElementById(`kv_${voice.kg}_${param.name}`);
+    const cvs = document.querySelector(
+      `canvas[data-kg="${voice.kg}"][data-param="${param.name}"]`
+    );
+    if (vEl) vEl.textContent = val;
+    if (cvs) drawKnob(cvs, val, param);
+  }
+}
+
+// ── Knob rendering ────────────────────────────────────────────────────────────
+function drawKnob(cvs, value, param) {
+  const ctx = cvs.getContext('2d');
+  const W = cvs.width, H = cvs.height, cx = W / 2, cy = H / 2;
+  const r = Math.min(W, H) / 2 - 4;
+  ctx.clearRect(0, 0, W, H);
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+  ctx.fillStyle = '#1a1a1a';
+  ctx.fill();
+  ctx.strokeStyle = '#444';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  const A0    = 0.75 * Math.PI;
+  const SWEEP = 1.5 * Math.PI;
+  const norm  = (value - param.min) / (param.max - param.min);
+  const angle = A0 + norm * SWEEP;
+
+  // Program knobs use a different accent color
+  const arcColor = cvs.dataset.target === 'prog' ? '#4a8fff' : '#f0a020';
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, r - 3, A0, angle);
+  ctx.strokeStyle = arcColor;
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + (r - 7) * Math.cos(angle), cy + (r - 7) * Math.sin(angle));
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+}
+
+// ── Unified drag handler ─────────────────────────────────────────────────────
+let drag = null;
+
+document.body.addEventListener('mousedown', e => {
+  const cvs   = e.target.closest('canvas[data-param]');
+  const isPad = e.target.closest('.pad');
+  if (isPad) { isPad.classList.add('active'); return; }
+  if (!cvs) return;
+
+  const target  = cvs.dataset.target;          // 'prog' or 'kg'
+  const paramName = cvs.dataset.param;
+  const paramList = target === 'prog' ? PROG_PARAMS : PARAMS;
+  const param   = paramList.find(p => p.name === paramName);
+  if (!param) return;
+
+  const startVal = target === 'prog'
+    ? progState[paramName] ?? 0
+    : (state[parseInt(cvs.dataset.kg)] ?? {})[paramName] ?? 0;
+
+  drag = { cvs, target, param, startY: e.clientY, startVal };
+  e.preventDefault();
+});
+
+window.addEventListener('mousemove', e => {
+  if (!drag) return;
+  const { cvs, target, param, startY, startVal } = drag;
+  const delta  = (startY - e.clientY) * (param.max - param.min) / 150;
+  const newVal = Math.max(param.min, Math.min(param.max, Math.round(startVal + delta)));
+
+  if (target === 'prog') {
+    progState[param.name] = newVal;
+    const vEl = document.getElementById(`pv_${param.name}`);
+    if (vEl) vEl.textContent = newVal;
+    drawKnob(cvs, newVal, param);
+    if (output) scheduleWrite('prog', 'prog', param, newVal);
+  } else {
+    const kg = parseInt(cvs.dataset.kg);
+    if (!state[kg]) state[kg] = {};
+    state[kg][param.name] = newVal;
+    const vEl = document.getElementById(`kv_${kg}_${param.name}`);
+    if (vEl) vEl.textContent = newVal;
+    drawKnob(cvs, newVal, param);
+    if (output) scheduleWrite('kg', kg, param, newVal);
+  }
+});
+
+window.addEventListener('mouseup', () => {
+  drag = null;
+  document.querySelectorAll('.pad.active').forEach(p => p.classList.remove('active'));
+});
+
+document.body.addEventListener('dblclick', e => {
+  const cvs = e.target.closest('canvas[data-param]');
+  if (!cvs) return;
+  const target  = cvs.dataset.target;
+  const paramList = target === 'prog' ? PROG_PARAMS : PARAMS;
+  const param   = paramList.find(p => p.name === cvs.dataset.param);
+  if (!param) return;
+  const def = param.center !== null
+    ? param.center
+    : Math.round((param.min + param.max) / 2);
+
+  if (target === 'prog') {
+    progState[param.name] = def;
+    const vEl = document.getElementById(`pv_${param.name}`);
+    if (vEl) vEl.textContent = def;
+    drawKnob(cvs, def, param);
+    if (output) scheduleWrite('prog', 'prog', param, def);
+  } else {
+    const kg = parseInt(cvs.dataset.kg);
+    if (!state[kg]) state[kg] = {};
+    state[kg][param.name] = def;
+    const vEl = document.getElementById(`kv_${kg}_${param.name}`);
+    if (vEl) vEl.textContent = def;
+    drawKnob(cvs, def, param);
+    if (output) scheduleWrite('kg', kg, param, def);
+  }
+});
+
+// ── Hits ─────────────────────────────────────────────────────────────────────
+document.body.addEventListener('click', e => {
+  const pad = e.target.closest('.pad');
+  if (!pad || !output) return;
+  output.channels[MIDI_DRUM_CH].playNote(
+    parseInt(pad.dataset.note),
+    { duration: 200, rawAttack: 100 }
+  );
+});
+
+// ── Status ────────────────────────────────────────────────────────────────────
+function setStatus(msg, cls = '') {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = cls;
+}
+
+// ── WebMIDI.js bootstrap ──────────────────────────────────────────────────────
+const PORT_PATTERNS = ['Volt', 'S2800', 'Akai', 'AKAI'];
+
+WebMidi.enable({ sysex: true }).then(() => {
+  for (const pat of PORT_PATTERNS) {
+    const o = WebMidi.outputs.find(p => p.name.includes(pat));
+    const i = WebMidi.inputs.find(p => p.name.includes(pat));
+    if (o && i) { output = o; input = i; break; }
+  }
+  if (!output && WebMidi.outputs.length) {
+    output = WebMidi.outputs[0];
+    input  = WebMidi.inputs[0] ?? null;
+  }
+
+  if (!output) {
+    document.getElementById('midi-bar').textContent =
+      'No MIDI ports found. Connect S2800 and reload.';
+    setStatus('No MIDI device', 'err');
+    buildProgPanel();
+    buildPanel();
+    return;
+  }
+
+  document.getElementById('midi-bar').textContent = `MIDI: ${output.name}`;
+  if (input) input.addListener('sysex', onSysex);
+
+  buildProgPanel();
+  buildPanel();
+  loadState();
+
+}).catch(err => {
+  document.getElementById('midi-bar').textContent = `WebMIDI failed: ${err.message}`;
+  setStatus('MIDI unavailable. Check browser permissions.', 'err');
+  buildProgPanel();
+  buildPanel();
+});
+</script>
+</body>
+</html>

@@ -6,7 +6,10 @@ message construction and parsing, and reading live values from a
 connected S2800 sampler over MIDI.
 """
 
+import inspect
+import json
 import logging
+from pathlib import Path
 
 from s2800.agent.spec import (
     ALL_HEADERS,
@@ -23,7 +26,56 @@ from s2800.protocol import (
     nibble_encode,
 )
 
+from s2800.connection import SamplerConnection, get_sampler as _get_sampler_impl
+from s2800.connection import write_raw_bytes as _write_raw_bytes_impl
+
 logger = logging.getLogger(__name__)
+
+_AGENT_NAME = "s2800_sysex_expert"
+_AGENT_DESCRIPTION = (
+    "World expert on Akai S2800/S3000/S3200 MIDI System Exclusive protocol. "
+    "Holds the complete specification text and structured parameter data. "
+    "Can look up parameters, build/decode SysEx messages, compare models, "
+    "and read/write live device state over MIDI."
+)
+
+
+def describe_agent() -> str:
+    """Describe this agent's capabilities and available tools.
+
+    Returns the agent name, description, and a list of all tool
+    functions with their signatures and docstring summaries. Useful
+    for orchestrator agents to understand what this specialist can
+    do before delegating work.
+
+    Returns:
+        Formatted description of the agent and its tools.
+    """
+    module = inspect.getmodule(describe_agent)
+    tools = []
+    for name, obj in inspect.getmembers(module, inspect.isfunction):
+        if name.startswith("_"):
+            continue
+        # Only include functions defined in this module
+        if inspect.getmodule(obj) is not module:
+            continue
+        sig = inspect.signature(obj)
+        doc = obj.__doc__ or ""
+        summary = doc.strip().split("\n")[0] if doc else "(no description)"
+        tools.append((name, str(sig), summary))
+
+    lines = [
+        f"Agent: {_AGENT_NAME}",
+        f"Description: {_AGENT_DESCRIPTION}",
+        f"Tools ({len(tools)}):",
+        "",
+    ]
+    for name, sig, summary in sorted(tools):
+        lines.append(f"  {name}{sig}")
+        lines.append(f"    {summary}")
+        lines.append("")
+
+    return "\n".join(lines)
 
 
 def _format_parameter(param: Parameter, header_name: str = "") -> str:
@@ -569,52 +621,9 @@ def _interpret_value(param: Parameter, raw_value: int) -> str:
     return str(raw_value)
 
 
-class _SamplerConnection:
-    """Lazy singleton connection to the S2800.
-
-    Connects on first use and keeps the connection open for subsequent
-    tool calls within the same process. Reconnects automatically if the
-    connection is lost.
-    """
-
-    def __init__(self):
-        self._sampler = None
-
-    def get(self):
-        """Get the shared S2800 connection, connecting if needed."""
-        from s2800.sampler import S2800
-
-        if self._sampler is not None:
-            # Verify the connection is still alive
-            try:
-                if self._sampler._port_in and self._sampler._port_out:
-                    return self._sampler
-            except Exception:
-                pass
-            # Connection lost, reconnect
-            self.close()
-
-        self._sampler = S2800()
-        self._sampler.open()
-        logger.info("Connected to S2800 (persistent connection)")
-        return self._sampler
-
-    def close(self):
-        """Explicitly close the connection."""
-        if self._sampler is not None:
-            try:
-                self._sampler.close()
-            except Exception:
-                pass
-            self._sampler = None
-
-
-_sampler_conn = _SamplerConnection()
-
-
 def _get_sampler():
     """Get the shared S2800 connection."""
-    return _sampler_conn.get()
+    return _get_sampler_impl()
 
 
 def read_device_programs() -> str:
@@ -669,6 +678,59 @@ def read_device_samples() -> str:
         return "\n".join(lines)
     except Exception as e:
         return f"Error reading samples: {e}"
+
+
+# Total sample memory in 16-bit words. Default: 8 MB = 4,194,304 words.
+S2800_TOTAL_WORDS = 4_194_304
+
+
+def read_memory_usage(total_words: int = S2800_TOTAL_WORDS) -> str:
+    """Read sample sizes from the S2800 and report memory usage.
+
+    Args:
+        total_words: Total device sample memory in 16-bit words.
+                     Default 4,194,304 (8 MB).
+
+    Returns:
+        Per-sample breakdown with used/total summary.
+    """
+    try:
+        sampler = _get_sampler()
+    except Exception as e:
+        return f"Could not connect to S2800: {e}"
+
+    try:
+        samples = sampler.list_samples()
+        if not samples:
+            return "No samples on device. All memory is free."
+
+        lines = []
+        used_words = 0
+        total_secs = 0.0
+
+        for i, name in enumerate(samples):
+            raw = sampler.read_sample_header(i)
+            if raw is None:
+                lines.append(f"{i:3d}  {name:12s}  --")
+                continue
+
+            words = int.from_bytes(raw[26:30], "little")
+            rate = int.from_bytes(raw[138:140], "little")
+            used_words += words
+            dur = words / rate if rate > 0 else 0.0
+            total_secs += dur
+
+            lines.append(f"{i:3d}  {name:12s}  {words:>10,}  {dur:.3f}s")
+
+        pct_used = (used_words / total_words) * 100 if total_words else 0
+        lines.append(
+            f"{used_words:,} / {total_words:,} words"
+            f"  ({pct_used:.1f}% used, {100.0 - pct_used:.1f}% free, {total_secs:.1f}s)"
+        )
+
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error reading memory: {e}"
 
 
 def read_program_parameter(
@@ -926,30 +988,8 @@ def _find_param(header_name: str, parameter_name: str) -> Parameter | str:
 def _write_raw_bytes(sampler, opcode: int, program_number: int,
                      selector: int, offset: int, data: bytes) -> str | None:
     """Write raw bytes to a header via S3K partial write. Returns error or None."""
-    import time
-    from s2800.protocol import FUNC_REPLY, REPLY_OK
-
-    nibbled = nibble_encode(data)
-    payload = bytearray([
-        program_number & 0x7F,
-        (program_number >> 7) & 0x7F,
-        selector & 0x7F,
-        offset & 0x7F,
-        (offset >> 7) & 0x7F,
-        len(data) & 0x7F,
-        (len(data) >> 7) & 0x7F,
-    ])
-    payload.extend(nibbled)
-    sampler._send(opcode, bytes(payload))
-
-    result = sampler._recv(timeout=3.0)
-    time.sleep(0.1)
-
-    if result and result[0] == FUNC_REPLY:
-        code = result[1][0] if result[1] else 0
-        if code != REPLY_OK:
-            return f"Device rejected write (error code {code})"
-    return None
+    return _write_raw_bytes_impl(sampler, opcode, program_number, selector,
+                                 offset, data)
 
 
 def write_program_parameter(
@@ -1107,3 +1147,337 @@ def write_keygroup_parameter(
 
     except Exception as e:
         return f"Error writing to device: {e}"
+
+
+# ---------------------------------------------------------------------------
+# Preset save/load
+# ---------------------------------------------------------------------------
+
+def _signed_byte(raw: int) -> int:
+    """Convert an unsigned byte to signed (-128 to 127)."""
+    return raw - 256 if raw > 127 else raw
+
+
+def create_program(
+    name: str,
+    keygroups_json: str,
+    midi_channel: int = 0,
+    program_number: int = -1,
+) -> str:
+    """Create a new program on the connected S2800 with keygroup assignments.
+
+    Sends a program header and one keygroup header per entry via S1000
+    PDATA/KDATA SysEx messages. Each keygroup maps a MIDI note range to a
+    sample already resident in S2800 memory.
+
+    Args:
+        name: Program name, max 12 characters.
+        keygroups_json: JSON array of keygroup objects. Each object must have:
+            - low_note (int): Lowest MIDI note for this keygroup (0-127).
+            - high_note (int): Highest MIDI note for this keygroup (0-127).
+            - sample_name (str): Name of the sample already on the device.
+            Example: '[{"low_note":36,"high_note":36,"sample_name":"KICK"}]'
+        midi_channel: MIDI receive channel, 0-15 (default 0).
+        program_number: Program slot index. Pass -1 to append after existing
+            programs (default).
+
+    Returns:
+        Status string with slot used and list of programs after creation,
+        or an error message.
+    """
+    import json
+    import time
+
+    try:
+        keygroups = json.loads(keygroups_json)
+    except Exception as e:
+        return f"Invalid keygroups_json: {e}"
+
+    try:
+        sampler = _get_sampler()
+    except Exception as e:
+        return f"Could not connect to S2800: {e}"
+
+    try:
+        slot = program_number
+        if slot < 0:
+            existing = sampler.list_programs()
+            slot = len(existing)
+
+        kg_list = [
+            {
+                "low_note": kg["low_note"],
+                "high_note": kg["high_note"],
+                "sample_name": kg["sample_name"],
+            }
+            for kg in keygroups
+        ]
+
+        sampler.create_program(name, kg_list,
+                               midi_channel=midi_channel,
+                               program_number=slot)
+        time.sleep(1.0)
+
+        programs = sampler.list_programs()
+        if name in programs:
+            return (f"Created program \"{name}\" at slot {slot} "
+                    f"with {len(keygroups)} keygroups.\n"
+                    f"Programs on device: {programs}")
+        else:
+            return (f"Program sent to slot {slot} but \"{name}\" "
+                    f"not found in program list. Device may need a moment. "
+                    f"Current programs: {programs}")
+
+    except Exception as e:
+        return f"Error creating program: {e}"
+
+
+def save_preset(directory: str, program_number: int = 0) -> str:
+    """Save a program from the connected S2800 to a preset JSON file.
+
+    Reads the program header and all keygroup headers from the device,
+    then writes a preset.json file to the specified directory.
+
+    Args:
+        directory: Path to the preset directory (e.g. "presets/606_kit").
+        program_number: Program index on the device (0-based, default 0).
+
+    Returns:
+        Status message describing what was saved.
+    """
+    try:
+        sampler = _get_sampler()
+    except Exception as e:
+        return f"Could not connect to S2800: {e}"
+
+    try:
+        raw = sampler.read_program_header(program_number)
+        if raw is None:
+            return f"No response from device for program {program_number}."
+
+        # Program-level fields
+        name = decode_akai_name(raw[3:15])
+        prgnum = raw[15]
+        midi_channel = raw[16]
+        panpos = _signed_byte(raw[24])
+        prloud = raw[25]
+        num_keygroups = raw[42]
+
+        # Read each keygroup
+        keygroups = []
+        for kg_idx in range(num_keygroups):
+            kg_raw = sampler.read_keygroup(program_number, kg_idx)
+            if kg_raw is None:
+                return (f"Failed to read keygroup {kg_idx} from "
+                        f"program {program_number}.")
+
+            sname = decode_akai_name(kg_raw[34:46])
+            vpano = _signed_byte(kg_raw[52])
+
+            kg_data = {
+                "low_note": kg_raw[3],
+                "high_note": kg_raw[4],
+                "sample": "",
+                "sample_name": sname,
+                "velocity_range": [kg_raw[46], kg_raw[47]],
+                "playback": kg_raw[53],
+                "pan": vpano,
+                "constant_pitch": bool(kg_raw[132]),
+                "mute_group": None if kg_raw[160] == 0xFF else kg_raw[160],
+            }
+            keygroups.append(kg_data)
+
+        preset = {
+            "name": name,
+            "midi_channel": midi_channel,
+            "program_number": prgnum,
+            "pan": panpos,
+            "loudness": prloud,
+            "keygroups": keygroups,
+        }
+
+        preset_dir = Path(directory)
+        preset_dir.mkdir(parents=True, exist_ok=True)
+        preset_path = preset_dir / "preset.json"
+
+        with open(preset_path, "w") as f:
+            json.dump(preset, f, indent=2)
+            f.write("\n")
+
+        return (f"Saved program {program_number} \"{name}\" to {preset_path}\n"
+                f"  {num_keygroups} keygroup(s), MIDI ch {midi_channel + 1}, "
+                f"PRGNUM {prgnum}, pan {panpos}, loudness {prloud}\n"
+                f"  NOTE: Fill in 'sample' fields with WAV filenames and "
+                f"create samples/ directory with the files.")
+
+    except Exception as e:
+        return f"Error saving preset: {e}"
+
+
+def load_preset(directory: str, slot: int | None = None) -> str:
+    """Load a preset from a JSON file and restore it to the S2800.
+
+    Reads preset.json from the specified directory, uploads any missing
+    samples, creates the program, and configures all parameters.
+    Each step is reported as it completes.
+
+    Args:
+        directory: Path to the preset directory (e.g. "presets/606_kit").
+        slot: Optional program slot index. If None, appends after
+              existing programs.
+
+    Returns:
+        Step-by-step status of the restore operation.
+    """
+    import wave
+    from s2800.protocol import FUNC_S3K_PDATA, FUNC_S3K_KDATA
+
+    preset_dir = Path(directory)
+    preset_path = preset_dir / "preset.json"
+
+    if not preset_path.exists():
+        return f"No preset.json found in {directory}"
+
+    with open(preset_path) as f:
+        preset = json.load(f)
+
+    try:
+        sampler = _get_sampler()
+    except Exception as e:
+        return f"Could not connect to S2800: {e}"
+
+    steps = []
+    name = preset["name"]
+    midi_channel = preset.get("midi_channel", 0)
+    program_number = preset.get("program_number", 0)
+    pan = preset.get("pan", 0)
+    loudness = preset.get("loudness", 99)
+    keygroups = preset.get("keygroups", [])
+
+    # Step 1: Upload missing samples
+    existing_samples = sampler.list_samples()
+    existing_names = [s.strip() for s in existing_samples]
+    samples_dir = preset_dir / "samples"
+
+    for kg in keygroups:
+        sample_file = kg.get("sample", "")
+        sample_name = kg.get("sample_name", "")
+
+        if not sample_file or not sample_name:
+            continue
+
+        if sample_name.strip() in existing_names:
+            steps.append(f"  Skip \"{sample_name}\" (already on device)")
+            continue
+
+        wav_path = samples_dir / sample_file
+        if not wav_path.exists():
+            steps.append(f"  WARNING: {wav_path} not found, skipping")
+            continue
+
+        with wave.open(str(wav_path), "rb") as wf:
+            if wf.getnchannels() != 1:
+                steps.append(f"  WARNING: {sample_file} is not mono, skipping")
+                continue
+            sample_rate = wf.getframerate()
+            pcm_data = wf.readframes(wf.getnframes())
+
+        idx = sampler.upload_sample(pcm_data, sample_rate, sample_name)
+        existing_names.append(sample_name.strip())
+        steps.append(f"  Uploaded \"{sample_name}\" (sample {idx})")
+
+    # Step 2: Determine program slot
+    if slot is not None:
+        prog_slot = slot
+    else:
+        existing_programs = sampler.list_programs()
+        prog_slot = len(existing_programs)
+
+    # Step 3: Create program with keygroups
+    kg_defs = [
+        {
+            "low_note": kg["low_note"],
+            "high_note": kg["high_note"],
+            "sample_name": kg["sample_name"],
+        }
+        for kg in keygroups
+    ]
+
+    sampler.create_program(
+        name, kg_defs,
+        midi_channel=midi_channel,
+        program_number=prog_slot,
+    )
+    steps.append(f"  Created program \"{name}\" at slot {prog_slot} "
+                 f"({len(kg_defs)} keygroups)")
+
+    # Step 4: Set program-level params
+    err = _write_raw_bytes(
+        sampler, FUNC_S3K_PDATA, prog_slot,
+        0x00, 15, bytes([program_number & 0xFF]),
+    )
+    if err:
+        steps.append(f"  WARNING: PRGNUM write failed: {err}")
+    else:
+        steps.append(f"  Set PRGNUM = {program_number}")
+
+    err = _write_raw_bytes(
+        sampler, FUNC_S3K_PDATA, prog_slot,
+        0x00, 24, bytes([pan & 0xFF]),
+    )
+    if err:
+        steps.append(f"  WARNING: PANPOS write failed: {err}")
+    else:
+        steps.append(f"  Set PANPOS = {pan}")
+
+    err = _write_raw_bytes(
+        sampler, FUNC_S3K_PDATA, prog_slot,
+        0x00, 25, bytes([loudness & 0xFF]),
+    )
+    if err:
+        steps.append(f"  WARNING: PRLOUD write failed: {err}")
+    else:
+        steps.append(f"  Set PRLOUD = {loudness}")
+
+    # Step 5: Set per-keygroup params
+    for kg_idx, kg in enumerate(keygroups):
+        kg_results = []
+
+        # VPANO1 at offset 52
+        vpan = kg.get("pan", 0)
+        err = _write_raw_bytes(
+            sampler, FUNC_S3K_KDATA, prog_slot,
+            kg_idx, 52, bytes([vpan & 0xFF]),
+        )
+        kg_results.append(f"VPANO1={'OK' if not err else err}")
+
+        # ZPLAY1 at offset 53
+        playback = kg.get("playback", 0)
+        err = _write_raw_bytes(
+            sampler, FUNC_S3K_KDATA, prog_slot,
+            kg_idx, 53, bytes([playback & 0xFF]),
+        )
+        kg_results.append(f"ZPLAY1={'OK' if not err else err}")
+
+        # CP1 at offset 132
+        cp = 1 if kg.get("constant_pitch", False) else 0
+        err = _write_raw_bytes(
+            sampler, FUNC_S3K_KDATA, prog_slot,
+            kg_idx, 132, bytes([cp]),
+        )
+        kg_results.append(f"CP1={'OK' if not err else err}")
+
+        # KGMUTE at offset 160
+        mute = kg.get("mute_group")
+        mute_val = 0xFF if mute is None else (mute & 0xFF)
+        err = _write_raw_bytes(
+            sampler, FUNC_S3K_KDATA, prog_slot,
+            kg_idx, 160, bytes([mute_val]),
+        )
+        kg_results.append(f"KGMUTE={'OK' if not err else err}")
+
+        steps.append(f"  KG {kg_idx}: {', '.join(kg_results)}")
+
+    result = [f"Loaded preset \"{name}\" to slot {prog_slot}:"]
+    result.extend(steps)
+    return "\n".join(result)

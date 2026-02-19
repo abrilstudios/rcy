@@ -18,15 +18,20 @@ load_dotenv(Path(__file__).parent / ".env")
 from s2800.agent.tools import (
     build_sysex_message,
     compare_models,
+    create_program,
     decode_sysex_message,
+    describe_agent,
     list_parameters,
+    load_preset,
     lookup_by_offset,
     lookup_parameter,
     read_device_programs,
     read_device_samples,
     read_keygroup_parameter,
+    read_memory_usage,
     read_program_parameter,
     read_program_summary,
+    save_preset,
     write_keygroup_parameter,
     write_program_parameter,
 )
@@ -70,6 +75,12 @@ structured data.
 - `read_program_summary(program_number)` -- read a summary of key program settings
 - `write_program_parameter(parameter_name, value, program_number)` -- write a program parameter
 - `write_keygroup_parameter(parameter_name, value, program_number, keygroup_number)` -- write a keygroup parameter
+- `create_program(name, keygroups_json, midi_channel, program_number)` -- create a new program with keygroup assignments; keygroups_json is a JSON array string like '[{{"low_note":36,"high_note":36,"sample_name":"KICK"}},...] '; program_number=-1 appends after existing programs
+
+### Preset Tools (save/restore program configurations)
+
+- `save_preset(directory, program_number)` -- save a program to a preset JSON file
+- `load_preset(directory, slot)` -- restore a preset from JSON to the device
 
 The write tools read the current value first, write the new value, then read \
 back to confirm the change took effect. They show before/after values.
@@ -93,6 +104,7 @@ polyphony is 0 (1 voice), explain that and show the SysEx message to change it.
 </specification>
 """,
     tools=[
+        describe_agent,
         lookup_parameter,
         lookup_by_offset,
         list_parameters,
@@ -101,10 +113,15 @@ polyphony is 0 (1 voice), explain that and show the SysEx message to change it.
         compare_models,
         read_device_programs,
         read_device_samples,
+        read_memory_usage,
         read_program_parameter,
         read_keygroup_parameter,
         read_program_summary,
         write_program_parameter,
         write_keygroup_parameter,
+        create_program,
+        save_preset,
+        load_preset,
     ],
 )
+root_agent = agent
