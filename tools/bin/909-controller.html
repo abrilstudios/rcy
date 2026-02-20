@@ -460,7 +460,7 @@ async function loadState() {
   if (voices.length > 0) refreshVoice({ label: 'ALL', kg: 'all', note: null });
   for (const voice of voices) refreshVoice(voice);
   setStatus(
-    `${loaded}/${numKg} keygroups loaded. Drag knobs to edit, Ctrl+click or double-click to reset. Use ALL column to broadcast.`,
+    `${loaded}/${numKg} keygroups loaded. Drag to edit | Ctrl+click: reset knob | Alt+click: reset column | Shift+drag or ALL: broadcast`,
     loaded > 0 ? 'ok' : 'err'
   );
 }
@@ -647,7 +647,49 @@ document.body.addEventListener('mousedown', e => {
   const param   = paramList.find(p => p.name === cvs.dataset.param);
   if (!param) return;
 
-  // Ctrl+click (or Cmd+click on macOS) resets to default
+  // Alt+click (or Option+click on macOS) resets entire column to defaults
+  if (e.altKey) {
+    const kgRaw = cvs.dataset.kg;
+    const kg    = kgRaw === 'all' ? 'all' : parseInt(kgRaw);
+
+    if (target === 'kg') {
+      // Reset all knobs in this column
+      for (const p of PARAMS) {
+        const def = p.center !== null ? p.center : Math.round((p.min + p.max) / 2);
+
+        if (kg === 'all') {
+          allState[p.name] = def;
+          const vEl = document.getElementById(`kv_all_${p.name}`);
+          const canvas = document.querySelector(`canvas[data-kg="all"][data-param="${p.name}"]`);
+          if (vEl) vEl.textContent = def;
+          if (canvas) drawKnob(canvas, def, p);
+          if (output) {
+            for (let i = 0; i < numKg; i++) {
+              scheduleWrite('kg', i, p, def);
+            }
+          }
+        } else {
+          if (!state[kg]) state[kg] = {};
+          state[kg][p.name] = def;
+          const vEl = document.getElementById(`kv_${kg}_${p.name}`);
+          const canvas = document.querySelector(`canvas[data-kg="${kg}"][data-param="${p.name}"]`);
+          if (vEl) vEl.textContent = def;
+          if (canvas) drawKnob(canvas, def, p);
+          if (output) scheduleWrite('kg', kg, p, def);
+        }
+      }
+      setStatus(
+        kg === 'all'
+          ? `All knobs reset to defaults (broadcast to all ${numKg} keygroups)`
+          : `Column ${kg} reset to defaults`,
+        'ok'
+      );
+    }
+    e.preventDefault();
+    return;
+  }
+
+  // Ctrl+click (or Cmd+click on macOS) resets single knob to default
   if (e.ctrlKey || e.metaKey) {
     const kgRaw = cvs.dataset.kg;
     const kg    = kgRaw === 'all' ? 'all' : parseInt(kgRaw);
