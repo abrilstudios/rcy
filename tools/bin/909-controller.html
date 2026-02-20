@@ -94,6 +94,13 @@ h1 { font-size: 11px; letter-spacing: 4px; color: #f0a020; text-transform: upper
   border-radius: 3px;
   background: #2a2a2a;
 }
+.voice-all {
+  border-color: #4a8fff;
+  background: #252530;
+}
+.voice-all .voice-label {
+  color: #4a8fff;
+}
 .voice-label {
   font-size: 7px;
   letter-spacing: 1px;
@@ -211,10 +218,12 @@ const PROG_META = {
 let program  = parseInt(new URLSearchParams(location.search).get('program') ?? '0');
 let voices   = [];      // built dynamically: [{ label, kg, note }]
 let state    = {};      // kg -> { paramName -> value }
+let allState = {};      // "ALL" column state (virtual, broadcasts to all keygroups)
 let progState = {};     // paramName -> value
 let output   = null;
 let input    = null;
 let loadId   = 0;       // increments on each loadState call; stale loads abort
+let numKg    = 0;       // number of keygroups in current program
 
 // ── SysEx codec ──────────────────────────────────────────────────────────────
 const nibbleEncode = bytes =>
@@ -396,12 +405,13 @@ async function loadState() {
 
   state = {};
   voices = [];
+  numKg = 0;
+  allState = Object.fromEntries(PARAMS.map(p => [p.name, p.center ?? Math.round((p.min + p.max) / 2)]));
   document.getElementById('panel').innerHTML =
     '<span id="panel-loading">loading...</span>';
 
   // 1. Read program header: prog params + name + keygroup count
   setStatus('Reading program header...', 'info');
-  let numKg = 0;
   try {
     const raw = await readProgHeader(program);
     if (loadId !== myId) return;
@@ -447,9 +457,10 @@ async function loadState() {
 
   // 3. Build panel from discovered voices, then populate knob values
   buildPanel();
+  if (voices.length > 0) refreshVoice({ label: 'ALL', kg: 'all', note: null });
   for (const voice of voices) refreshVoice(voice);
   setStatus(
-    `${loaded}/${numKg} keygroups loaded. Drag knobs to edit, Ctrl+click or double-click to reset.`,
+    `${loaded}/${numKg} keygroups loaded. Drag knobs to edit, Ctrl+click or double-click to reset. Use ALL column to broadcast.`,
     loaded > 0 ? 'ok' : 'err'
   );
 }
@@ -500,22 +511,39 @@ function refreshProgPanel() {
 function buildPanel() {
   const panel = document.getElementById('panel');
   panel.innerHTML = '';
+
+  // Add "ALL" column first (broadcasts to all keygroups)
+  if (voices.length > 0) {
+    panel.appendChild(buildColumn({ label: 'ALL', kg: 'all', note: null }));
+  }
+
+  // Add individual voice columns
   for (const voice of voices) panel.appendChild(buildColumn(voice));
 }
 
 function buildColumn(voice) {
   const col = document.createElement('div');
-  col.className = 'voice';
+  col.className = voice.kg === 'all' ? 'voice voice-all' : 'voice';
 
   const lbl = document.createElement('div');
   lbl.className = 'voice-label';
   lbl.textContent = voice.label;
   col.appendChild(lbl);
 
-  const noteLbl = document.createElement('div');
-  noteLbl.className = 'voice-note';
-  noteLbl.textContent = `n${voice.note}`;
-  col.appendChild(noteLbl);
+  // Only show note label for individual keygroups, not ALL
+  if (voice.kg !== 'all') {
+    const noteLbl = document.createElement('div');
+    noteLbl.className = 'voice-note';
+    noteLbl.textContent = `n${voice.note}`;
+    col.appendChild(noteLbl);
+  } else {
+    // Add spacer for ALL column to align with other columns
+    const spacer = document.createElement('div');
+    spacer.className = 'voice-note';
+    spacer.textContent = 'broadcast';
+    spacer.style.color = '#777';
+    col.appendChild(spacer);
+  }
 
   for (const param of PARAMS) {
     const row  = document.createElement('div');
@@ -530,7 +558,9 @@ function buildColumn(voice) {
     cvs.dataset.target = 'kg';
     cvs.dataset.kg     = voice.kg;
     cvs.dataset.param  = param.name;
-    cvs.title = `${param.label} (${param.min} to ${param.max})`;
+    cvs.title = voice.kg === 'all'
+      ? `${param.label} - broadcasts to all keygroups`
+      : `${param.label} (${param.min} to ${param.max})`;
 
     const vEl = document.createElement('div');
     vEl.className = 'knob-value';
@@ -541,19 +571,24 @@ function buildColumn(voice) {
     col.appendChild(row);
   }
 
-  const pad = document.createElement('button');
-  pad.className = 'pad';
-  pad.dataset.note = voice.note;
-  pad.textContent = '\u25b6';
-  pad.title = `${voice.label} \u2014 note ${voice.note}`;
-  col.appendChild(pad);
+  // Only add pad button for individual keygroups, not ALL
+  if (voice.kg !== 'all') {
+    const pad = document.createElement('button');
+    pad.className = 'pad';
+    pad.dataset.note = voice.note;
+    pad.textContent = '\u25b6';
+    pad.title = `${voice.label} \u2014 note ${voice.note}`;
+    col.appendChild(pad);
+  }
 
   return col;
 }
 
 function refreshVoice(voice) {
   for (const param of PARAMS) {
-    const val = (state[voice.kg] ?? {})[param.name] ?? 0;
+    const val = voice.kg === 'all'
+      ? (allState[param.name] ?? 0)
+      : (state[voice.kg] ?? {})[param.name] ?? 0;
     const vEl = document.getElementById(`kv_${voice.kg}_${param.name}`);
     const cvs = document.querySelector(
       `canvas[data-kg="${voice.kg}"][data-param="${param.name}"]`
@@ -614,8 +649,9 @@ document.body.addEventListener('mousedown', e => {
 
   // Ctrl+click (or Cmd+click on macOS) resets to default
   if (e.ctrlKey || e.metaKey) {
-    const kg  = parseInt(cvs.dataset.kg);
-    const def = param.center !== null
+    const kgRaw = cvs.dataset.kg;
+    const kg    = kgRaw === 'all' ? 'all' : parseInt(kgRaw);
+    const def   = param.center !== null
       ? param.center
       : Math.round((param.min + param.max) / 2);
 
@@ -623,30 +659,45 @@ document.body.addEventListener('mousedown', e => {
       progState[param.name] = def;
       const vEl = document.getElementById(`pv_${param.name}`);
       if (vEl) vEl.textContent = def;
+      drawKnob(cvs, def, param);
+      if (output) scheduleWrite('prog', 'prog', param, def);
+    } else if (kg === 'all') {
+      allState[param.name] = def;
+      const vEl = document.getElementById(`kv_all_${param.name}`);
+      if (vEl) vEl.textContent = def;
+      drawKnob(cvs, def, param);
+      if (output) {
+        for (let i = 0; i < numKg; i++) {
+          scheduleWrite('kg', i, param, def);
+        }
+      }
     } else {
       if (!state[kg]) state[kg] = {};
       state[kg][param.name] = def;
       const vEl = document.getElementById(`kv_${kg}_${param.name}`);
       if (vEl) vEl.textContent = def;
+      drawKnob(cvs, def, param);
+      if (output) scheduleWrite('kg', kg, param, def);
     }
-    drawKnob(cvs, def, param);
-    if (output) scheduleWrite(target, target === 'prog' ? 'prog' : kg, param, def);
     e.preventDefault();
     return;
   }
 
-  const kg       = parseInt(cvs.dataset.kg);
+  const kgRaw    = cvs.dataset.kg;
+  const kg       = kgRaw === 'all' ? 'all' : parseInt(kgRaw);
   const startVal = target === 'prog'
     ? progState[param.name] ?? 0
-    : (state[kg] ?? {})[param.name] ?? 0;
+    : kg === 'all'
+      ? allState[param.name] ?? 0
+      : (state[kg] ?? {})[param.name] ?? 0;
 
-  drag = { cvs, target, kg, param, startY: e.clientY, startVal };
+  drag = { cvs, target, kg, param, startY: e.clientY, startVal, shiftKey: e.shiftKey };
   e.preventDefault();
 });
 
 window.addEventListener('mousemove', e => {
   if (!drag) return;
-  const { cvs, target, kg, param, startY, startVal } = drag;
+  const { cvs, target, kg, param, startY, startVal, shiftKey } = drag;
   const delta  = (startY - e.clientY) * (param.max - param.min) / 150;
   const newVal = Math.max(param.min, Math.min(param.max, Math.round(startVal + delta)));
 
@@ -654,14 +705,42 @@ window.addEventListener('mousemove', e => {
     progState[param.name] = newVal;
     const vEl = document.getElementById(`pv_${param.name}`);
     if (vEl) vEl.textContent = newVal;
-  } else {
+    drawKnob(cvs, newVal, param);
+    if (output) scheduleWrite('prog', 'prog', param, newVal);
+  } else if (kg === 'all') {
+    // ALL column: update allState and broadcast to all keygroups
+    allState[param.name] = newVal;
+    const vEl = document.getElementById(`kv_all_${param.name}`);
+    if (vEl) vEl.textContent = newVal;
+    drawKnob(cvs, newVal, param);
+    if (output) {
+      for (let i = 0; i < numKg; i++) {
+        scheduleWrite('kg', i, param, newVal);
+      }
+      setStatus(`${param.label} \u2192 ${newVal} (broadcast to all ${numKg} keygroups)`, 'ok');
+    }
+  } else if (shiftKey) {
+    // Shift+drag on individual keygroup: broadcast to all
     if (!state[kg]) state[kg] = {};
     state[kg][param.name] = newVal;
     const vEl = document.getElementById(`kv_${kg}_${param.name}`);
     if (vEl) vEl.textContent = newVal;
+    drawKnob(cvs, newVal, param);
+    if (output) {
+      for (let i = 0; i < numKg; i++) {
+        scheduleWrite('kg', i, param, newVal);
+      }
+      setStatus(`${param.label} \u2192 ${newVal} (Shift+drag broadcast to all ${numKg})`, 'ok');
+    }
+  } else {
+    // Normal single-keygroup drag
+    if (!state[kg]) state[kg] = {};
+    state[kg][param.name] = newVal;
+    const vEl = document.getElementById(`kv_${kg}_${param.name}`);
+    if (vEl) vEl.textContent = newVal;
+    drawKnob(cvs, newVal, param);
+    if (output) scheduleWrite('kg', kg, param, newVal);
   }
-  drawKnob(cvs, newVal, param);
-  if (output) scheduleWrite(target, target === 'prog' ? 'prog' : kg, param, newVal);
 });
 
 window.addEventListener('mouseup', () => {
@@ -676,8 +755,9 @@ document.body.addEventListener('dblclick', e => {
   const paramList = target === 'prog' ? PROG_PARAMS : PARAMS;
   const param     = paramList.find(p => p.name === cvs.dataset.param);
   if (!param) return;
-  const kg  = parseInt(cvs.dataset.kg);
-  const def = param.center !== null
+  const kgRaw = cvs.dataset.kg;
+  const kg    = kgRaw === 'all' ? 'all' : parseInt(kgRaw);
+  const def   = param.center !== null
     ? param.center
     : Math.round((param.min + param.max) / 2);
 
@@ -685,14 +765,26 @@ document.body.addEventListener('dblclick', e => {
     progState[param.name] = def;
     const vEl = document.getElementById(`pv_${param.name}`);
     if (vEl) vEl.textContent = def;
+    drawKnob(cvs, def, param);
+    if (output) scheduleWrite('prog', 'prog', param, def);
+  } else if (kg === 'all') {
+    allState[param.name] = def;
+    const vEl = document.getElementById(`kv_all_${param.name}`);
+    if (vEl) vEl.textContent = def;
+    drawKnob(cvs, def, param);
+    if (output) {
+      for (let i = 0; i < numKg; i++) {
+        scheduleWrite('kg', i, param, def);
+      }
+    }
   } else {
     if (!state[kg]) state[kg] = {};
     state[kg][param.name] = def;
     const vEl = document.getElementById(`kv_${kg}_${param.name}`);
     if (vEl) vEl.textContent = def;
+    drawKnob(cvs, def, param);
+    if (output) scheduleWrite('kg', kg, param, def);
   }
-  drawKnob(cvs, def, param);
-  if (output) scheduleWrite(target, target === 'prog' ? 'prog' : kg, param, def);
 });
 
 // ── Hits ──────────────────────────────────────────────────────────────────────
