@@ -78,8 +78,8 @@ h1 { font-size: 11px; letter-spacing: 4px; color: #f0a020; text-transform: upper
 .prog-knob-name  { font-size: 7px; letter-spacing: 1px; color: #555; text-transform: uppercase; }
 .prog-knob-value { font-size: 8px; color: #bbb; min-width: 30px; text-align: center; }
 
-/* Per-keygroup panels */
-#panel-top, #panel-bottom {
+/* Per-keygroup panel */
+#panel {
   display: flex;
   gap: 8px;
   overflow-x: auto;
@@ -89,7 +89,7 @@ h1 { font-size: 11px; letter-spacing: 4px; color: #f0a020; text-transform: upper
   padding: 12px;
   min-height: 60px;
 }
-#panel-loading-top, #panel-loading-bottom {
+#panel-loading {
   font-size: 9px;
   color: #555;
   letter-spacing: 2px;
@@ -166,14 +166,11 @@ canvas[data-param] { display: block; cursor: ns-resize; }
 <div id="sticky-header">
   <div class="section-label">Program</div>
   <div id="prog-panel"></div>
-
-  <div class="section-label">Per Keygroup (Top 4)</div>
-  <div id="panel-top"><span id="panel-loading-top">connecting...</span></div>
 </div>
 
 <div id="scrollable-body">
-  <div class="section-label">Per Keygroup (Envelope & Filter)</div>
-  <div id="panel-bottom"><span id="panel-loading-bottom"></span></div>
+  <div class="section-label">Per Keygroup</div>
+  <div id="panel"><span id="panel-loading">connecting...</span></div>
 </div>
 
 <script>
@@ -222,9 +219,7 @@ const ALL_PARAMS = [
   { name: "FILFRQ", label: "FILTER", offset: 7,  size: 1, signed: false, min: 0,   max: 99,  center: null },
 ];
 
-const PARAMS = ALL_PARAMS;  // Keep for compatibility
-const TOP_PARAMS = ALL_PARAMS.slice(0, 4);     // TUNE, LEVEL, PAN, ATTACK (sticky header)
-const BOTTOM_PARAMS = ALL_PARAMS.slice(4);     // DECAY, SUSTN, RELSE, FILTER (scrollable)
+const PARAMS = ALL_PARAMS;  // All 8 params in keygroup columns
 
 // Keygroup metadata offsets (read alongside params, not editable here)
 const KG_META = {
@@ -431,10 +426,8 @@ async function loadState() {
   voices = [];
   numKg = 0;
   allState = Object.fromEntries(PARAMS.map(p => [p.name, p.center ?? Math.round((p.min + p.max) / 2)]));
-  document.getElementById('panel-top').innerHTML =
-    '<span id="panel-loading-top">loading...</span>';
-  document.getElementById('panel-bottom').innerHTML =
-    '<span id="panel-loading-bottom"></span>';
+  document.getElementById('panel').innerHTML =
+    '<span id="panel-loading">loading...</span>';
 
   // 1. Read program header: prog params + name + keygroup count
   setStatus('Reading program header...', 'info');
@@ -535,52 +528,43 @@ function refreshProgPanel() {
 
 // ── UI: keygroup panel (built from dynamic voices) ────────────────────────────
 function buildPanel() {
-  const panelTop = document.getElementById('panel-top');
-  const panelBottom = document.getElementById('panel-bottom');
-  panelTop.innerHTML = '';
-  panelBottom.innerHTML = '';
+  const panel = document.getElementById('panel');
+  panel.innerHTML = '';
 
   // Add "ALL" column first (broadcasts to all keygroups)
   if (voices.length > 0) {
-    panelTop.appendChild(buildColumn({ label: 'ALL', kg: 'all', note: null }, TOP_PARAMS, true));
-    panelBottom.appendChild(buildColumn({ label: 'ALL', kg: 'all', note: null }, BOTTOM_PARAMS, false));
+    panel.appendChild(buildColumn({ label: 'ALL', kg: 'all', note: null }));
   }
 
   // Add individual voice columns
-  for (const voice of voices) {
-    panelTop.appendChild(buildColumn(voice, TOP_PARAMS, true));
-    panelBottom.appendChild(buildColumn(voice, BOTTOM_PARAMS, false));
-  }
+  for (const voice of voices) panel.appendChild(buildColumn(voice));
 }
 
-function buildColumn(voice, params, showHeader) {
+function buildColumn(voice) {
   const col = document.createElement('div');
   col.className = voice.kg === 'all' ? 'voice voice-all' : 'voice';
 
-  // Only show label and note in top panel
-  if (showHeader) {
-    const lbl = document.createElement('div');
-    lbl.className = 'voice-label';
-    lbl.textContent = voice.label;
-    col.appendChild(lbl);
+  const lbl = document.createElement('div');
+  lbl.className = 'voice-label';
+  lbl.textContent = voice.label;
+  col.appendChild(lbl);
 
-    // Only show note label for individual keygroups, not ALL
-    if (voice.kg !== 'all') {
-      const noteLbl = document.createElement('div');
-      noteLbl.className = 'voice-note';
-      noteLbl.textContent = `n${voice.note}`;
-      col.appendChild(noteLbl);
-    } else {
-      // Add spacer for ALL column to align with other columns
-      const spacer = document.createElement('div');
-      spacer.className = 'voice-note';
-      spacer.textContent = 'broadcast';
-      spacer.style.color = '#777';
-      col.appendChild(spacer);
-    }
+  // Only show note label for individual keygroups, not ALL
+  if (voice.kg !== 'all') {
+    const noteLbl = document.createElement('div');
+    noteLbl.className = 'voice-note';
+    noteLbl.textContent = `n${voice.note}`;
+    col.appendChild(noteLbl);
+  } else {
+    // Add spacer for ALL column to align with other columns
+    const spacer = document.createElement('div');
+    spacer.className = 'voice-note';
+    spacer.textContent = 'broadcast';
+    spacer.style.color = '#777';
+    col.appendChild(spacer);
   }
 
-  for (const param of params) {
+  for (const param of PARAMS) {
     const row  = document.createElement('div');
     row.className = 'knob-row';
 
@@ -606,8 +590,8 @@ function buildColumn(voice, params, showHeader) {
     col.appendChild(row);
   }
 
-  // Only add pad button in bottom panel for individual keygroups, not ALL
-  if (!showHeader && voice.kg !== 'all') {
+  // Only add pad button for individual keygroups, not ALL
+  if (voice.kg !== 'all') {
     const pad = document.createElement('button');
     pad.className = 'pad';
     pad.dataset.note = voice.note;
