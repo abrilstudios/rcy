@@ -449,7 +449,7 @@ async function loadState() {
   buildPanel();
   for (const voice of voices) refreshVoice(voice);
   setStatus(
-    `${loaded}/${numKg} keygroups loaded. Drag knobs to edit, double-click to reset.`,
+    `${loaded}/${numKg} keygroups loaded. Drag knobs to edit, Ctrl+click or double-click to reset.`,
     loaded > 0 ? 'ok' : 'err'
   );
 }
@@ -611,6 +611,29 @@ document.body.addEventListener('mousedown', e => {
   const paramList = target === 'prog' ? PROG_PARAMS : PARAMS;
   const param   = paramList.find(p => p.name === cvs.dataset.param);
   if (!param) return;
+
+  // Ctrl+click (or Cmd+click on macOS) resets to default
+  if (e.ctrlKey || e.metaKey) {
+    const kg  = parseInt(cvs.dataset.kg);
+    const def = param.center !== null
+      ? param.center
+      : Math.round((param.min + param.max) / 2);
+
+    if (target === 'prog') {
+      progState[param.name] = def;
+      const vEl = document.getElementById(`pv_${param.name}`);
+      if (vEl) vEl.textContent = def;
+    } else {
+      if (!state[kg]) state[kg] = {};
+      state[kg][param.name] = def;
+      const vEl = document.getElementById(`kv_${kg}_${param.name}`);
+      if (vEl) vEl.textContent = def;
+    }
+    drawKnob(cvs, def, param);
+    if (output) scheduleWrite(target, target === 'prog' ? 'prog' : kg, param, def);
+    e.preventDefault();
+    return;
+  }
 
   const kg       = parseInt(cvs.dataset.kg);
   const startVal = target === 'prog'
