@@ -6,9 +6,198 @@
 <script src="https://cdn.jsdelivr.net/npm/webmidi@3/dist/iife/webmidi.iife.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* Color scheme variables */
+:root {
+  /* Default (TR-909 orange/cream) */
+  --bg-main: #1a1a1a;
+  --bg-panel: #242424;
+  --bg-voice: #2a2a2a;
+  --bg-voice-all: #252530;
+  --text-main: #e8e0c8;
+  --text-accent: #f0a020;
+  --text-dim: #555;
+  --text-med: #888;
+  --border: #333;
+  --border-accent: #444;
+  --knob-prog: #4a8fff;
+  --knob-kg: #f0a020;
+  --border-all: #4a8fff;
+}
+
+:root[data-look="neworder"] {
+  /* New Order / Peter Saville (cool blues, grays, neon) */
+  --bg-main: #0a0e14;
+  --bg-panel: #151921;
+  --bg-voice: #1a1f28;
+  --bg-voice-all: #1c2230;
+  --text-main: #c8d3e0;
+  --text-accent: #00d9ff;
+  --text-dim: #4a5a6a;
+  --text-med: #7a8a9a;
+  --border: #2a3a4a;
+  --border-accent: #3a4a5a;
+  --knob-prog: #0099cc;
+  --knob-kg: #00d9ff;
+  --border-all: #0099cc;
+}
+
+:root[data-look="kaws"] {
+  /* KAWS - pop art pastels, signature pink/blue/gray */
+  --bg-main: #e8e4e0;
+  --bg-panel: #d8d4d0;
+  --bg-voice: #c8c4c0;
+  --bg-voice-all: #d0ccc8;
+  --text-main: #3a3a3a;
+  --text-accent: #ff6b9d;
+  --text-dim: #9a9a9a;
+  --text-med: #6a6a6a;
+  --border: #b0b0b0;
+  --border-accent: #8a8a8a;
+  --knob-prog: #4ecdc4;
+  --knob-kg: #ff6b9d;
+  --border-all: #4ecdc4;
+}
+
+:root[data-look="zooyork"] {
+  /* Zoo York - gritty NYC graffiti, black/white/red */
+  --bg-main: #0a0a0a;
+  --bg-panel: #1a1a1a;
+  --bg-voice: #2a2a2a;
+  --bg-voice-all: #1e1e1e;
+  --text-main: #f0f0f0;
+  --text-accent: #ff0000;
+  --text-dim: #666;
+  --text-med: #999;
+  --border: #3a3a3a;
+  --border-accent: #4a4a4a;
+  --knob-prog: #fff;
+  --knob-kg: #ff0000;
+  --border-all: #fff;
+}
+
+:root[data-look="basquiat"] {
+  /* Basquiat - raw primaries, black, yellow, red */
+  --bg-main: #f5f5dc;
+  --bg-panel: #e5e5cc;
+  --bg-voice: #d5d5bc;
+  --bg-voice-all: #e0e0c7;
+  --text-main: #000;
+  --text-accent: #ffff00;
+  --text-dim: #666;
+  --text-med: #999;
+  --border: #333;
+  --border-accent: #555;
+  --knob-prog: #ff0000;
+  --knob-kg: #00a8ff;
+  --border-all: #000;
+}
+
+:root[data-look="supreme"] {
+  /* Supreme - bold red box logo, white, black */
+  --bg-main: #fff;
+  --bg-panel: #f5f5f5;
+  --bg-voice: #eee;
+  --bg-voice-all: #f0f0f0;
+  --text-main: #000;
+  --text-accent: #ff0000;
+  --text-dim: #999;
+  --text-med: #666;
+  --border: #ddd;
+  --border-accent: #ccc;
+  --knob-prog: #000;
+  --knob-kg: #ff0000;
+  --border-all: #000;
+}
+
+:root[data-look="futura"] {
+  /* Futura 2000 - cosmic graffiti, metallics, purples */
+  --bg-main: #0d0d1a;
+  --bg-panel: #1a1a2e;
+  --bg-voice: #252542;
+  --bg-voice-all: #1f1f38;
+  --text-main: #e0e0ff;
+  --text-accent: #00ffff;
+  --text-dim: #5a5a7a;
+  --text-med: #7a7a9a;
+  --border: #3a3a5a;
+  --border-accent: #4a4a6a;
+  --knob-prog: #ff00ff;
+  --knob-kg: #00ffff;
+  --border-all: #ff00ff;
+}
+
+:root[data-look="stash"] {
+  /* Stash - deep blues, urban night, chrome */
+  --bg-main: #001a33;
+  --bg-panel: #002244;
+  --bg-voice: #003355;
+  --bg-voice-all: #002a48;
+  --text-main: #cce0ff;
+  --text-accent: #00ccff;
+  --text-dim: #4a6a8a;
+  --text-med: #6a8aaa;
+  --border: #004466;
+  --border-accent: #005577;
+  --knob-prog: #c0c0c0;
+  --knob-kg: #00ccff;
+  --border-all: #c0c0c0;
+}
+
+:root[data-look="obey"] {
+  /* Shepard Fairey OBEY - red, cream, black, propaganda */
+  --bg-main: #f5e6d3;
+  --bg-panel: #e5d6c3;
+  --bg-voice: #d5c6b3;
+  --bg-voice-all: #e0d1be;
+  --text-main: #1a1a1a;
+  --text-accent: #cc0000;
+  --text-dim: #7a6a5a;
+  --text-med: #5a4a3a;
+  --border: #9a8a7a;
+  --border-accent: #6a5a4a;
+  --knob-prog: #000;
+  --knob-kg: #cc0000;
+  --border-all: #000;
+}
+
+:root[data-look="barneys"] {
+  /* Barneys NY - luxury blacks, purples, gold */
+  --bg-main: #0a0a0a;
+  --bg-panel: #1a1420;
+  --bg-voice: #251a2a;
+  --bg-voice-all: #1f1625;
+  --text-main: #e8d4ff;
+  --text-accent: #d4af37;
+  --text-dim: #6a5a7a;
+  --text-med: #8a7a9a;
+  --border: #3a2a4a;
+  --border-accent: #4a3a5a;
+  --knob-prog: #9370db;
+  --knob-kg: #d4af37;
+  --border-all: #9370db;
+}
+
+:root[data-look="moma"] {
+  /* MoMA minimalism - white, black, primary accent */
+  --bg-main: #fafafa;
+  --bg-panel: #f0f0f0;
+  --bg-voice: #e8e8e8;
+  --bg-voice-all: #ececec;
+  --text-main: #1a1a1a;
+  --text-accent: #0066cc;
+  --text-dim: #999;
+  --text-med: #666;
+  --border: #d0d0d0;
+  --border-accent: #bbb;
+  --knob-prog: #000;
+  --knob-kg: #0066cc;
+  --border-all: #000;
+}
+
 body {
-  background: #1a1a1a;
-  color: #e8e0c8;
+  background: var(--bg-main);
+  color: var(--text-main);
   font-family: 'Courier New', monospace;
   min-height: 100vh;
   padding: 16px;
@@ -20,20 +209,20 @@ header { margin-bottom: 10px; display: flex; align-items: baseline; gap: 16px; f
 #sticky-header {
   position: sticky;
   top: 0;
-  background: #1a1a1a;
+  background: var(--bg-main);
   z-index: 100;
   padding-bottom: 12px;
-  border-bottom: 2px solid #333;
+  border-bottom: 2px solid var(--border);
 }
 
 #scrollable-body {
   padding-top: 8px;
 }
-h1 { font-size: 11px; letter-spacing: 4px; color: #f0a020; text-transform: uppercase; white-space: nowrap; }
+h1 { font-size: 11px; letter-spacing: 4px; color: var(--text-accent); text-transform: uppercase; white-space: nowrap; }
 #prog-select {
-  background: #2a2a2a;
-  color: #e8e0c8;
-  border: 1px solid #444;
+  background: var(--bg-voice);
+  color: var(--text-main);
+  border: 1px solid var(--border-accent);
   border-radius: 3px;
   font-family: inherit;
   font-size: 9px;
@@ -42,9 +231,9 @@ h1 { font-size: 11px; letter-spacing: 4px; color: #f0a020; text-transform: upper
   cursor: pointer;
   min-width: 180px;
 }
-#prog-select:focus { outline: 1px solid #f0a020; }
-#midi-bar    { font-size: 9px; color: #555; letter-spacing: 1px; width: 100%; }
-#status      { font-size: 9px; color: #666; letter-spacing: 1px; height: 14px; width: 100%; }
+#prog-select:focus { outline: 1px solid var(--text-accent); }
+#midi-bar    { font-size: 9px; color: var(--text-dim); letter-spacing: 1px; white-space: nowrap; }
+#status      { font-size: 9px; color: var(--text-dim); letter-spacing: 1px; height: 14px; flex: 1; min-width: 200px; }
 #status.ok   { color: #4a4; }
 #status.err  { color: #a44; }
 #status.info { color: #88a; }
@@ -53,7 +242,7 @@ h1 { font-size: 11px; letter-spacing: 4px; color: #f0a020; text-transform: upper
   font-size: 8px;
   letter-spacing: 3px;
   text-transform: uppercase;
-  color: #555;
+  color: var(--text-dim);
   margin: 12px 0 6px;
 }
 
@@ -62,8 +251,8 @@ h1 { font-size: 11px; letter-spacing: 4px; color: #f0a020; text-transform: upper
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
-  background: #1e1e1e;
-  border: 1px solid #333;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
   border-radius: 4px;
   padding: 10px 14px;
   align-items: center;
@@ -83,8 +272,8 @@ h1 { font-size: 11px; letter-spacing: 4px; color: #f0a020; text-transform: upper
   display: flex;
   gap: 8px;
   overflow-x: auto;
-  background: #242424;
-  border: 1px solid #333;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
   border-radius: 4px;
   padding: 12px;
   min-height: 60px;
@@ -103,22 +292,22 @@ h1 { font-size: 11px; letter-spacing: 4px; color: #f0a020; text-transform: upper
   gap: 5px;
   min-width: 70px;
   padding: 8px 4px;
-  border: 1px solid #333;
+  border: 1px solid var(--border);
   border-radius: 3px;
-  background: #2a2a2a;
+  background: var(--bg-voice);
 }
 .voice-all {
-  border-color: #4a8fff;
-  background: #252530;
+  border-color: var(--border-all);
+  background: var(--bg-voice-all);
 }
 .voice-all .voice-label {
-  color: #4a8fff;
+  color: var(--border-all);
 }
 .voice-label {
   font-size: 7px;
   letter-spacing: 1px;
   text-transform: uppercase;
-  color: #f0a020;
+  color: var(--text-accent);
   text-align: center;
   min-height: 22px;
   word-break: break-all;
@@ -174,6 +363,13 @@ canvas[data-param] { display: block; cursor: ns-resize; }
 </div>
 
 <script>
+// ── Apply color scheme from URL ──────────────────────────────────────────────
+const urlParams = new URLSearchParams(location.search);
+const look = urlParams.get('look') || 'default';
+if (look !== 'default') {
+  document.documentElement.setAttribute('data-look', look);
+}
+
 // ── S2800 SysEx constants ────────────────────────────────────────────────────
 const AKAI_MFR        = 0x47;
 const AKAI_MODEL      = 0x48;
@@ -624,11 +820,17 @@ function drawKnob(cvs, value, param) {
   const r = Math.min(W, H) / 2 - 4;
   ctx.clearRect(0, 0, W, H);
 
+  // Get colors from CSS variables
+  const bgMain = getComputedStyle(document.documentElement).getPropertyValue('--bg-main').trim();
+  const borderAccent = getComputedStyle(document.documentElement).getPropertyValue('--border-accent').trim();
+  const knobProg = getComputedStyle(document.documentElement).getPropertyValue('--knob-prog').trim();
+  const knobKg = getComputedStyle(document.documentElement).getPropertyValue('--knob-kg').trim();
+
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, 2 * Math.PI);
-  ctx.fillStyle = '#1a1a1a';
+  ctx.fillStyle = bgMain;
   ctx.fill();
-  ctx.strokeStyle = '#444';
+  ctx.strokeStyle = borderAccent;
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
@@ -639,7 +841,7 @@ function drawKnob(cvs, value, param) {
 
   ctx.beginPath();
   ctx.arc(cx, cy, r - 3, A0, angle);
-  ctx.strokeStyle = cvs.dataset.target === 'prog' ? '#4a8fff' : '#f0a020';
+  ctx.strokeStyle = cvs.dataset.target === 'prog' ? knobProg : knobKg;
   ctx.lineWidth = 3;
   ctx.stroke();
 
@@ -758,55 +960,84 @@ document.body.addEventListener('mousedown', e => {
 
 window.addEventListener('mousemove', e => {
   if (!drag) return;
-  const { cvs, target, kg, param, startY, startVal, shiftKey } = drag;
+  const { cvs, target, kg, param, startY, startVal } = drag;
   const delta  = (startY - e.clientY) * (param.max - param.min) / 150;
   const newVal = Math.max(param.min, Math.min(param.max, Math.round(startVal + delta)));
 
+  // Update UI only, no SysEx writes during drag
   if (target === 'prog') {
     progState[param.name] = newVal;
     const vEl = document.getElementById(`pv_${param.name}`);
     if (vEl) vEl.textContent = newVal;
     drawKnob(cvs, newVal, param);
-    if (output) scheduleWrite('prog', 'prog', param, newVal);
   } else if (kg === 'all') {
-    // ALL column: update allState and broadcast to all keygroups
     allState[param.name] = newVal;
     const vEl = document.getElementById(`kv_all_${param.name}`);
     if (vEl) vEl.textContent = newVal;
     drawKnob(cvs, newVal, param);
-    if (output) {
-      for (let i = 0; i < numKg; i++) {
-        scheduleWrite('kg', i, param, newVal);
-      }
-      setStatus(`${param.label} \u2192 ${newVal} (broadcast to all ${numKg} keygroups)`, 'ok');
-    }
-  } else if (shiftKey) {
-    // Shift+drag on individual keygroup: broadcast to all
-    if (!state[kg]) state[kg] = {};
-    state[kg][param.name] = newVal;
-    const vEl = document.getElementById(`kv_${kg}_${param.name}`);
-    if (vEl) vEl.textContent = newVal;
-    drawKnob(cvs, newVal, param);
-    if (output) {
-      for (let i = 0; i < numKg; i++) {
-        scheduleWrite('kg', i, param, newVal);
-      }
-      setStatus(`${param.label} \u2192 ${newVal} (Shift+drag broadcast to all ${numKg})`, 'ok');
-    }
   } else {
-    // Normal single-keygroup drag
     if (!state[kg]) state[kg] = {};
     state[kg][param.name] = newVal;
     const vEl = document.getElementById(`kv_${kg}_${param.name}`);
     if (vEl) vEl.textContent = newVal;
     drawKnob(cvs, newVal, param);
-    if (output) scheduleWrite('kg', kg, param, newVal);
   }
 });
 
-window.addEventListener('mouseup', () => {
+window.addEventListener('mouseup', async () => {
+  if (!drag) {
+    document.querySelectorAll('.pad.active').forEach(p => p.classList.remove('active'));
+    return;
+  }
+
+  const { cvs, target, kg, param, shiftKey } = drag;
+  const value = target === 'prog'
+    ? progState[param.name]
+    : kg === 'all'
+      ? allState[param.name]
+      : (state[kg] ?? {})[param.name];
+
   drag = null;
   document.querySelectorAll('.pad.active').forEach(p => p.classList.remove('active'));
+
+  if (!output) return;
+
+  // Send writes on mouseup only
+  if (target === 'prog') {
+    scheduleWrite('prog', 'prog', param, value);
+    setStatus(`PROG ${param.name} \u2192 ${value}`, 'ok');
+  } else if (kg === 'all' || shiftKey) {
+    // Broadcast to all keygroups
+    setStatus(`${param.label} \u2192 ${value} (writing to all ${numKg} keygroups...)`, 'info');
+    for (let i = 0; i < numKg; i++) {
+      scheduleWrite('kg', i, param, value);
+    }
+
+    // For ALL column, read back actual values after write delay
+    if (kg === 'all') {
+      setTimeout(async () => {
+        setStatus(`Reading back ${param.label} from all keygroups...`, 'info');
+        for (let i = 0; i < numKg; i++) {
+          const result = await readKg(program, i).catch(() => null);
+          if (result && state[i]) {
+            const actual = extractField(result, param);
+            state[i][param.name] = actual;
+            const vEl = document.getElementById(`kv_${i}_${param.name}`);
+            const canvas = document.querySelector(`canvas[data-kg="${i}"][data-param="${param.name}"]`);
+            if (vEl) vEl.textContent = actual;
+            if (canvas) drawKnob(canvas, actual, param);
+          }
+        }
+        setStatus(`${param.label} \u2192 ${value} (broadcast complete, values confirmed)`, 'ok');
+      }, 500);
+    } else {
+      setStatus(`${param.label} \u2192 ${value} (Shift+drag broadcast to all ${numKg})`, 'ok');
+    }
+  } else {
+    // Single keygroup write
+    scheduleWrite('kg', kg, param, value);
+    setStatus(`${param.label} kg${kg} \u2192 ${value}`, 'ok');
+  }
 });
 
 document.body.addEventListener('dblclick', e => {

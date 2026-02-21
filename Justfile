@@ -110,8 +110,9 @@ ask AGENT QUERY SESSION="default":
     tools/bin/agent-ask {{AGENT}} {{QUERY}} {{SESSION}}
 
 # Launch TR-909 style web controller for an S2800 program (standalone HTML, no server)
-controller PROG="3":
-    open -a "Google Chrome" "file://{{justfile_directory()}}/tools/bin/909-controller.html?program={{PROG}}"
+# LOOK options: default, neworder, kaws, zooyork, basquiat, supreme, futura, stash, obey, barneys, moma
+controller PROG="3" LOOK="default":
+    open -a "Google Chrome" "file://{{justfile_directory()}}/tools/bin/909-controller.html?program={{PROG}}&look={{LOOK}}"
 
 # Show project info
 info:
