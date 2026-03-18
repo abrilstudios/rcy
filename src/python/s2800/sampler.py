@@ -32,7 +32,8 @@ from s2800.protocol import (
     decode_akai_name,
 )
 from s2800.headers import build_sample_header, build_program_header, build_keygroup
-from s2800.sds import (
+from midi.ports import find_ports
+from midi.sds import (
     pack_16bit_to_sds,
     build_data_packet,
     parse_handshake, wait_for_handshake,
@@ -74,26 +75,8 @@ class S2800:
 
     @staticmethod
     def find_ports() -> tuple[str | None, str | None]:
-        """Auto-detect MIDI ports for the S2800.
-
-        Searches for ports matching known patterns (Volt 2, Akai, etc).
-
-        Returns:
-            Tuple of (input_port_name, output_port_name), either may be None
-        """
-        inputs = mido.get_input_names()
-        outputs = mido.get_output_names()
-
-        in_port = None
-        out_port = None
-
-        for pattern in S2800.PORT_PATTERNS:
-            if in_port is None:
-                in_port = next((n for n in inputs if pattern in n), None)
-            if out_port is None:
-                out_port = next((n for n in outputs if pattern in n), None)
-
-        return in_port, out_port
+        """Auto-detect MIDI ports for the S2800."""
+        return find_ports(S2800.PORT_PATTERNS)
 
     def open(self):
         """Open MIDI ports. Auto-detects if port names were not provided."""

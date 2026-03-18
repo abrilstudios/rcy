@@ -94,6 +94,10 @@ build:
 s2800-agent *ARGS:
     PYTHONPATH=src/python ./venv/bin/python -m s2800.agent {{ARGS}}
 
+# MPC2000XL sample upload via MIDI SDS (requires SHIFT+MIDI/SYNC > DUMP [F2] on MPC)
+mpc *ARGS:
+    PYTHONPATH=src/python ./venv/bin/python tools/bin/mpc {{ARGS}}
+
 # Start the ADK agent server
 agent-start PORT="8000":
     PYTHONPATH=src/python ./venv/bin/adk api_server \

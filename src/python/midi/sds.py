@@ -38,7 +38,10 @@ SDS_MAX_RETRIES = 3
 def pack_16bit_to_sds(pcm_bytes: bytes) -> bytes:
     """Pack 16-bit PCM samples into SDS 7-bit data format.
 
-    SDS transmits each 16-bit sample as 3 bytes (ceil(16/7) = 3), MSB first:
+    SDS uses offset binary: silence = 0x8000, max positive = 0xFFFF,
+    max negative = 0x0000. Convert from signed two's complement by XOR 0x8000.
+
+    Transmits each 16-bit sample as 3 bytes, MSB first:
         byte0: bits 15-9
         byte1: bits 8-2
         byte2: bits 1-0 shifted to bits 6-5
@@ -54,7 +57,8 @@ def pack_16bit_to_sds(pcm_bytes: bytes) -> bytes:
         if i + 1 >= len(pcm_bytes):
             break
         sample = int.from_bytes(pcm_bytes[i:i + 2], 'little', signed=True)
-        usample = sample & 0xFFFF
+        # Offset binary: flip MSB to convert signed two's complement -> unsigned
+        usample = (sample & 0xFFFF) ^ 0x8000
         result.append((usample >> 9) & 0x7F)
         result.append((usample >> 2) & 0x7F)
         result.append((usample << 5) & 0x7F)
