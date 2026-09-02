@@ -9,10 +9,6 @@ Uses Pydantic AI testing patterns:
 import pytest
 from pydantic import ValidationError
 
-# Import agent components
-import sys
-sys.path.insert(0, "src/python")
-
 from tui.agents.base import ToolRegistry, AgentResponse
 from tui.agents.default import DefaultAgent
 from tui.agents.factory import create_agent, get_available_agents

@@ -3,9 +3,7 @@ Test suite for SegmentManager implementation.
 """
 
 import pytest
-import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from segment_manager import SegmentManager, SegmentStore, SegmentObserver
 
