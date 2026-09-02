@@ -95,9 +95,11 @@ py-modules = [
     "enums",
     "error_handler",
     "export_utils",
+    "kit_manifest",
     "logging_config",
     "ring_buffer_audio",
     "segment_manager",
+    "sfz_writers",
     "timestretch",
     "view_state",
 ]

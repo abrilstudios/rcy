@@ -19,15 +19,16 @@ install:
 doctor:
     uv run python -m utils.doctor
 
-# Headless end-to-end check: slice a bundled break, write WAV slices + SFZ + MIDI
+# Headless end-to-end check: slice a bundled break, write WAV slices + SFZ + MIDI + manifest
 smoke:
     #!/usr/bin/env bash
     set -euo pipefail
     out="$(mktemp -d)/apache"
     uv run rcy-export --preset apache_break --out "$out"
-    for f in 001.wav 008.wav apache.sfz apache.mid; do
+    for f in 001.wav 008.wav apache.sfz apache.mid apache.rcy.json; do
         test -s "$out/$f" || { echo "smoke: missing $out/$f"; exit 1; }
     done
+    uv run python -c "from kit_manifest import load_kit; m, a = load_kit('$out/apache.rcy.json'); print('smoke: manifest ok,', len(m.slices), 'slices from', a.path)"
     echo "smoke: ok ($out)"
     rm -rf "$(dirname "$out")"
 

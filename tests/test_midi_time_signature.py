@@ -125,6 +125,7 @@ class TestMIDITimeSignature:
                 self.data_left = audio_data['data_left']
                 self.data_right = audio_data['data_right']
                 self.is_stereo = True
+                self.filename = '/nonexistent/mock.wav'
                 self.sample_rate = audio_data['sample_rate']
                 self.playback_tempo_enabled = False
                 self.source_bpm = 120
