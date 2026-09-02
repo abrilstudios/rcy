@@ -11,11 +11,11 @@ default:
 setup:
     uv sync --all-extras
 
-# Install runtime dependencies only (no hardware/agent/llm/viz extras)
+# Install runtime dependencies only (no llm/viz extras)
 install:
     uv sync --no-dev
 
-# Report python, uv, presets, audio output and MIDI hardware
+# Report python, uv, presets and audio output
 doctor:
     uv run python -m utils.doctor
 
@@ -48,7 +48,11 @@ tui-preset PRESET:
 export *ARGS:
     uv run rcy-export {{ARGS}}
 
-# Run all tests (hardware-marked tests are deselected by default)
+# Hand a kit manifest to an installed device plugin: just push ep133 --manifest out/apache/apache.rcy.json
+push *ARGS:
+    uv run rcy-push {{ARGS}}
+
+# Run all tests
 test:
     uv run pytest
 
@@ -98,38 +102,6 @@ clean-all: clean
 # Build wheel and sdist into dist/
 build:
     uv build
-
-# S2800 SysEx protocol tool (spec lookup, device read/write, presets)
-s2800-agent *ARGS:
-    uv run rcy-s2800-agent {{ARGS}}
-
-# S2800 sample upload/list/delete over MIDI
-s2800 *ARGS:
-    uv run rcy-s2800 {{ARGS}}
-
-# MPC2000XL sample upload via MIDI SDS (requires SHIFT+MIDI/SYNC > DUMP [F2] on MPC)
-mpc *ARGS:
-    uv run rcy-mpc {{ARGS}}
-
-# Start the ADK agent server (needs the agent extra and OPENROUTER/Google credentials in .env)
-agent-start PORT="8000":
-    uv run adk api_server \
-        --session_service_uri "sqlite:///.agent-sessions.db" \
-        --auto_create_session --port {{PORT}} \
-        src/python/s2800
-
-# Stop the ADK agent server
-agent-stop:
-    pkill -f "adk api_server" && echo "Stopped." || echo "Not running."
-
-# Send a query to a running ADK agent
-ask AGENT QUERY SESSION="default":
-    tools/bin/agent-ask {{AGENT}} {{QUERY}} {{SESSION}}
-
-# Launch TR-909 style web controller for an S2800 program (standalone HTML, no server)
-# LOOK options: default, neworder, kaws, zooyork, basquiat, supreme, futura, stash, obey, barneys, moma
-controller PROG="3" LOOK="default":
-    open -a "Google Chrome" "file://{{justfile_directory()}}/tools/bin/909-controller.html?program={{PROG}}&look={{LOOK}}"
 
 # Show project info
 info:

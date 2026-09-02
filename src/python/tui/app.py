@@ -33,17 +33,6 @@ from tui.markers import MarkerManager, MarkerKind
 from tui.agents import create_agent, BaseAgent
 from tui.agents.base import ToolRegistry
 
-# Pre-import ep133 module AND enumerate MIDI ports BEFORE Textual starts.
-# Calling find_ports() inside Textual's event loop can cause issues with terminal.
-try:
-    from ep133 import EP133Device
-    _EP133_AVAILABLE = True
-    # Cache ports now, before Textual takes over the terminal
-    _EP133_PORTS = EP133Device.find_ports()
-except ImportError:
-    _EP133_AVAILABLE = False
-    _EP133_PORTS = (None, None)
-
 logger = logging.getLogger(__name__)
 
 # Key mappings for segment playback
@@ -150,7 +139,7 @@ class RCYApp(App):
         Binding("]", "cycle_focus_next", "Next Marker", show=False),
     ]
 
-    def __init__(self, model: WavAudioProcessor, ep133_device=None):
+    def __init__(self, model: WavAudioProcessor):
         super().__init__()
         self.model = model  # Pre-initialized before Textual starts
         self.preset_id = model.preset_id
@@ -174,9 +163,6 @@ class RCYApp(App):
 
         # Pattern player
         self.pattern_player = PatternPlayer(self)
-
-        # EP-133 device state (passed in pre-connected to avoid terminal issues)
-        self._ep133_device = ep133_device
 
         # Agent system
         self.agent: Optional[BaseAgent] = None
@@ -202,7 +188,6 @@ class RCYApp(App):
         """
         self._init_agent()
         self._append_output(self._status)
-        self._try_ep133_autoconnect()
         # Model already loaded in main(), just sync UI state
         self._sync_model_to_ui()
         self._update_waveform()
@@ -242,26 +227,14 @@ class RCYApp(App):
 
         logger.info("Initialized default agent for /commands")
 
-    def _try_ep133_autoconnect(self) -> None:
-        """Hand the pre-connected EP-133 device to ep133_handler."""
-        if not _EP133_AVAILABLE:
-            logger.debug("EP-133 module not available (mido not installed)")
-            return
-
-        # Device is pre-connected in main() before Textual starts
-        if self._ep133_device and self._ep133_device.is_connected:
-            from tui import ep133_handler
-            ep133_handler._device = self._ep133_device
-
     def _register_agent_tools(self, registry: ToolRegistry) -> None:
         """Register tool handlers with the agent's tool registry."""
         from tui.agents.tools import (
             SliceTool, PresetTool, ImportTool, MarkersTool,
             SetTool, TempoTool, PlayTool, StopTool, ExportTool,
             ZoomTool, ModeTool, HelpTool, PresetsTool, QuitTool, CutTool, NudgeTool,
-            SkinTool, EP133Tool,
+            SkinTool,
         )
-        from tui.ep133_handler import ep133_handler
 
         registry.register("slice", SliceTool, self._agent_slice)
         registry.register("preset", PresetTool, self._agent_preset)
@@ -280,9 +253,6 @@ class RCYApp(App):
         registry.register("cut", CutTool, self._agent_cut)
         registry.register("nudge", NudgeTool, self._agent_nudge)
         registry.register("skin", SkinTool, self._agent_skin)
-
-        # EP-133 unified command
-        registry.register("ep133", EP133Tool, lambda args: ep133_handler(args, self))
 
     # Agent tool handlers
     def _agent_slice(self, args) -> str:
@@ -381,15 +351,7 @@ class RCYApp(App):
   /export <dir>           Export SFZ
   /zoom in|out            Zoom view
   /help                   Show help
-  /quit                   Exit
-
-EP-133 Commands:
-  /ep133 connect        Connect to EP-133
-  /ep133 disconnect     Disconnect from EP-133
-  /ep133 status         Show connection status
-  /ep133 list           List sounds on device
-  /ep133 upload <bank>  Upload segments to bank (A/B/C/D)
-  /ep133 clear <bank>   Clear pad assignments in bank"""
+  /quit                   Exit"""
 
     def _agent_presets(self, args) -> str:
         return self._on_presets()
@@ -1067,20 +1029,6 @@ def main():
         print(f"Warning: Skin '{args.skin}' not found. Using default.")
         skin_manager.load_skin('default')
 
-    # Pre-connect EP133 BEFORE Textual starts to avoid terminal issues
-    ep133_device = None
-    if _EP133_AVAILABLE:
-        in_port, out_port = _EP133_PORTS
-        if in_port and out_port:
-            print("Connecting to EP-133...")
-            try:
-                ep133_device = EP133Device()
-                ep133_device.connect()
-                print(f"EP-133 connected: {in_port}")
-            except Exception as e:
-                print(f"EP-133 connection failed: {e}")
-                ep133_device = None
-
     # Pre-initialize audio BEFORE Textual starts to avoid 'p' character bug
     # (PortAudio/sounddevice outputs to terminal when creating first stream)
     print(f"Loading preset: {args.preset}...")
@@ -1090,7 +1038,7 @@ def main():
         print(f"Failed to load preset '{args.preset}': {e}")
         return
 
-    app = RCYApp(model=model, ep133_device=ep133_device)
+    app = RCYApp(model=model)
     app.run()
 
 

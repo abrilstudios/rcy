@@ -15,7 +15,7 @@ uv run rcy-export --preset apache_break --out out/apache
 
 `just` is optional: `uvx --from rust-just just <recipe>` works, or read the
 Justfile and run the `uv` commands directly. `just doctor` prints python,
-uv, presets, audio output and MIDI ports.
+uv, presets and audio output.
 
 ## rcy-export
 
@@ -73,7 +73,7 @@ audio for code that wants the arrays directly.
 
 - `presets/<id>/*.wav` bundled breaks; `config/presets/core.json` maps ids to files and measure counts.
 - `sample-packs/` extra breaks, audio downloaded separately (see sample-packs/README.md).
-- `src/python/` all code, installed flat: `from s2800 import S2800`, `from export_utils import ExportUtils`.
+- `src/python/` all code, installed flat: `from export_utils import ExportUtils`, `from kit_manifest import load_kit`.
 - `tools/bin/` shell wrappers around the console scripts; `tools/bin/README.md` documents them.
 - `exports/` is gitignored and a fine default output directory.
 
@@ -85,19 +85,22 @@ audio for code that wants the arrays directly.
 | `rcy-export` | headless slice + export | nothing |
 | `rcy-sfz` | SFZ from a directory of WAVs | nothing |
 | `rcy-midi-analyzer` | tempo and bar info from a .mid | nothing |
-| `rcy-s2800-agent` | Akai S2800 SysEx spec lookup; device read/write | MIDI + S2800 for device commands |
-| `rcy-s2800` | upload/list/delete samples on an S2800 | MIDI + S2800 |
-| `rcy-mpc` | upload samples to an MPC2000XL over SDS | MIDI + MPC |
+| `rcy-push` | hand a kit manifest to a device plugin | a plugin on PATH |
 
-Hardware paths need the `hardware` extra (python-rtmidi), included in
-`just setup`. `just agent-start` needs the `agent` extra and credentials in
-`.env` (see `.env.example`). The TUI's OpenRouter agent needs the `llm` extra.
+The TUI's OpenRouter agent needs the `llm` extra.
+
+## Pushing to hardware
+
+`rcy-push <device> --manifest KIT.rcy.json [plugin args]` looks for an
+executable named `rcy-push-<device>` on PATH and runs it with the manifest and
+the remaining arguments, relaying its stdout and exit code. Core ships with no
+plugins and imports no MIDI backend; when nothing is found it exits 2 and names
+the executable it looked for. Plugins: abrilstudios/rcy-akai (`rcy-push-s2800`,
+`rcy-push-mpc`) and abrilstudios/rcy-teenage-engineering (`rcy-push-ep133`).
 
 ## Tests
 
 ```bash
-just test                       # 311 tests, hardware tests deselected
-uv run pytest -m s2800          # S2800 tests, device connected
-uv run pytest -m ep133          # EP-133 tests, device connected
+just test                       # all tests, no hardware needed
 just test-cov                   # with coverage
 ```

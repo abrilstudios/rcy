@@ -1,6 +1,6 @@
 """Environment check for RCY. Run with `just doctor`.
 
-Reports the interpreter, uv, bundled presets, audio output and MIDI hardware.
+Reports the interpreter, uv, bundled presets and audio output.
 Exits non-zero only when the headless path (slice + export) cannot work.
 """
 
@@ -70,22 +70,6 @@ def check_audio_output() -> None:
     _line("audio output", f"{device['name']} ({int(device['default_samplerate'])} Hz)")
 
 
-def check_midi() -> None:
-    try:
-        import mido
-        inputs = mido.get_input_names()
-        outputs = mido.get_output_names()
-    except Exception as e:
-        _line("midi", f"backend unavailable ({e.__class__.__name__}: {e})")
-        _line("", "install the hardware extra: uv sync --extra hardware")
-        return
-    if not inputs and not outputs:
-        _line("midi", "no MIDI ports (S2800, EP-133 and MPC tools need one)")
-        return
-    _line("midi inputs", ", ".join(inputs) or "none")
-    _line("midi outputs", ", ".join(outputs) or "none")
-
-
 def main() -> int:
     print(f"RCY doctor  ({REPO_ROOT})")
     ok = check_python()
@@ -93,7 +77,6 @@ def main() -> int:
     ok = check_presets() and ok
     check_sample_packs()
     check_audio_output()
-    check_midi()
     print("ok" if ok else "not ok: fix the lines above before running just smoke")
     return 0 if ok else 1
 

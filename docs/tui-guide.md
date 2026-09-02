@@ -175,45 +175,6 @@ Note: In SEGMENT mode, use arrow keys for nudging and `[`/`]` for focus cycling.
 /quit                     Exit RCY
 ```
 
-## EP-133 K.O. II Integration
-
-RCY includes direct integration with the Teenage Engineering EP-133 sampler via MIDI SysEx.
-
-### Setup
-
-Connect EP-133 via USB. No additional configuration needed.
-
-### Commands
-
-```
-/ep133 connect              Connect to EP-133 (auto-detects MIDI)
-/ep133 disconnect           Disconnect from EP-133
-/ep133 status               Check connection status
-/ep133 set project <1-9>    Set target project (must match your EP-133 selection)
-/ep133 list                 List sounds on device
-/ep133 upload <bank> <slot> Upload segments to bank (A/B/C/D) starting at slot
-/ep133 clear <bank>         Clear all pad assignments in bank
-```
-
-### EP-133 Structure
-
-- 9 projects (1-9) — set via `/ep133 set project <n>`
-- 4 banks per project (A, B, C, D)
-- 12 pads per bank
-- 999 sound slots (USER1: 700-799 recommended)
-
-### Workflow Example
-
-```bash
-/preset amen_classic       # Load the Amen break
-/slice 8                   # Slice into 8 segments
-/ep133 connect             # Connect to EP-133
-/ep133 set project 9       # Target project 9 (match your EP-133 dial)
-/ep133 upload A 700        # Upload segments to bank A, slots 700+
-```
-
-Samples are named `{preset}_{segment:03d}` (e.g., `amen_classic_001`) for easy identification on the device.
-
 ## AI-Powered Commands
 
 RCY supports natural language input through an LLM agent. Instead of memorizing command syntax, you can type naturally:

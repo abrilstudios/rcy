@@ -2,7 +2,7 @@
 Ring Buffer Audio Engine for RCY
 
 A simpler, more robust audio engine aligned with "feels good for auditioning",
-not DAW-grade transport. Designed for EP-133 oriented workflows.
+not DAW-grade transport.
 
 Architecture:
 - StereoRingBuffer: Lock-free circular buffer of (N, 2) float32 frames
