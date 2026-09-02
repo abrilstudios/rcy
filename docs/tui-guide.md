@@ -27,78 +27,17 @@ When you see `[INSERT]` in the status bar:
 When you see `[SEGMENT]` in the status bar:
 - Keys directly trigger segment playback (no typing required)
 - Arrow keys nudge markers
-- Tab/Shift+Tab cycle through notebook pages
 - Press **i** or **ESC** to return to INSERT mode
 
 This modal approach eliminates conflicts between typing and playback keys.
 
-## Notebook Pages
+## Waveform Display
 
-RCY uses a **notebook-style page system**. The top display area switches between three pages, like flipping through a notebook. Context (held sounds, playback, selection) is preserved when switching pages.
-
-| Page | Command | Purpose |
-|------|---------|---------|
-| **Waveform** | `/view waveform` | Slice, audition, temporal editing |
-| **Bank** | `/view bank [A-D]` | EP-133 pad layout and assignment |
-| **Sounds** | `/view sounds` | EP-133 sound inventory (999 slots) |
-
-### Page Switching
-
-In SEGMENT mode:
-- **Tab**: Next page (Waveform → Bank → Sounds → Waveform)
-- **Shift+Tab**: Previous page
-
-Or use commands:
-- `/view waveform` or `/v waveform`
-- `/view bank` or `/view bank A`
-- `/view sounds`
-
-### Waveform Page
-
-The default page showing the audio waveform with:
+The top of the screen shows the audio waveform with:
 - L/R markers defining the working region
 - Slice markers dividing the region into segments
 - Segment numbers for playback reference
 - Time axis
-
-### Bank Page
-
-Shows EP-133 pad layout (4x3 grid = 12 pads per bank):
-- Navigate with arrow keys
-- Focused pad is highlighted
-- Shows assigned sound name or empty state
-- Drop target indicator when holding a sound
-
-### Sounds Page
-
-Paginated list of all EP-133 sounds (slots 1-999):
-- Navigate with j/k or arrow keys
-- Shows slot number, name, duration
-- Pick sounds to hold for placement
-- PgUp/PgDn for page navigation
-
-## Pick / Hold / Drop
-
-Move sounds between pages without losing context. This mirrors drag-and-drop with keyboard:
-
-1. **Pick**: Select a sound (`/pick` or Enter on Sounds page)
-2. **Hold**: Sound stays "held" while navigating pages
-3. **Drop**: Assign held sound to target (`/drop` or Enter on Bank page)
-
-Status bar shows: `Held: <sound_name>` when holding a sound.
-
-Press **ESC** to cancel and clear the held sound.
-
-### Example Workflow
-
-```
-1. /view sounds          # Go to sounds inventory
-2. Navigate to a sound
-3. /pick                  # Pick up the sound
-4. Tab                    # Switch to Bank page
-5. Navigate to target pad
-6. /drop                  # Assign sound to pad
-```
 
 ## Keyboard Reference
 
@@ -136,8 +75,6 @@ Note: `i` is reserved for switching to INSERT mode.
 | `Shift+←/→` | Fine nudge (~1ms) |
 | `Ctrl+←/→` | Coarse nudge (~100ms) |
 | `[` / `]` | Cycle focus through markers (L, segments, R) |
-| `Tab` | Next notebook page |
-| `Shift+Tab` | Previous notebook page |
 | `Space` | Play/stop full sample |
 | `↑/↓` | Scroll output panel |
 
@@ -215,17 +152,6 @@ All commands start with `/` and are entered in INSERT mode.
 ```
 
 Note: In SEGMENT mode, use arrow keys for nudging and `[`/`]` for focus cycling.
-
-### Notebook Pages
-
-```
-/view waveform            Switch to waveform page
-/view bank                Switch to bank page (current bank)
-/view bank A              Switch to bank page, focus bank A
-/view sounds              Switch to sounds page
-/pick                     Pick up sound from current context
-/drop                     Drop held sound onto current target
-```
 
 ### Export
 
@@ -361,16 +287,6 @@ The LLM agent is lazy-loaded on first natural language input to avoid startup la
 3. Nudge with arrow keys (Shift for fine, Ctrl for coarse)
 4. Cut to region: `/cut`
 
-### EP-133 Sound Placement (Notebook Pages)
-
-1. Connect: `/ep133 connect`
-2. Go to sounds: `/view sounds` or **Tab**
-3. Navigate to desired sound
-4. Pick it: `/pick`
-5. Go to bank: `/view bank A` or **Tab**
-6. Navigate to target pad
-7. Drop it: `/drop`
-
 ### Using History
 
 1. Press `Ctrl-R` to search history
@@ -439,7 +355,3 @@ Verify your `OPENROUTER_API_KEY` is valid in the `.env` file.
 ### Import fails with sample rate error
 
 RCY requires 44100Hz audio files. Convert your file before importing.
-
-### Tab not cycling pages
-
-Tab cycles pages only in SEGMENT mode. In INSERT mode, Tab is used for command completion.

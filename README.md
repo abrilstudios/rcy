@@ -226,8 +226,6 @@ See [AGENTS.md](AGENTS.md) for flags and the full CLI list.
 - **Pattern Playback**: Play segments in custom sequences with looping
 - **ASCII Waveform**: Visual display with L/R markers and slice points
 - **Vim-Style Modal Input**: SEGMENT mode for instant playback, INSERT mode for commands
-- **Notebook Pages**: Three-page system (Waveform/Bank/Sounds) with Tab switching
-- **Pick/Hold/Drop**: Keyboard-driven sound placement across pages
 - **Marker Nudging**: Fine-tune slice points with arrow keys (normal/fine/coarse)
 - **Hardware Integration**: Direct upload to EP-133 K.O. II with project/bank/slot control
 - **SFZ Export**: Generate SFZ files for software samplers
