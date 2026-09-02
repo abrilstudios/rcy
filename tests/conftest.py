@@ -9,7 +9,6 @@ It includes fixtures for:
 - Temporary test directories with predefined files
 """
 import os
-import sys
 import json
 import pathlib
 import tempfile
@@ -17,10 +16,7 @@ import pytest
 import numpy as np
 from unittest.mock import MagicMock, patch
 
-# Add the src/python directory to the Python path
-sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "src" / "python"))
-
-# Imports from RCY modules (now that path is configured)
+# Imports from RCY modules
 from config_manager import ConfigManager
 
 

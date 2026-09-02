@@ -4,11 +4,12 @@
 ```bash
 git clone https://github.com/tnn1t1s/rcy.git
 cd rcy
-pip install -r requirements.txt
-python src/python/main.py
+just setup
+just smoke
+just tui
 ```
 
-Ensure you're using Python 3.11+ 
+Needs uv; `just setup` installs Python 3.12 and every dependency.
 
 ---
 
