@@ -6,7 +6,10 @@ to and which file it was rendered to. `boundaries` is the authoritative
 list of cut points (sample offsets into `source`); slice i spans
 `boundaries[i-1]` to `boundaries[i]`, end exclusive. Each slice's
 `start`/`end` are written for readability and ignored on load. `source`
-is relative to the manifest's directory unless absolute.
+is relative to the manifest's directory unless absolute. `onsets`, when
+present, lists detected transients (samples) for snapping and reporting;
+`grid_offset` (samples, default 0) is where the bar grid starts. Neither
+affects slicing.
 
 This module has no UI or audio-device dependencies. `load_source_audio`
 reads a WAV with soundfile, and `load_kit` returns a manifest plus the
@@ -57,9 +60,11 @@ class KitManifest:
     region: tuple[int, int]
     boundaries: list[int]
     slices: list[Slice] = field(default_factory=list)
+    onsets: list[int] = field(default_factory=list)
+    grid_offset: int = 0
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "rcy": SCHEMA_VERSION,
             "source": self.source,
             "sample_rate": self.sample_rate,
@@ -70,6 +75,11 @@ class KitManifest:
             "boundaries": list(self.boundaries),
             "slices": [asdict(s) for s in self.slices],
         }
+        if self.grid_offset:
+            data["grid_offset"] = self.grid_offset
+        if self.onsets:
+            data["onsets"] = list(self.onsets)
+        return data
 
     @classmethod
     def from_dict(cls, data: Any) -> KitManifest:
@@ -92,6 +102,13 @@ class KitManifest:
         if not isinstance(boundaries, list) or not all(_is_int(b) for b in boundaries):
             raise ManifestError("boundaries must be a list of integers")
 
+        onsets = data.get("onsets", [])
+        if not isinstance(onsets, list) or not all(_is_int(o) for o in onsets):
+            raise ManifestError("onsets must be a list of integers")
+        grid_offset = data.get("grid_offset", 0)
+        if not _is_int(grid_offset):
+            raise ManifestError(f"grid_offset must be an integer, got {grid_offset!r}")
+
         cut_points = [int(b) for b in boundaries]
         if len(slices_raw) != len(cut_points) - 1:
             raise ManifestError(
@@ -110,6 +127,8 @@ class KitManifest:
                 _slice_from_dict(raw, start, end)
                 for raw, (start, end) in zip(slices_raw, pairwise(cut_points), strict=True)
             ],
+            onsets=[int(o) for o in onsets],
+            grid_offset=int(grid_offset),
         )
         manifest.validate()
         return manifest
@@ -143,6 +162,10 @@ class KitManifest:
                 f"{len(self.boundaries)} boundaries define {len(self.boundaries) - 1} slices, "
                 f"but {len(self.slices)} slices are listed"
             )
+        if any(o < 0 for o in self.onsets) or any(a >= b for a, b in pairwise(self.onsets)):
+            raise ManifestError("onsets must be non-negative and strictly increasing")
+        if self.grid_offset < 0:
+            raise ManifestError(f"grid_offset must be >= 0, got {self.grid_offset}")
         seen_files: set[str] = set()
         for position, s in enumerate(self.slices, start=1):
             if s.index != position:
@@ -178,6 +201,21 @@ class KitManifest:
             except json.JSONDecodeError as exc:
                 raise ManifestError(f"{path}: invalid JSON: {exc}") from exc
         return cls.from_dict(data)
+
+    def with_boundaries(self, boundaries: list[int]) -> KitManifest:
+        """Copy with the same slices (keys, files, roles) over new cut points."""
+        if len(boundaries) != len(self.boundaries):
+            raise ManifestError(
+                f"{len(boundaries)} boundaries given for {len(self.slices)} slices"
+            )
+        slices = [
+            replace(s, start=start, end=end)
+            for s, (start, end) in zip(self.slices, pairwise(boundaries), strict=True)
+        ]
+        return replace(
+            self, region=(boundaries[0], boundaries[-1]), boundaries=list(boundaries),
+            slices=slices,
+        )
 
     def source_path(self, manifest_path: str) -> str:
         """Absolute path of the source WAV, resolving `source` against the manifest's directory."""
@@ -256,12 +294,14 @@ def bpm_from_measures(total_samples: int, sample_rate: int, measures: int) -> fl
 
 
 def measure_boundaries(
-    total_samples: int, sample_rate: int, measures: int, resolution: int
+    total_samples: int, sample_rate: int, measures: int, resolution: int, grid_offset: int = 0
 ) -> list[int]:
     """Cut points for `measures` x `resolution` equal divisions over the whole file.
 
     Mirrors SegmentManager.split_by_measures arithmetic (times in seconds,
     truncated to samples) so headless and TUI exports produce identical cuts.
+    `grid_offset` shifts every interior cut by that many samples; the first
+    and last cuts stay at 0 and the end of the file.
     """
     if measures < 1 or resolution < 1:
         raise ValueError("measures and resolution must be positive")
@@ -270,22 +310,56 @@ def measure_boundaries(
     time_per_division = total_time / total_divisions
     boundaries = [0]
     for i in range(1, total_divisions):
-        boundaries.append(int((i * time_per_division) * sample_rate))
+        boundaries.append(int((i * time_per_division) * sample_rate) + grid_offset)
     boundaries.append(int(total_time * sample_rate))
+    if any(a >= b for a, b in pairwise(boundaries)):
+        raise ValueError(
+            f"grid offset {grid_offset} pushes a cut past its neighbour or the end of the file"
+        )
     return boundaries
 
 
-def slices_from_boundaries(boundaries: list[int], first_key: int = FIRST_KEY) -> list[Slice]:
-    """One slice per adjacent boundary pair, keys chromatic from `first_key`."""
+def slices_from_boundaries(
+    boundaries: list[int], first_key: int = FIRST_KEY, roles: list[str] | None = None
+) -> list[Slice]:
+    """One slice per adjacent boundary pair, keys chromatic from `first_key`.
+
+    `roles`, when given, has one entry per slice.
+    """
+    count = len(boundaries) - 1
+    if roles is None:
+        roles = [""] * count
+    if len(roles) != count:
+        raise ValueError(f"{count} slices but {len(roles)} roles")
     return [
-        Slice(index=i + 1, start=start, end=end, key=first_key + i, file=f"{i + 1:03d}.wav")
-        for i, (start, end) in enumerate(pairwise(boundaries))
+        Slice(index=i + 1, start=start, end=end, key=first_key + i, file=f"{i + 1:03d}.wav",
+              role=role)
+        for i, ((start, end), role) in enumerate(zip(pairwise(boundaries), roles, strict=True))
     ]
 
 
-def build_manifest(audio: SourceAudio, measures: int, resolution: int) -> KitManifest:
+def build_manifest(
+    audio: SourceAudio, measures: int, resolution: int, grid_offset: int = 0
+) -> KitManifest:
     """Manifest for equal divisions of the whole file; `source` is the absolute path."""
-    boundaries = measure_boundaries(audio.total_samples, audio.sample_rate, measures, resolution)
+    boundaries = measure_boundaries(
+        audio.total_samples, audio.sample_rate, measures, resolution, grid_offset
+    )
+    return manifest_from_boundaries(audio, measures, boundaries, grid_offset=grid_offset)
+
+
+def manifest_from_boundaries(
+    audio: SourceAudio,
+    measures: int,
+    boundaries: list[int],
+    roles: list[str] | None = None,
+    grid_offset: int = 0,
+    onsets: list[int] | None = None,
+) -> KitManifest:
+    """Manifest for explicit cut points over the whole file; `source` is the absolute path.
+
+    `boundaries` must start at 0 and end at the last sample of `audio`.
+    """
     return KitManifest(
         source=audio.path,
         sample_rate=audio.sample_rate,
@@ -293,8 +367,10 @@ def build_manifest(audio: SourceAudio, measures: int, resolution: int) -> KitMan
         bpm=bpm_from_measures(audio.total_samples, audio.sample_rate, measures),
         measures=measures,
         region=(boundaries[0], boundaries[-1]),
-        boundaries=boundaries,
-        slices=slices_from_boundaries(boundaries),
+        boundaries=list(boundaries),
+        slices=slices_from_boundaries(boundaries, roles=roles),
+        onsets=[] if onsets is None else list(onsets),
+        grid_offset=grid_offset,
     )
 
 

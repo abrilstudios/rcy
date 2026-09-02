@@ -1,6 +1,6 @@
 import numpy as np
 import soundfile as sf
-import librosa
+from onsets import detect_onsets
 import os
 import pathlib
 import sys
@@ -366,16 +366,15 @@ class WavAudioProcessor:
                     threshold, wait_time, delta, start, end)
 
         # Use left channel for transient detection
-        onset_env = librosa.onset.onset_strength(y=self.data_left, sr=self.sample_rate)
-        onsets = librosa.onset.onset_detect(
-            onset_envelope=onset_env,
-            sr=self.sample_rate,
+        onset_samples = detect_onsets(
+            self.data_left,
+            self.sample_rate,
             delta=delta,
             wait=wait_time,
             pre_max=pre_max,
             post_max=post_max,
         )
-        onset_times = librosa.frames_to_time(onsets, sr=self.sample_rate)
+        onset_times = [s / self.sample_rate for s in onset_samples]
 
         # Filter onsets to region (keep only those strictly inside L-R)
         filtered_times = [t for t in onset_times if start < t < end]
