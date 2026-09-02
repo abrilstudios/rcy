@@ -16,13 +16,19 @@
 
 ## Quick Start
 
+Needs [uv](https://docs.astral.sh/uv/) and, optionally, [just](https://github.com/casey/just).
+
 ```bash
 git clone https://github.com/tnn1t1s/rcy.git
 cd rcy
-pip install -r requirements.txt
+just setup                       # uv sync --all-extras
+just doctor                      # python, presets, audio output, MIDI
+just smoke                       # slice the bundled Apache break headlessly
 just tui                         # Launch with Amen break
-just tui-preset think_break      # Launch with Think break
+just tui-preset apache_break     # Launch with Apache break
 ```
+
+Without `just`, run `uv sync --all-extras` and then `uv run rcy`.
 
 ## Usage
 
@@ -204,6 +210,16 @@ Export sliced samples to SFZ format for software samplers like TAL-Sampler:
 
 Creates an SFZ file with all sliced samples mapped chromatically starting at C3.
 
+The same export runs headlessly:
+
+```bash
+uv run rcy-export --preset apache_break --out exports/apache
+uv run rcy-export --input break.wav --measures 2 --resolution 4 --out exports/break
+```
+
+Output is `001.wav ... NNN.wav`, `<dir>.sfz` and `<dir>.mid` inside `--out`.
+See [AGENTS.md](AGENTS.md) for flags and the full CLI list.
+
 ## Features
 
 - **Breakbeat Slicing**: Slice by measures or transient detection
@@ -273,15 +289,16 @@ OPENROUTER_API_KEY=your-key-here
 
 ## Requirements
 
-- Python 3.11+
-- Dependencies: `pip install -r requirements.txt`
-  - For Python 3.13+: `pip install -r requirements-py313.txt`
+- Python 3.11 or newer (uv installs 3.12 from `.python-version`)
+- uv; dependencies are declared in `pyproject.toml` and pinned in `uv.lock`
+- Extras: `hardware` (MIDI backend), `agent` (ADK server), `llm` (OpenRouter agent in the TUI), `viz` (plots). `just setup` installs all of them.
 
 ## Development
 
 ```bash
-just test    # Run tests
+just test    # Run tests (hardware tests deselected by default)
 just lint    # Run linter
+just check   # lint + typecheck
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for details.

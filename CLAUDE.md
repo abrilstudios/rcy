@@ -41,11 +41,12 @@ done
 - `just run` - Run the TUI application (**always use this, never run Python directly**)
 - `just test` - Run all tests
 - `just test-file <file>` - Run specific test file
-- `just setup` - Set up virtual environment
+- `just setup` - Install the project and all extras with uv
+- `just doctor` - Check python, presets, audio output and MIDI
+- `just smoke` - Headless slice and export of a bundled break
 - `./tools/bin/env` - Show environment info
 
 ### Hardware Tools
-- `tools/bin/ep133` - EP-133 device operations
 - `tools/bin/s2800` - S2800 sample upload/list/delete
 - `just s2800-agent` - S2800 protocol spec and live device parameters
 - `just controller [PROG]` - TR-909 web GUI for real-time S2800 sound design (no server required)
@@ -195,11 +196,11 @@ tools/bin/           # CLI tools (prefer these over writing Python)
 ### Pattern 1: Check Before Upload
 ```bash
 # Always list samples first
-./venv/bin/python3 tools/bin/s2800 list
+tools/bin/s2800 list
 
 # Only upload if needed
 if ! grep -q "KICK" samples.txt; then
-  ./venv/bin/python3 tools/bin/s2800 upload sounds/kick.wav --name "KICK"
+  tools/bin/s2800 upload sounds/kick.wav --name "KICK"
 fi
 ```
 
@@ -264,7 +265,7 @@ done
 ```bash
 just test                          # Run all tests
 just test-file tests/test_s2800.py # Run specific file
-pytest -m s2800                    # Run S2800 hardware tests
+uv run pytest -m s2800             # Run S2800 hardware tests
 ```
 
 - Write tests for new features

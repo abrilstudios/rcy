@@ -4,22 +4,15 @@ This directory contains convenient command-line utilities and wrappers for RCY f
 
 ## Available Scripts
 
-### RCY Application
+Every wrapper here runs inside the uv environment created by `just setup`,
+so they work from any directory without activating anything. The Python entry
+points they call (`rcy`, `rcy-export`, `rcy-sfz`, `rcy-s2800`, `rcy-s2800-agent`,
+`rcy-mpc`, `rcy-midi-analyzer`) are also available as `uv run <name>`.
 
-`rcy` - Launches the main RCY (Recycling) audio application.
+### Headless export
 
-Usage:
-```
-./bin/rcy [audio_file]
-```
-
-Parameters:
-- `audio_file`: Optional path to an audio file to load on startup
-
-Example:
-```
-./bin/rcy audio/amen.wav
-```
+`uv run rcy-export` slices a preset or a 44.1 kHz WAV and writes WAV slices,
+an SFZ and a MIDI file. See AGENTS.md at the repo root for flags and output layout.
 
 ### MP3 Extract
 
@@ -27,7 +20,7 @@ Example:
 
 Usage:
 ```
-./bin/mp3extract input.mp3 start_time end_time --outfile=output.wav [--samplerate=44100]
+tools/bin/mp3extract input.mp3 start_time end_time --outfile=output.wav [--samplerate=44100]
 ```
 
 Parameters:
@@ -39,7 +32,7 @@ Parameters:
 
 Example:
 ```
-./bin/mp3extract mp3/pulp_fiction_paul_hardcastle.mp3 0:23 0:26 --outfile=wav/pulp_fiction_snippet.wav
+tools/bin/mp3extract mp3/pulp_fiction_paul_hardcastle.mp3 0:23 0:26 --outfile=wav/pulp_fiction_snippet.wav
 ```
 
 ### SFZ Generator
@@ -48,7 +41,7 @@ Example:
 
 Usage:
 ```
-./bin/sfz-generator -i /path/to/samples -o /path/to/samples/output.sfz [options]
+tools/bin/sfz-generator -i /path/to/samples -o /path/to/samples/output.sfz [options]
 ```
 
 Options:
@@ -67,8 +60,8 @@ Important Notes:
 Examples:
 ```
 # For a flat sample directory:
-./bin/sfz-generator -i tal/909_Tube_Kit -o tal/909_Tube_Kit/909_kit.sfz --start-key 36
+tools/bin/sfz-generator -i tal/909_Tube_Kit -o tal/909_Tube_Kit/909_kit.sfz --start-key 36
 
 # For a nested sample library (with subdirectories):
-./bin/sfz-generator -i tal/drum_samples -o tal/drum_samples/drum_kit.sfz --start-key 36
+tools/bin/sfz-generator -i tal/drum_samples -o tal/drum_samples/drum_kit.sfz --start-key 36
 ```
