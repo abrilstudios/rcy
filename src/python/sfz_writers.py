@@ -2,9 +2,9 @@
 
 `files`: one region per rendered slice WAV, `sample=001.wav key=60`.
 `offsets`: one region per slice into the source WAV, `sample=amen.wav
-start= end= key=` with an optional `// role` comment, the form used by
-presets/*/*.sfz. SFZ `end` is the last sample played (inclusive), so it is
-the manifest's exclusive `end` minus one.
+start= end= key=`, the form used by presets/*/*.sfz. SFZ `end` is the last
+sample played (inclusive), so it is the manifest's exclusive `end` minus
+one. Both dialects append `// role` to a region whose slice has a role.
 
 Both writers are pure functions of the manifest.
 """
@@ -25,18 +25,19 @@ _OFFSET_REGION = re.compile(
 
 def write_sfz_files(slices: list[Slice]) -> str:
     """Files dialect: regions reference the rendered slice WAVs."""
-    return "\n".join(f"<region> sample={s.file} key={s.key}" for s in slices)
+    return "\n".join(_with_role(f"<region> sample={s.file} key={s.key}", s) for s in slices)
 
 
 def write_sfz_offsets(source: str, slices: list[Slice]) -> str:
     """Offsets dialect: regions reference sample ranges of `source`."""
-    lines = []
-    for s in slices:
-        line = f"<region> sample={source} start={s.start} end={s.end - 1} key={s.key}"
-        if s.role:
-            line += f" // {s.role}"
-        lines.append(line)
-    return "\n".join(lines)
+    return "\n".join(
+        _with_role(f"<region> sample={source} start={s.start} end={s.end - 1} key={s.key}", s)
+        for s in slices
+    )
+
+
+def _with_role(line: str, s: Slice) -> str:
+    return f"{line} // {s.role}" if s.role else line
 
 
 def write_sfz(dialect: str, source: str, slices: list[Slice]) -> str:

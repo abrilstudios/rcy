@@ -1,0 +1,125 @@
+{
+  "rcy": 1,
+  "source": "../../presets/amen_classic/amen.wav",
+  "sample_rate": 44100,
+  "channels": 2,
+  "bpm": 137.71790859793566,
+  "measures": 4,
+  "region": {
+    "start": 0,
+    "end": 307411
+  },
+  "boundaries": [
+    0,
+    19388,
+    48316,
+    57660,
+    77564,
+    154748,
+    173948,
+    202236,
+    221308,
+    240956,
+    249916,
+    278268,
+    307411
+  ],
+  "slices": [
+    {
+      "index": 1,
+      "start": 0,
+      "end": 19388,
+      "key": 60,
+      "file": "001.wav",
+      "role": "b1 kicks"
+    },
+    {
+      "index": 2,
+      "start": 19388,
+      "end": 48316,
+      "key": 61,
+      "file": "002.wav",
+      "role": "b1 snare cell"
+    },
+    {
+      "index": 3,
+      "start": 48316,
+      "end": 57660,
+      "key": 62,
+      "file": "003.wav",
+      "role": "b1 turnaround"
+    },
+    {
+      "index": 4,
+      "start": 57660,
+      "end": 77564,
+      "key": 63,
+      "file": "004.wav",
+      "role": "b1 snare 4 cell"
+    },
+    {
+      "index": 5,
+      "start": 77564,
+      "end": 154748,
+      "key": 64,
+      "file": "005.wav",
+      "role": "b2 full bar"
+    },
+    {
+      "index": 6,
+      "start": 154748,
+      "end": 173948,
+      "key": 65,
+      "file": "006.wav",
+      "role": "b3 kicks"
+    },
+    {
+      "index": 7,
+      "start": 173948,
+      "end": 202236,
+      "key": 66,
+      "file": "007.wav",
+      "role": "b3 snare cell"
+    },
+    {
+      "index": 8,
+      "start": 202236,
+      "end": 221308,
+      "key": 67,
+      "file": "008.wav",
+      "role": "b3 kick 3+ long"
+    },
+    {
+      "index": 9,
+      "start": 221308,
+      "end": 240956,
+      "key": 68,
+      "file": "009.wav",
+      "role": "b3 displaced snare"
+    },
+    {
+      "index": 10,
+      "start": 240956,
+      "end": 249916,
+      "key": 69,
+      "file": "010.wav",
+      "role": "b4 kicks"
+    },
+    {
+      "index": 11,
+      "start": 249916,
+      "end": 278268,
+      "key": 70,
+      "file": "011.wav",
+      "role": "b4 snare cell"
+    },
+    {
+      "index": 12,
+      "start": 278268,
+      "end": 307411,
+      "key": 71,
+      "file": "012.wav",
+      "role": "b4 crash phrase"
+    }
+  ]
+}

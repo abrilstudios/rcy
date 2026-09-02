@@ -77,6 +77,7 @@ Issues = "https://github.com/tnn1t1s/rcy/issues"
 [project.scripts]
 rcy = "tui.app:main"
 rcy-export = "utils.export_cli:main"
+rcy-onsets = "utils.onsets_cli:main"
 rcy-sfz = "utils.sfz.generate_sfz:main"
 rcy-midi-analyzer = "utils.midi_analyzer:main"
 rcy-s2800 = "s2800.cli:main"
@@ -89,14 +90,17 @@ package-dir = {"" = "src/python"}
 py-modules = [
     "audio_processor",
     "audio_utils",
+    "beat_grid",
     "commands",
     "config_manager",
     "custom_types",
+    "cut_list",
     "enums",
     "error_handler",
     "export_utils",
     "kit_manifest",
     "logging_config",
+    "onsets",
     "ring_buffer_audio",
     "segment_manager",
     "sfz_writers",
