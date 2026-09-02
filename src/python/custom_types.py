@@ -59,6 +59,7 @@ class ExportStats(TypedDict, total=False):
     segment_count: int
     sfz_path: str
     midi_path: str
+    manifest_path: str
     tempo: float
     time_signature: tuple[int, int]
     directory: str
@@ -68,7 +69,7 @@ class ExportStats(TypedDict, total=False):
     end_time: float
     playback_tempo_enabled: bool
     source_bpm: float
-    target_bpm: int
+    target_bpm: float | None
 
 
 class SegmentInfo(TypedDict):

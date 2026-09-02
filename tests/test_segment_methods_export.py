@@ -234,6 +234,7 @@ class TestSegmentBoundaryConsistency:
             from segment_manager import SegmentManager
             
             self.sample_rate = sample_rate
+            self.filename = '/nonexistent/mock.wav'
             self.is_stereo = True
             self.playback_tempo_enabled = False
             self.source_bpm = 120.0
