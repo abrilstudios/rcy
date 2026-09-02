@@ -12,18 +12,19 @@ import logging
 import logging.handlers
 import sys
 from pathlib import Path
+
 from config_manager import config
 
 
 class ErrorRaisingHandler(logging.Handler):
     """Handler that raises an exception on ERROR or CRITICAL logs."""
 
-    def emit(self, record):
+    def emit(self, record: logging.LogRecord) -> None:
         if record.levelno >= logging.ERROR:
             raise RuntimeError(f"Logger error: {record.getMessage()}")
 
 
-def setup_logging(raise_on_error: bool = None):
+def setup_logging(raise_on_error: bool | None = None) -> None:
     """
     Initialize logging configuration for the application.
 
@@ -110,7 +111,18 @@ def setup_logging(raise_on_error: bool = None):
         logging.getLogger(logger_name).setLevel(logging.WARNING)
 
 
-def get_logger(name):
+def setup_headless_logging() -> None:
+    """Logging for command-line tools: warnings and errors to stderr, no log file."""
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+    root_logger.setLevel(logging.WARNING)
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setLevel(logging.WARNING)
+    handler.setFormatter(logging.Formatter('%(levelname)s %(name)s: %(message)s'))
+    root_logger.addHandler(handler)
+
+
+def get_logger(name: str) -> logging.Logger:
     """
     Get a logger instance for a module.
 
