@@ -1,8 +1,9 @@
 # RCY for agents
 
 RCY slices a drum break (a 44.1 kHz WAV) into equal divisions and exports the
-slices as WAV files plus an SFZ instrument and a MIDI sequence. A Textual TUI
-drives the same code interactively; everything below works without it.
+slices as WAV files plus an SFZ instrument, a MIDI sequence and a kit manifest
+that records every cut. A Textual TUI drives the same code interactively;
+everything below works without it and without an audio device.
 
 ## Get a result headlessly
 
@@ -19,24 +20,52 @@ uv, presets, audio output and MIDI ports.
 ## rcy-export
 
 ```
-rcy-export (--preset ID | --input FILE.wav) --out DIR [--measures N] [--resolution R]
+rcy-export (--preset ID | --input FILE.wav) --out DIR [--measures N] [--resolution R] [--sfz-dialect files|offsets]
+rcy-export --from-manifest KIT.rcy.json [--out DIR] [--sfz-dialect files|offsets]
 ```
 
 - `--preset ID` is a key from config/presets/*.json (bundled: amen_classic,
   apache_break, apache_L, apache_R). `--measures` defaults to the preset's value.
 - `--input FILE.wav` needs `--measures`. Input must be 44100 Hz.
 - `--resolution R` is slices per measure (default 4), so slice count is N x R.
+- `--sfz-dialect files` (default) writes one region per slice WAV. `offsets`
+  writes one region per slice into the source WAV with `start=`/`end=` sample
+  offsets, the form used by `presets/*/*.sfz`.
+- `--from-manifest` re-renders from an existing manifest; `--out` defaults to
+  the manifest's directory, so the files are rewritten in place.
 
 Output layout for `--out DIR`:
 
 ```
-DIR/001.wav ... DIR/NNN.wav   one file per slice
-DIR/<basename of DIR>.sfz     <region> per slice, keys chromatic from C3 (60)
-DIR/<basename of DIR>.mid     one note per slice at the computed tempo
+DIR/001.wav ... DIR/NNN.wav     one file per slice
+DIR/<basename of DIR>.sfz       <region> per slice, keys chromatic from C3 (60)
+DIR/<basename of DIR>.mid       one note per slice at the computed tempo
+DIR/<basename of DIR>.rcy.json  kit manifest
 ```
 
-The process opens an audio output stream while slicing, so a machine with no
-output device fails at start. `just doctor` shows the device it would use.
+## The kit manifest and the edit loop
+
+`<name>.rcy.json` is the record of a kit: the source WAV (relative to the
+manifest), sample rate, channels, tempo, measures, the `[start, end)` sample
+region, the list of cut points (`boundaries`), and one entry per slice with
+`index`, `start`, `end` (samples, end exclusive), `key` (MIDI note), `file`
+(rendered WAV) and `role` (free text, empty unless set). Loading validates and
+refuses inconsistent files: every slice edge must be a boundary, indices are
+1-based and sequential, keys are 0..127.
+
+To move a cut, edit the boundary and the two slice edges that share it, then
+re-export. Moving the first cut of an apache export 1000 samples later:
+
+```bash
+uv run rcy-export --preset apache_break --out out/apache
+# in out/apache/apache.rcy.json: boundaries[1] 22050 -> 23050,
+# slices[0].end 22050 -> 23050, slices[1].start 22050 -> 23050
+uv run rcy-export --from-manifest out/apache/apache.rcy.json
+```
+
+Re-exporting an unedited manifest reproduces the slice WAVs byte for byte.
+`kit_manifest.load_kit(path)` returns the manifest plus the decoded source
+audio for code that wants the arrays directly.
 
 ## Where things live
 
@@ -51,7 +80,7 @@ output device fails at start. `just doctor` shows the device it would use.
 | Script | Purpose | Needs |
 |---|---|---|
 | `rcy` | Textual TUI | terminal, audio output |
-| `rcy-export` | headless slice + export | audio output |
+| `rcy-export` | headless slice + export | nothing |
 | `rcy-sfz` | SFZ from a directory of WAVs | nothing |
 | `rcy-midi-analyzer` | tempo and bar info from a .mid | nothing |
 | `rcy-s2800-agent` | Akai S2800 SysEx spec lookup; device read/write | MIDI + S2800 for device commands |
@@ -65,7 +94,7 @@ Hardware paths need the `hardware` extra (python-rtmidi), included in
 ## Tests
 
 ```bash
-just test                       # 259 tests, hardware tests deselected
+just test                       # 309 tests, hardware tests deselected
 uv run pytest -m s2800          # S2800 tests, device connected
 uv run pytest -m ep133          # EP-133 tests, device connected
 just test-cov                   # with coverage
