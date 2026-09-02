@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-# Wrapper for the rcy-s2800-agent console script installed by `just setup`.
-PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-exec uv run --project "$PROJECT_ROOT" rcy-s2800-agent "$@"
