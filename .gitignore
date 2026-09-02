@@ -48,3 +48,11 @@ tutorials/
 
 **/.claude/settings.local.json
 .env
+
+# Test and coverage output
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
