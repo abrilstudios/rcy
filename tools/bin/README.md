@@ -6,8 +6,8 @@ This directory contains convenient command-line utilities and wrappers for RCY f
 
 Every wrapper here runs inside the uv environment created by `just setup`,
 so they work from any directory without activating anything. The Python entry
-points they call (`rcy`, `rcy-export`, `rcy-sfz`, `rcy-s2800`, `rcy-s2800-agent`,
-`rcy-mpc`, `rcy-midi-analyzer`) are also available as `uv run <name>`.
+points they call (`rcy`, `rcy-export`, `rcy-sfz`, `rcy-push`, `rcy-midi-analyzer`)
+are also available as `uv run <name>`.
 
 ### Headless export
 

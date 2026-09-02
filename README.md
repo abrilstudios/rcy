@@ -22,7 +22,7 @@ Needs [uv](https://docs.astral.sh/uv/) and, optionally, [just](https://github.co
 git clone https://github.com/tnn1t1s/rcy.git
 cd rcy
 just setup                       # uv sync --all-extras
-just doctor                      # python, presets, audio output, MIDI
+just doctor                      # python, presets, audio output
 just smoke                       # slice the bundled Apache break headlessly
 just tui                         # Launch with Amen break
 just tui-preset apache_break     # Launch with Apache break
@@ -162,43 +162,7 @@ Available presets after download:
 | `rl_take_me_mardi_gras` | Take Me To the Mardi Gras | Bob James |
 | `rl_i_know_got_soul` | I Know You Got Soul | Bobby Byrd |
 
-## Sampler Support
-
-### Teenage Engineering EP-133 K.O. II
-
-RCY includes direct integration with the EP-133 sampler via MIDI SysEx. Slice a break and upload it directly to your EP-133's pads.
-
-**Setup**: Connect EP-133 via USB. No additional configuration needed.
-
-**Commands**:
-```
-/ep133 connect              Connect to EP-133 (auto-detects MIDI)
-/ep133 disconnect           Disconnect from EP-133
-/ep133 status               Check connection status
-/ep133 set project <1-9>    Set target project (must match your EP-133 selection)
-/ep133 list                 List sounds on device
-/ep133 upload <bank> <slot> Upload segments to bank (A/B/C/D) starting at slot
-/ep133 clear <bank>         Clear all pad assignments in bank
-```
-
-**Workflow example**:
-```
-/preset amen_classic       # Load the Amen break
-/slice 8                   # Slice into 8 segments
-/ep133 connect             # Connect to EP-133
-/ep133 set project 9       # Target project 9 (match your EP-133 dial)
-/ep133 upload A 700        # Upload segments to bank A, slots 700+
-```
-
-Samples are named `{preset}_{segment:03d}` (e.g., `amen_classic_001`) for easy identification on the device.
-
-The agent also understands natural language: "slice into 16 pieces and upload the first 12 to bank A starting at slot 800"
-
-**EP-133 Structure**:
-- 9 projects (1-9) — set via `/ep133 set project <n>` (no SysEx for project switching; manual: Main + pad 1-9)
-- 4 banks per project (A, B, C, D)
-- 12 pads per bank
-- 999 sound slots (USER1: 700-799 recommended)
+## Export
 
 ### SFZ Export
 
@@ -217,8 +181,27 @@ uv run rcy-export --preset apache_break --out exports/apache
 uv run rcy-export --input break.wav --measures 2 --resolution 4 --out exports/break
 ```
 
-Output is `001.wav ... NNN.wav`, `<dir>.sfz` and `<dir>.mid` inside `--out`.
-See [AGENTS.md](AGENTS.md) for flags and the full CLI list.
+Output is `001.wav ... NNN.wav`, `<dir>.sfz`, `<dir>.mid` and the kit manifest
+`<dir>.rcy.json` inside `--out`. See [AGENTS.md](AGENTS.md) for flags and the full CLI list.
+
+## Plugins
+
+RCY core writes files and talks to no hardware. Sending a kit to a sampler is
+the job of a plugin: an executable named `rcy-push-<device>` on your PATH that
+takes `--manifest KIT.rcy.json`, reads the slice WAVs beside it, prints one JSON
+object on stdout and exits non-zero on failure. `rcy-push <device> --manifest
+KIT.rcy.json [plugin flags]` finds that executable and runs it; with nothing
+installed it exits 2 and names what it looked for.
+
+```bash
+uv run rcy-export --preset apache_break --out exports/apache
+uv run rcy-push ep133 --manifest exports/apache/apache.rcy.json --project 9 --bank A
+```
+
+Plugins live in their own repositories with their own dependencies:
+
+- [abrilstudios/rcy-akai](https://github.com/abrilstudios/rcy-akai): Akai S2800 (`rcy-push-s2800`) and MPC2000XL (`rcy-push-mpc`)
+- [abrilstudios/rcy-teenage-engineering](https://github.com/abrilstudios/rcy-teenage-engineering): EP-133 K.O. II (`rcy-push-ep133`)
 
 ## Features
 
@@ -227,7 +210,6 @@ See [AGENTS.md](AGENTS.md) for flags and the full CLI list.
 - **ASCII Waveform**: Visual display with L/R markers and slice points
 - **Vim-Style Modal Input**: SEGMENT mode for instant playback, INSERT mode for commands
 - **Marker Nudging**: Fine-tune slice points with arrow keys (normal/fine/coarse)
-- **Hardware Integration**: Direct upload to EP-133 K.O. II with project/bank/slot control
 - **SFZ Export**: Generate SFZ files for software samplers
 - **Command History**: Bash-style history with reverse search
 - **Preset System**: Quick access to 900+ classic breaks (core + Rhythm Lab collection)
@@ -289,12 +271,12 @@ OPENROUTER_API_KEY=your-key-here
 
 - Python 3.11 or newer (uv installs 3.12 from `.python-version`)
 - uv; dependencies are declared in `pyproject.toml` and pinned in `uv.lock`
-- Extras: `hardware` (MIDI backend), `agent` (ADK server), `llm` (OpenRouter agent in the TUI), `viz` (plots). `just setup` installs all of them.
+- Extras: `llm` (OpenRouter agent in the TUI), `viz` (plots). `just setup` installs both.
 
 ## Development
 
 ```bash
-just test    # Run tests (hardware tests deselected by default)
+just test    # Run tests
 just lint    # Run linter
 just check   # lint + typecheck
 ```
