@@ -26,15 +26,14 @@ def region_lines(text: str) -> list[str]:
 
 
 class TestFilesDialect:
-    def test_matches_previous_export_format(self):
+    def test_regions_reference_slice_files_with_role_comments(self):
         assert write_sfz_files(SLICES) == (
             "<region> sample=001.wav key=60\n"
-            "<region> sample=002.wav key=61\n"
+            "<region> sample=002.wav key=61 // snare\n"
             "<region> sample=003.wav key=62"
         )
 
-    def test_ignores_roles_and_offsets(self):
-        assert "snare" not in write_sfz_files(SLICES)
+    def test_ignores_offsets(self):
         assert "start=" not in write_sfz_files(SLICES)
 
 

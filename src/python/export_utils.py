@@ -82,14 +82,16 @@ def export_kit(
     directory: str,
     sfz_dialect: str = "files",
     target_bpm: float | None = None,
+    render_slices: bool = True,
 ) -> ExportStats:
-    """Render every slice of `manifest` from `audio` into `directory`.
+    """Export `manifest` from `audio` into `directory`.
 
-    Writes `<index>.wav` per slice, `<stem>.sfz` in `sfz_dialect`, `<stem>.mid`
-    with one note per slice, and `<stem>.rcy.json`. `manifest.source` is
-    rewritten relative to `directory` before saving. When `target_bpm` is
-    given, slices are time-stretched from `manifest.bpm` to it and the MIDI
-    file is written at that tempo.
+    Writes `<index>.wav` per slice when `render_slices`, `<stem>.sfz` in
+    `sfz_dialect`, `<stem>.mid` with one note per slice (each slice's role
+    as a text event at its note), and `<stem>.rcy.json`. `manifest.source`
+    is rewritten relative to `directory` before saving. When `target_bpm`
+    is given, slices are time-stretched from `manifest.bpm` to it and the
+    MIDI file is written at that tempo.
     """
     manifest.validate()
     stem = export_stem(directory)
@@ -110,30 +112,33 @@ def export_kit(
 
     next_beat = 0.0
     for s in manifest.slices:
-        segment_data, export_sample_rate = process_segment_for_output(
-            audio.data_left,
-            audio.data_right,
-            s.start,
-            s.end,
-            manifest.sample_rate,
-            audio.is_stereo,
-            False,
-            tempo_adjust,
-            manifest.bpm,
-            target_bpm,
-            tail_fade_enabled,
-            fade_duration_ms,
-            fade_curve,
-            for_export=True,
-            resample_on_export=True,
-        )
-        sf.write(os.path.join(directory, s.file), segment_data, export_sample_rate)
+        if render_slices:
+            segment_data, export_sample_rate = process_segment_for_output(
+                audio.data_left,
+                audio.data_right,
+                s.start,
+                s.end,
+                manifest.sample_rate,
+                audio.is_stereo,
+                False,
+                tempo_adjust,
+                manifest.bpm,
+                target_bpm,
+                tail_fade_enabled,
+                fade_duration_ms,
+                fade_curve,
+                for_export=True,
+                resample_on_export=True,
+            )
+            sf.write(os.path.join(directory, s.file), segment_data, export_sample_rate)
 
         duration_seconds = (s.end - s.start) / manifest.sample_rate
         if tempo_adjust and target_bpm is not None:
             duration_seconds *= manifest.bpm / target_bpm
         duration_beats = duration_seconds * beats_per_second
         midi.addNote(0, 0, s.key, next_beat, duration_beats, 100)
+        if s.role:
+            midi.addText(0, next_beat, s.role)
         next_beat += duration_beats
         logger.debug("slice %s: %s..%s -> %s key %s", s.index, s.start, s.end, s.file, s.key)
 
@@ -159,7 +164,7 @@ def export_kit(
         "time_signature": midi.time_signature,
         "directory": directory,
         "duration": total_duration,
-        "wav_files": len(manifest.slices),
+        "wav_files": len(manifest.slices) if render_slices else 0,
         "start_time": 0,
         "end_time": total_duration,
         "playback_tempo_enabled": tempo_adjust,
