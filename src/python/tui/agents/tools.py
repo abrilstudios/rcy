@@ -177,35 +177,6 @@ class MarkerTool(BaseModel):
     position: str = Field(..., pattern=r"^\d+\.?\d*$", description="Bar.beat position (e.g., '3.2')")
 
 
-# EP-133 Tool
-# -----------
-# Unified command for Teenage Engineering EP-133 K.O. II integration.
-# Subcommands: connect, disconnect, status, set, list, upload, clear
-
-class EP133Tool(BaseModel):
-    """EP-133 K.O. II sampler integration.
-
-    Subcommands:
-        connect              Connect to EP-133 (auto-detects MIDI)
-        disconnect           Disconnect from EP-133
-        status               Show connection status
-        set project <1-9>    Set target project (match your EP-133 selection)
-        list                 List sounds on device
-        upload <bank> <slot> Upload segments to bank (A/B/C/D) starting at slot
-        clear <bank>         Clear pad assignments in bank
-
-    Examples:
-        /ep133 connect
-        /ep133 set project 9   Set target to project 9
-        /ep133 upload A 700    Upload to bank A starting at slot 700
-        /ep133 clear A
-    """
-    subcommand: str = Field(..., description="Subcommand: connect, disconnect, status, set, list, upload, clear")
-    arg1: Optional[str] = Field(None, description="First argument (e.g., 'project' for set, bank letter for upload/clear)")
-    arg2: Optional[str] = Field(None, description="Second argument (e.g., project number, slot number)")
-    slot: Optional[int] = Field(None, ge=1, le=988, description="Starting slot for upload")
-
-
 # Map of tool names to their schemas
 TOOL_SCHEMAS = {
     "slice": SliceTool,
@@ -226,8 +197,6 @@ TOOL_SCHEMAS = {
     "skin": SkinTool,
     "cut": CutTool,
     "nudge": NudgeTool,
-    # EP-133 unified command
-    "ep133": EP133Tool,
 }
 
 # Aliases for convenience

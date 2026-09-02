@@ -27,7 +27,8 @@ classifiers = [
 ]
 # Runtime imports found in src/python, tools/bin and tests. Transitive
 # packages (scipy, numba, soxr, audioread, joblib, ...) come in via librosa
-# and textual and are not listed here.
+# and textual and are not listed here. mido reads .mid files
+# (utils.midi_analyzer, tools/bin/midi-debug.py); no MIDI backend is needed.
 dependencies = [
     "numpy>=2.0.2",
     "librosa>=0.10.2",
@@ -41,15 +42,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# MIDI hardware backend for mido (S2800, EP-133, MPC2000XL over a MIDI interface).
-hardware = [
-    "python-rtmidi>=1.5.0",
-]
-# Google ADK agent server (`just agent-start`, s2800.agent.agent).
-agent = [
-    "google-adk>=1.0.0",
-    "python-dotenv>=1.0.0",
-]
 # OpenRouter LLM agent inside the TUI (tui.agents.openrouter).
 llm = [
     "pydantic-ai>=0.0.24",
@@ -79,12 +71,9 @@ rcy = "tui.app:main"
 rcy-export = "utils.export_cli:main"
 rcy-sfz = "utils.sfz.generate_sfz:main"
 rcy-midi-analyzer = "utils.midi_analyzer:main"
-rcy-s2800 = "s2800.cli:main"
-rcy-s2800-agent = "s2800.agent.__main__:main"
-rcy-mpc = "mpc2000xl.cli:main"
 rcy-push = "push_dispatch:main"
 
-# Modules live flat under src/python so imports stay `from s2800 import S2800`.
+# Modules live flat under src/python so imports stay `from export_utils import ExportUtils`.
 [tool.setuptools]
 package-dir = {"" = "src/python"}
 py-modules = [
@@ -111,7 +100,6 @@ where = ["src/python"]
 
 [tool.setuptools.package-data]
 "tui" = ["*.tcss"]
-"s2800.agent" = ["*.txt"]
 
 [tool.ruff]
 line-length = 100
@@ -179,7 +167,6 @@ python_functions = ["test_*"]
 addopts = [
     "--strict-markers",
     "--strict-config",
-    "-m", "not ep133 and not s2800",
 ]
 filterwarnings = [
     "ignore:Setting the shape on a NumPy array:DeprecationWarning",
@@ -188,8 +175,6 @@ markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
-    "ep133: EP-133 integration tests (require device connected)",
-    "s2800: S2800 integration tests (require device connected via MIDI)",
 ]
 
 [tool.coverage.run]

@@ -2,7 +2,7 @@
 Tests for Ring Buffer Audio Engine
 
 This module contains tests for the new ring-buffer-based audio engine
-designed for audition-first EP-133 workflows.
+designed for audition-first workflows.
 
 Test coverage follows the test plan in issue #176:
 1. Ring buffer correctness (write/read/wraparound/clear)
