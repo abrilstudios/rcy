@@ -1,19 +1,4 @@
-#!/bin/bash
-
-# sfz-generator - Wrapper script for SFZ generator utility
-# Usage: sfz-generator -i /path/to/samples -o output.sfz [options]
-
-# Ensure we're in the project root
-SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
-PROJECT_ROOT=$(dirname "$SCRIPT_DIR")
-
-# Set PYTHONPATH to include src directory
-export PYTHONPATH="$PROJECT_ROOT/src:$PYTHONPATH"
-
-# Display descriptive header
-echo "RCY SFZ Generator - Create SFZ instrument definitions from audio files"
-echo "=================================================================="
-echo ""
-
-# Run the script directly to avoid module import warning
-python "$PROJECT_ROOT/src/python/utils/sfz/generate_sfz.py" "$@"
+#!/usr/bin/env bash
+# Wrapper for the rcy-sfz console script installed by `just setup`.
+PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+exec uv run --project "$PROJECT_ROOT" rcy-sfz "$@"

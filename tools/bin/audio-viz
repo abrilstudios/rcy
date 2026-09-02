@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
+# Runs audio-viz.py inside the project environment (needs the viz extra for plots).
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-export PYTHONPATH="$PROJECT_ROOT/src/python"
-exec "$PROJECT_ROOT/venv/bin/python3" "$SCRIPT_DIR/audio-viz.py" "$@"
+exec uv run --project "$SCRIPT_DIR/../.." python "$SCRIPT_DIR/audio-viz.py" "$@"

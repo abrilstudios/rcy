@@ -21,12 +21,6 @@ import sys
 import argparse
 from pathlib import Path
 
-# Add src to path for imports
-script_dir = Path(__file__).parent
-src_dir = script_dir.parent / 'src'
-python_dir = src_dir / 'python'
-sys.path.insert(0, str(python_dir))
-
 try:
     import soundfile as sf
     from utils.midi_analyzer import analyze_midi

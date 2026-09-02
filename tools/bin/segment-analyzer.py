@@ -11,14 +11,7 @@ import sys
 import re
 import argparse
 
-# Add src directory to Python path
-script_dir = os.path.dirname(os.path.abspath(__file__))
-src_dir = os.path.join(os.path.dirname(script_dir), 'src')
-if src_dir not in sys.path:
-    sys.path.insert(0, src_dir)
-
-# Now we can import our module
-from python.utils.segment_analyzer import get_segment_report
+from utils.segment_analyzer import get_segment_report
 
 def extract_segments_from_log(log_path):
     """Extract segments array from export log file"""

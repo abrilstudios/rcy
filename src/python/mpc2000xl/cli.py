@@ -22,9 +22,6 @@ import sys
 import time
 from pathlib import Path
 
-src_path = Path(__file__).resolve().parent.parent.parent / "src" / "python"
-sys.path.insert(0, str(src_path))
-
 import numpy as np
 import soundfile as sf
 
