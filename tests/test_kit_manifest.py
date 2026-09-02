@@ -103,15 +103,15 @@ class TestValidation:
             (lambda d: d.update(region=[0, 88200]), "region"),
             (lambda d: d.update(region={"start": 0}), "end must be an integer"),
             (lambda d: d.update(boundaries=[0, 44100, 22050, 66150, 88200]), "increasing"),
-            (lambda d: d.update(boundaries=[0, 22050, 44100, 66150]), "region end"),
+            (lambda d: d.update(boundaries=[0, 22050, 44100, 66150, 88000]), "region end"),
             (lambda d: d["slices"][2].update(index=5), "sequential"),
-            (lambda d: d["slices"][3].update(end=99999), "outside"),
-            (lambda d: d["slices"][1].update(start=30000), "boundaries"),
+            (lambda d: d["slices"].pop(), "4 slices"),
+            (lambda d: d["slices"].append({**d["slices"][0], "index": 5}), "5 slices"),
             (lambda d: d["slices"][0].update(key=128), "MIDI note"),
             (lambda d: d["slices"][0].update(file=""), "file"),
             (lambda d: d["slices"][1].update(file="001.wav"), "more than one"),
             (lambda d: d["slices"][0].update(role=3), "role"),
-            (lambda d: d["slices"][0].update(start=True), "integer"),
+            (lambda d: d["slices"][0].update(key=True), "integer"),
             (lambda d: d.update(slices=[]), "slices"),
         ],
     )
@@ -120,6 +120,22 @@ class TestValidation:
         mutate(data)
         with pytest.raises(ManifestError, match=message):
             KitManifest.from_dict(data)
+
+    def test_slice_start_end_are_derived_from_boundaries(self):
+        data = example_manifest().to_dict()
+        data["boundaries"][1] = 23050
+        data["slices"][0]["end"] = 99999  # stale authored value, ignored
+        del data["slices"][1]["start"]
+        manifest = KitManifest.from_dict(data)
+        assert (manifest.slices[0].start, manifest.slices[0].end) == (0, 23050)
+        assert (manifest.slices[1].start, manifest.slices[1].end) == (23050, 44100)
+        assert manifest.slices[0].role == "kick"
+
+    def test_validate_rejects_slices_disagreeing_with_boundaries(self):
+        manifest = example_manifest()
+        bad = KitManifest(**{**manifest.__dict__, "boundaries": [0, 23050, 44100, 66150, 88200]})
+        with pytest.raises(ManifestError, match="boundaries give"):
+            bad.validate()
 
     def test_invalid_json_raises(self, tmp_path):
         path = tmp_path / "bad.rcy.json"
@@ -209,32 +225,31 @@ class TestReExport:
         copied = KitManifest.load(manifest_path_for(str(elsewhere)))
         assert copied.slices == KitManifest.load(manifest_path).slices
 
-    def test_editing_a_boundary_moves_the_cut(self, tmp_path):
+    def test_editing_one_boundary_moves_the_cut(self, tmp_path):
         out = tmp_path / "apache"
         export_main(["--preset", "apache_break", "--out", str(out)])
         manifest_path = manifest_path_for(str(out))
         data = json.loads(pathlib.Path(manifest_path).read_text())
-        old = data["boundaries"][1]
-        new = old + 1000
-        data["boundaries"][1] = new
-        data["slices"][0]["end"] = new
-        data["slices"][1]["start"] = new
+        new = data["boundaries"][1] + 1000
+        data["boundaries"][1] = new  # the only edit
         pathlib.Path(manifest_path).write_text(json.dumps(data))
 
         assert export_main(["--from-manifest", manifest_path]) == 0
         assert sf.info(str(out / "001.wav")).frames == new
         assert sf.info(str(out / "002.wav")).frames == data["boundaries"][2] - new
-        assert KitManifest.load(manifest_path).slices[0].end == new
+        rewritten = json.loads(pathlib.Path(manifest_path).read_text())
+        assert rewritten["slices"][0]["end"] == new
+        assert rewritten["slices"][1]["start"] == new
 
-    def test_inconsistent_edit_is_refused(self, tmp_path, capsys):
+    def test_slice_count_must_match_boundaries(self, tmp_path, capsys):
         out = tmp_path / "apache"
         export_main(["--preset", "apache_break", "--out", str(out)])
         manifest_path = manifest_path_for(str(out))
         data = json.loads(pathlib.Path(manifest_path).read_text())
-        data["slices"][0]["end"] += 1000  # boundary and slice 2 left untouched
+        data["boundaries"].insert(1, 11025)  # a new cut with no slice entry for it
         pathlib.Path(manifest_path).write_text(json.dumps(data))
         assert export_main(["--from-manifest", manifest_path]) == 2
-        assert "boundaries" in capsys.readouterr().err
+        assert "9 slices" in capsys.readouterr().err
 
     def test_input_wav_needs_no_preset(self, tmp_path):
         wav = write_wav(tmp_path / "loop.wav")

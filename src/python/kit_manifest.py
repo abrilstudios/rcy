@@ -2,9 +2,11 @@
 
 A manifest (`<name>.rcy.json`) sits next to the rendered slice WAVs and
 records where each slice lives in the source WAV, which MIDI key it maps
-to and which file it was rendered to. Slice `start`/`end` are sample
-offsets into `source`; `end` is exclusive. `source` is relative to the
-manifest's directory unless absolute.
+to and which file it was rendered to. `boundaries` is the authoritative
+list of cut points (sample offsets into `source`); slice i spans
+`boundaries[i-1]` to `boundaries[i]`, end exclusive. Each slice's
+`start`/`end` are written for readability and ignored on load. `source`
+is relative to the manifest's directory unless absolute.
 
 This module has no UI or audio-device dependencies. `load_source_audio`
 reads a WAV with soundfile, and `load_kit` returns a manifest plus the
@@ -90,6 +92,12 @@ class KitManifest:
         if not isinstance(boundaries, list) or not all(_is_int(b) for b in boundaries):
             raise ManifestError("boundaries must be a list of integers")
 
+        cut_points = [int(b) for b in boundaries]
+        if len(slices_raw) != len(cut_points) - 1:
+            raise ManifestError(
+                f"{len(cut_points)} boundaries define {len(cut_points) - 1} slices, "
+                f"but {len(slices_raw)} slices are listed"
+            )
         manifest = cls(
             source=_require_str(data, "source"),
             sample_rate=_require_int(data, "sample_rate"),
@@ -97,8 +105,11 @@ class KitManifest:
             bpm=_require_number(data, "bpm"),
             measures=_require_int(data, "measures"),
             region=(_require_int(region, "start"), _require_int(region, "end")),
-            boundaries=[int(b) for b in boundaries],
-            slices=[_slice_from_dict(s) for s in slices_raw],
+            boundaries=cut_points,
+            slices=[
+                _slice_from_dict(raw, start, end)
+                for raw, (start, end) in zip(slices_raw, pairwise(cut_points), strict=True)
+            ],
         )
         manifest.validate()
         return manifest
@@ -127,9 +138,11 @@ class KitManifest:
                 f"boundaries must run from region start {start} to region end {end}, "
                 f"got {self.boundaries[0]}..{self.boundaries[-1]}"
             )
-        if not self.slices:
-            raise ManifestError("slices must not be empty")
-        cut_points = set(self.boundaries)
+        if len(self.slices) != len(self.boundaries) - 1:
+            raise ManifestError(
+                f"{len(self.boundaries)} boundaries define {len(self.boundaries) - 1} slices, "
+                f"but {len(self.slices)} slices are listed"
+            )
         seen_files: set[str] = set()
         for position, s in enumerate(self.slices, start=1):
             if s.index != position:
@@ -137,14 +150,11 @@ class KitManifest:
                     f"slice at position {position} has index {s.index}; "
                     "indices are 1-based and sequential"
                 )
-            if s.start < start or s.end > end or s.start >= s.end:
+            expected = (self.boundaries[position - 1], self.boundaries[position])
+            if (s.start, s.end) != expected:
                 raise ManifestError(
-                    f"slice {s.index} range [{s.start}, {s.end}) is outside "
-                    f"region {self.region} or empty"
-                )
-            if s.start not in cut_points or s.end not in cut_points:
-                raise ManifestError(
-                    f"slice {s.index} edges {s.start}/{s.end} must both appear in boundaries"
+                    f"slice {s.index} spans {s.start}..{s.end} but boundaries give "
+                    f"{expected[0]}..{expected[1]}"
                 )
             if not 0 <= s.key <= 127:
                 raise ManifestError(f"slice {s.index} key {s.key} is not a MIDI note (0..127)")
@@ -347,7 +357,8 @@ def _require_str(data: dict[str, Any], key: str) -> str:
     return value
 
 
-def _slice_from_dict(data: Any) -> Slice:
+def _slice_from_dict(data: Any, start: int, end: int) -> Slice:
+    """Slice from JSON; `start`/`end` come from boundaries, any authored values are ignored."""
     if not isinstance(data, dict):
         raise ManifestError("each slice must be a JSON object")
     role = data.get("role", "")
@@ -355,8 +366,8 @@ def _slice_from_dict(data: Any) -> Slice:
         raise ManifestError(f"slice role must be a string, got {role!r}")
     return Slice(
         index=_require_int(data, "index"),
-        start=_require_int(data, "start"),
-        end=_require_int(data, "end"),
+        start=start,
+        end=end,
         key=_require_int(data, "key"),
         file=_require_str(data, "file"),
         role=role,

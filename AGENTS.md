@@ -47,19 +47,21 @@ DIR/<basename of DIR>.rcy.json  kit manifest
 
 `<name>.rcy.json` is the record of a kit: the source WAV (relative to the
 manifest), sample rate, channels, tempo, measures, the `[start, end)` sample
-region, the list of cut points (`boundaries`), and one entry per slice with
-`index`, `start`, `end` (samples, end exclusive), `key` (MIDI note), `file`
-(rendered WAV) and `role` (free text, empty unless set). Loading validates and
-refuses inconsistent files: every slice edge must be a boundary, indices are
-1-based and sequential, keys are 0..127.
+region, the list of cut points (`boundaries`, samples into the source), and
+one entry per slice with `index`, `key` (MIDI note), `file` (rendered WAV)
+and `role` (free text, empty unless set). `boundaries` is authoritative:
+slice i spans `boundaries[i-1]` to `boundaries[i]`, end exclusive. Each
+slice also carries `start` and `end`; they are written for readability and
+ignored on load. Loading refuses a file whose slice count is not one less
+than its boundary count, whose boundaries are not strictly increasing, or
+whose keys fall outside 0..127.
 
-To move a cut, edit the boundary and the two slice edges that share it, then
-re-export. Moving the first cut of an apache export 1000 samples later:
+To move a cut, edit one boundary and re-export. Moving the first cut of an
+apache export 1000 samples later:
 
 ```bash
 uv run rcy-export --preset apache_break --out out/apache
-# in out/apache/apache.rcy.json: boundaries[1] 22050 -> 23050,
-# slices[0].end 22050 -> 23050, slices[1].start 22050 -> 23050
+# in out/apache/apache.rcy.json: boundaries[1] 22050 -> 23050
 uv run rcy-export --from-manifest out/apache/apache.rcy.json
 ```
 
@@ -94,7 +96,7 @@ Hardware paths need the `hardware` extra (python-rtmidi), included in
 ## Tests
 
 ```bash
-just test                       # 309 tests, hardware tests deselected
+just test                       # 311 tests, hardware tests deselected
 uv run pytest -m s2800          # S2800 tests, device connected
 uv run pytest -m ep133          # EP-133 tests, device connected
 just test-cov                   # with coverage
