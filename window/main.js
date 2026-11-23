@@ -1974,7 +1974,7 @@
       viewStart = 0;
       viewEnd = N;
       $("file-name").textContent = init.title;
-      $("file-info").textContent = `${(N / sr).toFixed(3)} s · ${sr} Hz · ${nch === 1 ? "mono" : nch === 2 ? "stereo" : nch + " ch"} · ${init.bpm} bpm · ${init.measures} measure${init.measures === 1 ? "" : "s"}`;
+      $("file-info").textContent = `${(N / sr).toFixed(3)} s · ${sr} Hz · ${nch === 1 ? "mono" : nch === 2 ? "stereo" : nch + " ch"} · ${Number(init.bpm.toFixed(2))} bpm · ${init.measures} measure${init.measures === 1 ? "" : "s"}`;
       audioInit();
       computeLayout();
       drawWave();

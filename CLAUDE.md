@@ -38,6 +38,7 @@ done
 ## 🔧 Available Tools
 
 ### Kit programs
+- `workflows/new-kit`, `workflows/pick-hits`, `workflows/recut` - Whole tasks: prepare the manifest, open the window, cut the kit on Save. Start here; see `README.md`
 - `just export ...` - Cut a kit (`node export/rcy-export`); `SPEC.md` states every option
 - `just window ...` - Open the slicing window (`window/rcy-window` under Electron); `WINDOW.md` states its behaviour
 - `just build` - Rebuild the SDK and both programs after editing a source

@@ -1,0 +1,25 @@
+#!/bin/sh
+# Cut a new kit from a break, with a person moving each cut onto its hit.
+#
+#   workflows/new-kit SOURCE.wav MEASURES TASK_DIR
+#
+# The window opens with the break already split into eighth notes.
+# Writes TASK_DIR/<name>/ (the kit), TASK_DIR/edited.rcy.json and
+# TASK_DIR/run.json. Exit codes: 0 kit written, 3 closed without saving,
+# 2 refused.
+. "$(dirname "$0")/lib.sh"
+
+# Parameter: slices per measure in the opening split. Default 8 (eighth
+# notes), the grid most break hits fall on.
+SPLIT_RESOLUTION=${RCY_SPLIT_RESOLUTION:-8}
+
+[ $# -eq 3 ] || die "usage: new-kit SOURCE.wav MEASURES TASK_DIR"
+source_wav=$1; measures=$2; dir=$3
+require_tools
+[ -f "$source_wav" ] || die "no such file: $source_wav"
+new_task_dir "$dir"
+
+node "$RCY_EXPORT" --input "$source_wav" --measures "$measures" --resolution 1 --out "$dir/source" >/dev/null
+edit_then_cut "$dir/source/source.rcy.json" "$dir" \
+    --split measures --resolution "$SPLIT_RESOLUTION" \
+    --task "Move each cut onto the start of its hit. Delete cuts you don't want, then Save."
