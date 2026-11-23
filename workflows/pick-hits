@@ -1,0 +1,26 @@
+#!/bin/sh
+# Cut a kit of exactly COUNT pads, with a person choosing the hits.
+#
+#   workflows/pick-hits SOURCE.wav MEASURES COUNT TASK_DIR
+#
+# The window opens with cuts at detected transients and Save stays
+# unavailable until the break is cut into exactly COUNT slices.
+# Writes TASK_DIR/<name>/ (the kit), TASK_DIR/edited.rcy.json and
+# TASK_DIR/run.json. Exit codes: 0 kit written, 3 closed without saving,
+# 2 refused.
+. "$(dirname "$0")/lib.sh"
+
+# Parameter: transient sensitivity of the opening split, 0 to 99. Default 50,
+# the window's own default; no break has been used to tune it.
+SENSITIVITY=${RCY_SENSITIVITY:-50}
+
+[ $# -eq 4 ] || die "usage: pick-hits SOURCE.wav MEASURES COUNT TASK_DIR"
+source_wav=$1; measures=$2; count=$3; dir=$4
+require_tools
+[ -f "$source_wav" ] || die "no such file: $source_wav"
+new_task_dir "$dir"
+
+node "$RCY_EXPORT" --input "$source_wav" --measures "$measures" --resolution 1 --out "$dir/source" >/dev/null
+edit_then_cut "$dir/source/source.rcy.json" "$dir" \
+    --split transients --sensitivity "$SENSITIVITY" --expect-slices "$count" \
+    --task "Cut this break into exactly $count slices, one per pad. Put each cut at the start of a hit."

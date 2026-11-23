@@ -1,14 +1,155 @@
 # rcy
 
-rcy cuts a drum break into a sampler kit. It has two programs: `rcy-export`,
-a command-line program that writes the kit, and `rcy-window`, a single window
-where a person places the cuts by eye and ear. An agent or a script starts
-both with a complete command line; the window asks the person for nothing the
-command line could have said.
+rcy cuts a drum break into a sampler kit, and it is built to be run by an
+agent. The agent decides which break, how many pads and where the files go,
+then starts a program with all of that on the command line. A person is
+brought in for the one step that needs ears, placing the cuts, in a window
+that opens already set up for the task and closes when they save.
 
-This is an alpha. The file formats and command lines can still change.
+There are two programs. `rcy-export` writes kits and never asks anything.
+`rcy-window` is the window.
 
-## What a kit is
+This is an alpha; the file formats and command lines can still change.
+
+## The contract
+
+A window run is a function call with a person inside it.
+
+| | |
+|---|---|
+| In | A manifest, the opening split, the task text, and optionally the slice count the result must have. All of it is on the command line. |
+| Out | An exit code, the edited manifest at `--out`, and a run record at `--record`. |
+
+| Exit code | Meaning | What the caller does |
+|---|---|---|
+| 0 | The person saved. | Cut the kit from the manifest at `--out`. |
+| 3 | The person closed without saving. | Nothing was written to `--out`; stop or ask again. |
+| 2 | The launch was refused; the reason is on stderr. | Fix the command line. |
+
+The window has no file picker, no save-as dialog and no setup screen, because
+everything they would ask is already in the arguments.
+
+## Scripted workflows
+
+Each script in `workflows/` is one whole task: it prepares the manifest,
+opens the window, waits, and acts on the exit code. They are plain `sh` and
+short enough to read before running.
+
+Every workflow takes a new task directory and leaves this in it:
+
+```
+TASK_DIR/
+  source/            the break as one slice per measure, and its manifest
+  edited.rcy.json    the manifest the person saved
+  run.json           the run record
+  <name>/            the kit: WAV slices, .sfz, .exs, .mid, .rcy.json
+```
+
+A workflow exits with the window's code, so the caller reads one number.
+
+### Cut a new kit
+
+```
+workflows/new-kit presets/amen.wav 4 work/amen
+```
+
+The arguments are the source, its length in 4/4 measures, and the task
+directory. The window opens with the break split into eighth notes and the
+task written across the top:
+
+![The window as new-kit opens it: 32 cuts on an eighth-note grid and the task text](docs/screenshots/new-kit-opening.png)
+
+The person clicks a slice to hear it, drags a cut onto its hit, and
+double-clicks to add or remove one. The wheel, or `=` and `-`, zooms as far
+as single frames:
+
+![Zoomed in on one cut while it is dragged](docs/screenshots/moving-a-cut.png)
+
+Save ends the run. The script then cuts the kit from the saved manifest with
+20 ms of source audio kept either side of each slice (see the buffer below).
+
+### Cut exactly N pads
+
+```
+workflows/pick-hits presets/amen.wav 4 5 work/five
+```
+
+The third argument is the number of slices the result must have. The window
+opens with cuts at detected transients, and Save stays unavailable while the
+count is wrong:
+
+![pick-hits at opening: 8 slices, 5 asked, Save unavailable](docs/screenshots/pick-hits-count-unmet.png)
+
+Once the count matches, Save becomes available:
+
+![pick-hits with 5 slices: Save available](docs/screenshots/pick-hits-count-met.png)
+
+An agent that needs five pads for a five-pad program therefore never receives
+a kit of four or six.
+
+### Correct an existing kit
+
+```
+workflows/recut work/amen/amen/amen.rcy.json work/amen-2
+```
+
+The window opens on the kit's own cuts, unchanged, and the script cuts a new
+kit from whatever is saved.
+
+### Settings
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `RCY_BUFFER_MS` | 20 | Milliseconds of source audio kept either side of each slice. |
+| `RCY_SPLIT_RESOLUTION` | 8 | `new-kit`: slices per measure in the opening split. |
+| `RCY_SENSITIVITY` | 50 | `pick-hits`: transient sensitivity of the opening split, 0 to 99. |
+| `RCY_ELECTRON` | the binary under `tools/window-runtime` | The Electron binary that runs the window. |
+
+## The run record
+
+Every run writes the file named by `--record`, whether the person saved or
+not. Its shape, shortened:
+
+```json
+{
+  "rcy_window_run": 1,
+  "arguments": ["--manifest", ".../source.rcy.json", "--split", "transients", "--expect-slices", "5", "..."],
+  "started_at": "...", "ended_at": "...", "duration_ms": 1785,
+  "exit_code": 0,
+  "outcome": "saved",
+  "opening": { "boundaries": [0, 19608, 48539, 87271, 145469, 183914, 221429, 231492, 307411] },
+  "events": [
+    { "t_ms": 662, "kind": "edit", "what": "Cut at frame 19608 removed", "slices": 7 },
+    { "t_ms": 1210, "kind": "play", "from": 0, "to": 9606 }
+  ],
+  "final": { "boundaries": [0, 145469, 183914, 221429, 231492, 307411] }
+}
+```
+
+`opening` is what the agent proposed and `final` is what the person kept;
+`events` holds each edit, undo, redo and audition between them with its time
+in milliseconds. Comparing the two across many records shows where the
+first-pass split is wrong, which is why the records are meant to be kept.
+They name local paths, so `runs/` is ignored by git.
+
+## Writing a different task
+
+A workflow is a few lines around one launch. To state a different task, call
+the window directly:
+
+```
+electron window/rcy-window --manifest KIT.rcy.json --out EDITED.rcy.json --record RUN.json \
+    [--split measures --resolution R | --split transients --sensitivity S] \
+    [--view START:END] [--select I] [--task TEXT] [--expect-slices K]
+```
+
+`electron` here is the binary at
+`tools/window-runtime/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron`.
+`--view` opens zoomed to a frame range and `--select` opens with one slice
+selected, so a task can point the person at the one cut in question.
+`WINDOW.md` states every option, key and refusal.
+
+## Kits
 
 `rcy-export` writes one directory:
 
@@ -20,29 +161,16 @@ This is an alpha. The file formats and command lines can still change.
 | `<name>.mid` | A MIDI file that plays the slices in order at the break's tempo. |
 | `<name>.rcy.json` | The manifest: source, tempo, cut positions in frames, and each slice's key and file. |
 
-The manifest is the editable form of a kit. The window reads and writes it,
-and `rcy-export --from-manifest` cuts the kit again from it.
-
-Sources are 16-bit WAV at 44.1 kHz, mono or stereo. Tempo comes from the
-length of the break and its measure count; nothing is time-stretched.
-
-## Requirements
-
-- Node.js 22 or later for `rcy-export`.
-- Electron 33 for `rcy-window`, installed by `npm ci --prefix tools/window-runtime`.
-  The window is built and tested on macOS.
-
-## Cutting a kit
-
 ```
-RCY_PRESETS=presets node export/rcy-export --preset amen_classic --out /tmp/amen --exs
 node export/rcy-export --input break.wav --measures 2 --resolution 8 --out /tmp/kit
-node export/rcy-export --from-manifest /tmp/kit/kit.rcy.json --out /tmp/kit2 --buffer-ms 20
+node export/rcy-export --from-manifest /tmp/kit/kit.rcy.json --out /tmp/kit2 --exs --buffer-ms 20
+RCY_PRESETS=presets node export/rcy-export --preset amen_classic --out /tmp/amen
 ```
 
-`--measures` is the length of the break in 4/4 measures and `--resolution` the
-number of equal slices per measure. `--preset` reads the catalog directory
-named by `RCY_PRESETS`.
+The manifest is the editable form of a kit: the window reads and writes it,
+and `--from-manifest` cuts the kit again from it. Sources are 16-bit WAV at
+44.1 kHz, mono or stereo. Tempo comes from the length of the break and its
+measure count, and nothing is time-stretched.
 
 `--buffer-ms N` keeps N milliseconds of source audio either side of each
 slice in its file and writes the slice's start and end points into the SFZ
@@ -52,61 +180,29 @@ file holds exactly its slice.
 
 `SPEC.md` states every option, file format rule and refusal message.
 
-## Placing cuts in the window
+## Install
 
 ```
-electron window/rcy-window --manifest kit.rcy.json --record run.json --out edited.rcy.json \
-    --split transients --sensitivity 72 \
-    --task "Put one cut at the start of every hit you want on its own pad."
+git clone https://github.com/abrilstudios/rcy && cd rcy
+npm ci --prefix tools/window-runtime
 ```
 
-`electron` is `tools/window-runtime/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron`
-after the install above.
-
-The command line states the run: the manifest to open, the first-pass split
-the window performs at startup (`--split measures` with `--resolution`, or
-`--split transients` with `--sensitivity`), the view and selection, the task
-shown to the person, where the result is written, and with `--expect-slices`
-the slice count the result must have before Save is available.
-
-In the window a click plays a slice, a drag moves a cut, a double-click adds
-or removes one, and the wheel or `=` and `-` zoom down to single frames.
-
-| Exit code | Meaning |
-|---|---|
-| 0 | Saved: the manifest was written to `--out`. |
-| 3 | Closed without saving. |
-| 2 | Refused at launch; the reason is on stderr. |
-
-Every run writes the file named by `--record`: the arguments, the opening
-state, each edit, undo, redo and audition with its time, the final cuts and
-the exit code. The records are the history of what a person changed and are
-meant to be kept.
-
-`WINDOW.md` states the window's behaviour, keys and controls.
-
-## A whole task
-
-```
-node export/rcy-export --input break.wav --measures 4 --resolution 1 --out work/source
-electron window/rcy-window --manifest work/source/source.rcy.json --split measures --resolution 8 \
-    --task "Move each cut onto its hit." --out work/edited.rcy.json --record work/run.json
-node export/rcy-export --from-manifest work/edited.rcy.json --out work/kit --exs --buffer-ms 20
-```
-
-The second command returns when the person saves or closes, so the third
-runs only on exit code 0.
+`rcy-export` needs only Node.js; versions 24 and 26 are the ones it has run
+on. The second command installs Electron 33 for the window, which is built
+and tested on macOS.
 
 ## Layout
 
 | Path | Contents |
 |---|---|
-| `SPEC.md`, `WINDOW.md` | The behaviour of the two programs. They are kept in step with the code. |
+| `workflows/` | The scripted tasks above. |
+| `SPEC.md`, `WINDOW.md` | The behaviour of the two programs, kept in step with the code. |
 | `export/main.js`, `window/main.js` | The programs' sources. |
 | `export/rcy-export`, `window/rcy-window` | The programs as run: each is the SDK followed by its source, in one file. |
 | `rcy-sdk/` | The code for every file format (WAV, MIDI, SFZ, EXS, manifest), with its tests and `dist/bundle.cjs`, which builds a program file. |
 | `presets/` | The preset catalog and its audio. |
 | `features/` | Acceptance scenarios: Gherkin for `rcy-export`, a Playwright script for the window. |
+| `docs/screenshots/` | The pictures in this file and `capture.js`, which takes them from the running window. |
 | `harness/`, `bin/` | Step definitions and tooling for the Gherkin scenarios and for generating `rcy-export` from `SPEC.md` with a coding agent. |
 | `INVARIANTS.md`, `VALIDATION.md`, `BASELINE.md`, `DEFERRED.md` | Rules and records for that generation process. |
 | `research/` | Notes on the behaviour of the earlier Python application. |
@@ -127,13 +223,18 @@ Both specifications pin the SDK build and its README by SHA-256, and
 `python3 bin/check-sdk` reports a mismatch, so a change to the SDK also
 updates those two hashes in each specification.
 
+After a change to how the window looks, retake the screenshots:
+
+```
+NODE_PATH=tools/window-runtime/node_modules node docs/screenshots/capture.js \
+    "$PWD/tools/window-runtime/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"
+```
+
 ## Tests
 
 ```
 cd rcy-sdk && node --test "test/*.test.ts"
 ```
-
-The SDK tests need Node.js 23.6 or later.
 
 ```
 NODE_PATH=tools/window-runtime/node_modules node features/window/scenarios.js \

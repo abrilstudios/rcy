@@ -1,0 +1,19 @@
+#!/bin/sh
+# Reopen an existing kit's cuts for correction and cut the kit again.
+#
+#   workflows/recut KIT.rcy.json TASK_DIR
+#
+# The window opens on the manifest's own cuts, unchanged.
+# Writes TASK_DIR/<name>/ (the kit), TASK_DIR/edited.rcy.json and
+# TASK_DIR/run.json. Exit codes: 0 kit written, 3 closed without saving,
+# 2 refused.
+. "$(dirname "$0")/lib.sh"
+
+[ $# -eq 2 ] || die "usage: recut KIT.rcy.json TASK_DIR"
+manifest=$1; dir=$2
+require_tools
+[ -f "$manifest" ] || die "no such file: $manifest"
+new_task_dir "$dir"
+
+edit_then_cut "$manifest" "$dir" \
+    --task "Correct any cut that is off its hit, then Save."
