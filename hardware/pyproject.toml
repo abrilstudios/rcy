@@ -51,9 +51,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/tnn1t1s/rcy"
-Repository = "https://github.com/tnn1t1s/rcy"
-Issues = "https://github.com/tnn1t1s/rcy/issues"
+Homepage = "https://github.com/abrilstudios/rcy"
+Repository = "https://github.com/abrilstudios/rcy"
+Issues = "https://github.com/abrilstudios/rcy/issues"
 
 [project.scripts]
 rcy-s2800 = "s2800.cli:main"
