@@ -1,0 +1,9 @@
+{
+  "name": "rcy-sdk",
+  "version": "0.1.0",
+  "description": "File-format codecs for rcy kits: WAV, Standard MIDI File, SFZ and the kit manifest.",
+  "type": "module",
+  "exports": "./src/index.ts",
+  "engines": { "node": ">=23.6" },
+  "scripts": { "test": "node --test \"test/*.test.ts\"" }
+}

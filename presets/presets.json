@@ -1,0 +1,6 @@
+{
+  "amen_classic": {"file": "amen.wav", "name": "Winstons Amen (No Processing)", "artist": "The Winstons", "measures": 4},
+  "apache_break": {"file": "apache.wav", "name": "Apache", "artist": "Incredible Bongo Band", "measures": 2},
+  "apache_L": {"file": "apache-L.wav", "name": "Apache (Left Channel)", "artist": "Incredible Bongo Band", "measures": 2},
+  "apache_R": {"file": "apache-R.wav", "name": "Apache (Right Channel)", "artist": "Incredible Bongo Band", "measures": 2}
+}

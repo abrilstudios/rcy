@@ -1,1 +1,0 @@
-# Make tests directory a proper package

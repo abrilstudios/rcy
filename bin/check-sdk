@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+"""Check that the SDK build is the one SPEC.md pins, and optionally that an
+artifact embeds exactly those bytes.
+
+SPEC.md states the SHA-256 of rcy-sdk/dist/rcy-sdk.js and of the README that
+describes it, so the spec hash in a
+build manifest also fixes the SDK. An artifact carries the SDK between two
+marker lines written by rcy-sdk/dist/bundle.cjs.
+
+Usage: bin/check-sdk [--spec SPEC.md] [ARTIFACT]
+"""
+import argparse
+import hashlib
+import re
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from harness.inputs import ROOT, SDK_BUILD
+
+BEGIN = b"// ---- rcy-sdk begin ----\n"
+END = b"// ---- rcy-sdk end ----\n"
+
+p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+p.add_argument("--spec", default=str(ROOT / "SPEC.md"))
+p.add_argument("artifact", nargs="?")
+a = p.parse_args()
+
+pins = re.findall(r"`rcy-sdk/dist/rcy-sdk\.js` with SHA-256\s+`([0-9a-f]{64})`", Path(a.spec).read_text())
+if len(pins) != 1:
+    sys.exit(f"bin/check-sdk: {a.spec} must state the SDK build's SHA-256 exactly once; found {len(pins)}")
+built = hashlib.sha256((ROOT / SDK_BUILD).read_bytes()).hexdigest()
+if built != pins[0]:
+    sys.exit(f"bin/check-sdk: {SDK_BUILD} hashes to {built}, but {a.spec} pins {pins[0]}")
+readme = "rcy-sdk/README.md"
+described = re.findall(r"`rcy-sdk/README\.md` with SHA-256\s+`([0-9a-f]{64})`", Path(a.spec).read_text())
+if len(described) != 1:
+    sys.exit(f"bin/check-sdk: {a.spec} must state the SDK README's SHA-256 exactly once; found {len(described)}")
+actual = hashlib.sha256((ROOT / readme).read_bytes()).hexdigest()
+if actual != described[0]:
+    sys.exit(f"bin/check-sdk: {readme} hashes to {actual}, but {a.spec} pins {described[0]}")
+if a.artifact:
+    data = Path(a.artifact).read_bytes()
+    if data.count(BEGIN) != 1 or data.count(END) != 1 or data.index(BEGIN) > data.index(END):
+        sys.exit(f"bin/check-sdk: {a.artifact} doesn't hold one SDK segment between the marker lines")
+    embedded = hashlib.sha256(data[data.index(BEGIN) + len(BEGIN):data.index(END)]).hexdigest()
+    if embedded != pins[0]:
+        sys.exit(f"bin/check-sdk: {a.artifact} embeds an SDK hashing to {embedded}, not the pinned {pins[0]}")
+    if not data.startswith(b"#!/usr/bin/env node\n" + BEGIN):
+        sys.exit(f"bin/check-sdk: {a.artifact} doesn't start with the bundle's first two lines")
+print("SDK build matches the pin" + (" and the artifact embeds it" if a.artifact else ""))

@@ -1,0 +1,1352 @@
+#!/usr/bin/env node
+// ---- rcy-sdk begin ----
+// rcy-sdk 0.1.0. Built from src/ by bin/build.cjs; don't edit.
+const rcySdk = (() => {
+"use strict";
+const m_numbers = (() => {
+// Exact handling of IEEE 754 doubles, so no result depends on the order or
+// rounding of floating-point operations.
+
+/** |x| = mant * 2^exp exactly, for a finite double. */
+function decompose(x        )                                              {
+  if (!Number.isFinite(x)) throw new RangeError(`not a finite double: ${x}`);
+  const dv = new DataView(new ArrayBuffer(8));
+  dv.setFloat64(0, x);
+  const hi = dv.getUint32(0);
+  const lo = dv.getUint32(4);
+  const biased = (hi >>> 20) & 0x7ff;
+  let mant = (BigInt(hi & 0xfffff) << 32n) | BigInt(lo);
+  let exp = -1074;
+  if (biased !== 0) {
+    mant |= 1n << 52n;
+    exp = biased - 1075;
+  }
+  return { neg: hi >>> 31 === 1, mant, exp };
+}
+
+/** floor(x * num / den + 1/2) for a non-negative double x, in exact arithmetic. */
+function roundScaled(x        , num        , den        )         {
+  const p = decompose(x);
+  if (p.neg && p.mant !== 0n) throw new RangeError(`negative value: ${x}`);
+  let n = p.mant * num;
+  let d = den;
+  if (p.exp >= 0) n <<= BigInt(p.exp);
+  else d <<= BigInt(-p.exp);
+  return (2n * n + d) / (2n * d);
+}
+
+/** The exact binary value rounded to `decimals` places; an exact tie rounds away from zero. */
+function fixed(x        , decimals        )         {
+  const q = roundScaled(Math.abs(x), 10n ** BigInt(decimals), 1n);
+  let s = q.toString().padStart(decimals + 1, "0");
+  if (decimals > 0) s = s.slice(0, -decimals) + "." + s.slice(-decimals);
+  return (x < 0 && q !== 0n ? "-" : "") + s;
+}
+
+/** Rewrites exponent notation ("1.25e+22") as plain decimal digits. */
+function plain(s        )         {
+  const m = /^(-?)(\d+)(?:\.(\d+))?e([+-]\d+)$/.exec(s);
+  if (!m) return s;
+  const digits = m[2] + (m[3] ?? "");
+  const point = m[2].length + Number(m[4]);
+  if (point <= 0) return m[1] + "0." + "0".repeat(-point) + digits;
+  if (point >= digits.length) return m[1] + digits + "0".repeat(point - digits.length);
+  return m[1] + digits.slice(0, point) + "." + digits.slice(point);
+}
+
+/** Shortest digits that read back to the same double, plain notation, ".0" when integral. */
+function shortestWithPoint(x        )         {
+  if (!Number.isFinite(x)) throw new RangeError(`not a finite double: ${x}`);
+  const s = plain(String(x));
+  return s.includes(".") ? s : s + ".0";
+}
+
+/** At most `digits` significant digits, no trailing zeros or point, never exponent form. */
+function significant(x        , digits        )         {
+  if (!Number.isFinite(x)) throw new RangeError(`not a finite double: ${x}`);
+  const s = plain(x.toPrecision(digits));
+  return s.includes(".") ? s.replace(/0+$/, "").replace(/\.$/, "") : s;
+}
+return { decompose, roundScaled, fixed, plain, shortestWithPoint, significant };
+})();
+const m_wav = (() => {
+// RIFF WAVE with integer PCM. The reader reports what the header says and
+// leaves policy (which rates, widths and channel counts to accept) to the caller.
+
+class WavFormatError extends Error {}
+
+                      
+                                                                       
+                    
+                   
+                           
+                     
+                        
+                         
+                     
+                                
+                 
+                                                        
+                     
+                                                                        
+                   
+ 
+
+const ascii = (b            , at        ) => String.fromCharCode(b[at], b[at + 1], b[at + 2], b[at + 3]);
+
+/**
+ * Reads the first `fmt ` chunk and the first `data` chunk after it; every
+ * other chunk is skipped. Throws WavFormatError when the bytes aren't a RIFF
+ * WAVE file with format tag 1 and at least one whole frame.
+ */
+function parseWav(bytes            )      {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (bytes.length < 12 || ascii(bytes, 0) !== "RIFF" || ascii(bytes, 8) !== "WAVE") {
+    throw new WavFormatError("not a RIFF WAVE file");
+  }
+  let fmt                                                     = null;
+  let data                    = null;
+  let at = 12;
+  while (at + 8 <= bytes.length) {
+    const id = ascii(bytes, at);
+    const length = view.getUint32(at + 4, true);
+    const body = at + 8;
+    if (fmt === null && id === "fmt ") {
+      if (length < 16 || body + 16 > bytes.length) throw new WavFormatError("fmt chunk shorter than 16 bytes");
+      fmt = {
+        formatTag: view.getUint16(body, true),
+        channels: view.getUint16(body + 2, true),
+        sampleRate: view.getUint32(body + 4, true),
+        blockAlign: view.getUint16(body + 12, true),
+        bitsPerSample: view.getUint16(body + 14, true),
+      };
+    } else if (fmt !== null && id === "data") {
+      if (body + length > bytes.length) throw new WavFormatError("data chunk runs past the end of the file");
+      data = bytes.subarray(body, body + length);
+      break;
+    }
+    at = body + length + (length & 1);
+  }
+  if (fmt === null) throw new WavFormatError("no fmt chunk");
+  if (data === null) throw new WavFormatError("no data chunk after the fmt chunk");
+  if (fmt.formatTag !== 1) throw new WavFormatError(`format tag ${fmt.formatTag} is not integer PCM`);
+  if (fmt.channels < 1 || fmt.blockAlign !== fmt.channels * Math.ceil(fmt.bitsPerSample / 8)) {
+    throw new WavFormatError("block align doesn't match the channel count and sample width");
+  }
+  const frames = Math.floor(data.length / fmt.blockAlign);
+  if (frames < 1) throw new WavFormatError("no frames");
+  return { ...fmt, frames, dataOffset: data.byteOffset - bytes.byteOffset, data: data.subarray(0, frames * fmt.blockAlign) };
+}
+
+/** A 44-byte header followed by the frames, with no other chunk. */
+function encodeWav(wav                                                                                   )             {
+  const blockAlign = wav.channels * (wav.bitsPerSample / 8);
+  if (!Number.isInteger(blockAlign) || blockAlign < 1 || wav.data.length % blockAlign !== 0) {
+    throw new RangeError("data is not a whole number of frames");
+  }
+  const out = new Uint8Array(44 + wav.data.length);
+  const view = new DataView(out.buffer);
+  const tag = (at        , s        ) => { for (let i = 0; i < 4; i++) out[at + i] = s.charCodeAt(i); };
+  tag(0, "RIFF"); view.setUint32(4, 36 + wav.data.length, true); tag(8, "WAVE");
+  tag(12, "fmt "); view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); view.setUint16(22, wav.channels, true);
+  view.setUint32(24, wav.sampleRate, true); view.setUint32(28, wav.sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true); view.setUint16(34, wav.bitsPerSample, true);
+  tag(36, "data"); view.setUint32(40, wav.data.length, true);
+  out.set(wav.data, 44);
+  return out;
+}
+return { WavFormatError, parseWav, encodeWav };
+})();
+const m_midi = (() => {
+// Standard MIDI File, format 1: a tempo track and one note track.
+const { roundScaled } = m_numbers;
+
+/** The largest value the three-byte tempo meta-event holds, in microseconds per quarter note. */
+const TEMPO_MAX = 0xffffff;
+
+/** Microseconds per quarter note: the floor of one double division. */
+function tempoMicros(bpm        )         {
+  return Math.floor(60_000_000 / bpm);
+}
+
+/** Whether the tempo fits the tempo meta-event. */
+function tempoWritable(bpm        )          {
+  const t = tempoMicros(bpm);
+  return t >= 1 && t <= TEMPO_MAX;
+}
+
+/** Nearest tick to a frame offset: floor(frame * bpm * division / (60 * sampleRate) + 1/2), exactly. */
+function tickAtFrame(frame        , bpm        , division        , sampleRate        )         {
+  return Number(roundScaled(bpm, BigInt(frame) * BigInt(division), 60n * BigInt(sampleRate)));
+}
+
+                                                                                        
+
+function quantity(v        )           {
+  const bytes = [v & 0x7f];
+  for (v = Math.floor(v / 128); v > 0; v = Math.floor(v / 128)) bytes.unshift((v & 0x7f) | 0x80);
+  return bytes;
+}
+
+function chunk(id        , body          )           {
+  const n = body.length;
+  return [...id].map((c) => c.charCodeAt(0)).concat([(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255], body);
+}
+
+/**
+ * Track 1 holds a 4/4 time signature and the tempo at tick 0. Track 2 holds
+ * the notes on channel 0 in the order given, which must be non-overlapping
+ * and ascending; a note-off is status 0x80 with velocity 64. No running status.
+ */
+function encodeMidi(song                                                  )             {
+  if (!tempoWritable(song.bpm)) throw new RangeError(`tempo ${song.bpm} BPM doesn't fit the MIDI tempo event`);
+  const t = tempoMicros(song.bpm);
+  const tempoTrack = [
+    0, 0xff, 0x58, 4, 4, 2, 24, 8,
+    0, 0xff, 0x51, 3, (t >>> 16) & 255, (t >>> 8) & 255, t & 255,
+    0, 0xff, 0x2f, 0,
+  ];
+  const noteTrack           = [];
+  let now = 0;
+  for (const note of song.notes) {
+    if (note.onTick < now || note.offTick < note.onTick) throw new RangeError("notes must be ascending and must not overlap");
+    noteTrack.push(...quantity(note.onTick - now), 0x90, note.key, note.velocity);
+    noteTrack.push(...quantity(note.offTick - note.onTick), 0x80, note.key, 64);
+    now = note.offTick;
+  }
+  noteTrack.push(0, 0xff, 0x2f, 0);
+  const header = chunk("MThd", [0, 1, 0, 2, (song.division >>> 8) & 255, song.division & 255]);
+  return Uint8Array.from([...header, ...chunk("MTrk", tempoTrack), ...chunk("MTrk", noteTrack)]);
+}
+return { TEMPO_MAX, tempoMicros, tempoWritable, tickAtFrame, encodeMidi };
+})();
+const m_manifest = (() => {
+// The kit manifest (`<stem>.rcy.json`, schema version 1) as text, and SFZ regions.
+const { shortestWithPoint } = m_numbers;
+
+const MANIFEST_VERSION = 1;
+
+                                                                  
+
+                           
+                                                                                      
+                 
+                     
+                   
+              
+                   
+                                                                                                  
+                       
+                                                 
+                  
+     
+                                                                            
+                                                                 
+     
+                    
+ 
+
+/** The whole number of frames nearest `ms` milliseconds at `sampleRate`. */
+function bufferFrames(ms        , sampleRate        )         {
+  return Math.round(ms * sampleRate / 1000);
+}
+
+/**
+ * Where slice `i` lies inside its own file when the file holds the kit's
+ * buffer: `offset` is the slice's first frame in the file, `end` the frame
+ * after its last, and `fileStart`..`fileEnd` the source frames the file holds.
+ */
+function slicePoints(m          , i        , sourceFrames        )                                                                      {
+  const pad = bufferFrames(m.bufferMs ?? 0, m.sampleRate);
+  const fileStart = Math.max(0, m.boundaries[i] - pad);
+  const fileEnd = Math.min(sourceFrames, m.boundaries[i + 1] + pad);
+  return { fileStart, fileEnd, offset: m.boundaries[i] - fileStart, end: m.boundaries[i + 1] - fileStart };
+}
+
+/** A JSON string literal with every character outside printable ASCII as a lower-case \uXXXX escape. */
+function jsonString(s        )         {
+  const short                         = { 0x22: '\\"', 0x5c: "\\\\", 0x0a: "\\n", 0x0d: "\\r", 0x09: "\\t", 0x08: "\\b", 0x0c: "\\f" };
+  let out = '"';
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    out += short[c] ?? (c < 0x20 || c > 0x7e ? "\\u" + c.toString(16).padStart(4, "0") : s[i]);
+  }
+  return out + '"';
+}
+
+/** Two-space indented text with members in schema order, one element per line and a final newline. */
+function manifestText(m          )         {
+  if (m.slices.length !== m.boundaries.length - 1) throw new RangeError("slices must number one fewer than boundaries");
+  const b = m.boundaries;
+  const comma = (i        , n        ) => (i < n - 1 ? "," : "");
+  const lines = [
+    "{",
+    `  "rcy": ${MANIFEST_VERSION},`,
+    `  "source": ${jsonString(m.source)},`,
+    `  "sample_rate": ${m.sampleRate},`,
+    `  "channels": ${m.channels},`,
+    `  "bpm": ${shortestWithPoint(m.bpm)},`,
+    `  "measures": ${m.measures},`,
+    ...((m.bufferMs ?? 0) > 0 ? [`  "buffer_ms": ${m.bufferMs},`] : []),
+    '  "region": {',
+    `    "start": ${b[0]},`,
+    `    "end": ${b[b.length - 1]}`,
+    "  },",
+    '  "boundaries": [',
+    ...b.map((v, i) => `    ${v}${comma(i, b.length)}`),
+    "  ],",
+    '  "slices": [',
+    ...m.slices.flatMap((s, i) => [
+      "    {",
+      `      "index": ${i + 1},`,
+      `      "start": ${b[i]},`,
+      `      "end": ${b[i + 1]},`,
+      `      "key": ${s.key},`,
+      `      "file": ${jsonString(s.file)},`,
+      `      "role": ${jsonString(s.role)}`,
+      `    }${comma(i, m.slices.length)}`,
+    ]),
+    "  ]",
+    "}",
+  ];
+  return lines.join("\n") + "\n";
+}
+
+/**
+ * SFZ regions, newline separated, with no final newline. `files` names one
+ * sample file per slice; `offsets` addresses the source by first and last frame.
+ * When the kit has a buffer, a `files` line also carries `offset` and `end`,
+ * the slice's first and last frame inside its file, and `sourceFrames` (the
+ * source's length) is required.
+ */
+function sfzText(m          , dialect                     , sourceFrames         )         {
+  return m.slices.map((s, i) => {
+    if (dialect === "files") {
+      if ((m.bufferMs ?? 0) === 0) return `<region> sample=${s.file} key=${s.key}`;
+      if (sourceFrames === undefined) throw new RangeError("a kit with a buffer needs the source's frame count");
+      const p = slicePoints(m, i, sourceFrames);
+      return `<region> sample=${s.file} offset=${p.offset} end=${p.end - 1} key=${s.key}`;
+    }
+    const line = `<region> sample=${m.source} start=${m.boundaries[i]} end=${m.boundaries[i + 1] - 1} key=${s.key}`;
+    return s.role === "" ? line : `${line} // ${s.role}`;
+  }).join("\n");
+}
+return { MANIFEST_VERSION, bufferFrames, slicePoints, jsonString, manifestText, sfzText };
+})();
+const m_exs = (() => {
+// Logic Pro Sampler instrument (.exs), little-endian block layout: one zone
+// per sample on its own key, played from start to end regardless of note length.
+//
+// Apple doesn't publish the format. Block sizes and every constant byte below
+// are observations: they copy a one-shot drum instrument that Logic Pro 11.2.2
+// loads, cross-checked against the open-source readers listed in docs/exs.md.
+
+/** Bytes before each block's content. */
+const HEADER_SIZE = 84;
+/** Block names hold at most this many bytes before the terminating NUL. */
+const EXS_NAME_MAX = 63;
+/** The folder field holds at most this many bytes before the terminating NUL. */
+const EXS_PATH_MAX = 255;
+
+const INSTRUMENT = 0, ZONE = 1, GROUP = 2, SAMPLE = 3, PARAMS = 4;
+const SIZE = { [INSTRUMENT]: 80, [ZONE]: 140, [GROUP]: 132, [SAMPLE]: 592, [PARAMS]: 1108 };
+/** Header flag words seen on each block type in files Logic wrote; meaning unknown. */
+const HEADER_FLAGS = { [INSTRUMENT]: 0x40, [ZONE]: 0, [GROUP]: 0x20000000, [SAMPLE]: 0x20020000, [PARAMS]: 0 };
+/** Zone flag bit 0: play the whole sample, ignoring note length. */
+const ZONE_ONE_SHOT = 0x01;
+/** Value at zone offset 84 in Logic-written files; meaning unknown. */
+const ZONE_OFFSET_84 = 1_200_000;
+/** Slots in the parameter block: 100 one-byte ids, then 200 two-byte ids. */
+const PARAM_SLOTS = 100, PARAM_WIDE_SLOTS = 200;
+/**
+ * Instrument-wide settings as [parameter id, value]: master volume 0 dB, pitch
+ * bend +2 semitones and down linked, 16 voices, filter off with cutoff fully
+ * open, velocity range -60 dB, envelope 1 sustain at maximum with zero attack,
+ * decay and hold.
+ */
+const PARAMS_DEFAULT                     = [
+  [7, 0], [3, 2], [4, -1], [5, 16], [44, 0], [30, 1000], [29, 0], [90, -60], [81, 127], [82, 0], [83, 0], [84, 0],
+];
+
+                            
+                                                  
+              
+                                                                                                                   
+                   
+                                                        
+                     
+                 
+                     
+                        
+                   
+                                               
+                   
+                                                    
+                 
+                                                                        
+               
+ 
+
+                                
+                                                                                            
+               
+                                                                             
+                 
+                                                 
+                       
+ 
+
+function ascii(text        )             {
+  return Uint8Array.from(text, (c) => c.charCodeAt(0));
+}
+
+function fieldDefect(what        , text        , max        )                {
+  if (!/^[\x20-\x7e]*$/.test(text)) return `${what} is not printable ASCII: ${text}`;
+  if (text.length > max) return `${what} is longer than ${max} bytes: ${text}`;
+  return null;
+}
+
+/**
+ * The first reason the instrument can't be written, or null. Checked in this
+ * order: the instrument name (which with ".exs" must fit a block name), the
+ * folder, then each sample's file name and key in sample order.
+ */
+function exsDefect(inst               )                {
+  if (inst.samples.length < 1) return "an instrument needs at least one sample";
+  const first = fieldDefect("instrument name", inst.name, EXS_NAME_MAX - ".exs".length)
+    ?? fieldDefect("folder", inst.folder, EXS_PATH_MAX);
+  if (first !== null) return first;
+  if (!inst.folder.startsWith("/") || (inst.folder.length > 1 && inst.folder.endsWith("/"))) {
+    return `folder is not an absolute path without a trailing slash: ${inst.folder}`;
+  }
+  for (const s of inst.samples) {
+    const defect = fieldDefect("sample file name", s.fileName, EXS_NAME_MAX);
+    if (defect !== null) return defect;
+    if (!Number.isInteger(s.key) || s.key < 0 || s.key > 127) return `key ${s.key} is not a MIDI note (0..127)`;
+    const from = s.start ?? 0, to = s.end ?? s.frames;
+    if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to > s.frames || from >= to) {
+      return `sample ${s.fileName} plays frames ${from}..${to}, outside its ${s.frames} frames`;
+    }
+  }
+  return null;
+}
+
+function block(type        , index        , name        )                                                    {
+  const bytes = new Uint8Array(HEADER_SIZE + SIZE[type]);
+  const view = new DataView(bytes.buffer);
+  bytes.set([1, 1, 0, type]); // little-endian marker, version 1.0, block type
+  view.setUint32(4, SIZE[type], true);
+  view.setUint32(8, index >>> 0, true);
+  view.setUint32(12, HEADER_FLAGS[type], true);
+  bytes.set(ascii("TBOS"), 16);
+  bytes.set(ascii(name), 20);
+  return { bytes, view, at: HEADER_SIZE };
+}
+
+/** The bytes of an .exs file. Throws RangeError with the text of exsDefect when that isn't null. */
+function encodeExs(inst               )             {
+  const defect = exsDefect(inst);
+  if (defect !== null) throw new RangeError(defect);
+  const folder = ascii(inst.folder);
+  const blocks               = [];
+
+  const head = block(INSTRUMENT, -1, inst.name + ".exs");
+  head.view.setUint32(head.at + 4, inst.samples.length, true); // zones
+  head.view.setUint32(head.at + 8, 1, true); // groups
+  head.view.setUint32(head.at + 12, inst.samples.length, true); // samples
+  head.view.setUint32(head.at + 16, 1, true); // parameter blocks
+  blocks.push(head.bytes);
+
+  inst.samples.forEach((s, i) => {
+    const z = block(ZONE, i, s.fileName.replace(/\.[^.]*$/, ""));
+    const c = z.at;
+    z.bytes[c] = ZONE_ONE_SHOT;
+    z.bytes[c + 1] = s.key; // root key
+    z.bytes[c + 6] = s.key; // lowest key
+    z.bytes[c + 7] = s.key; // highest key
+    z.bytes[c + 10] = 127; // highest velocity; lowest stays 0
+    z.view.setUint32(c + 12, s.start ?? 0, true); // sample start
+    z.view.setUint32(c + 16, s.end ?? s.frames, true); // sample end
+    z.view.setUint32(c + 24, s.frames, true); // loop end, set even with looping off
+    z.view.setUint32(c + 84, ZONE_OFFSET_84, true);
+    z.view.setInt32(c + 88, 0, true); // group index
+    z.view.setUint32(c + 92, i, true); // sample index, by position in the file
+    z.view.setInt32(c + 112, -1, true); // no release-tail sample
+    blocks.push(z.bytes);
+  });
+
+  const g = block(GROUP, 0, "Slices");
+  g.bytes[g.at + 3] = 1; // options byte as Logic writes it
+  g.bytes[g.at + 6] = 127; // highest velocity
+  g.bytes[g.at + 8] = 0xff;
+  g.bytes[g.at + 38] = 80; // enable-by-tempo range, BPM, unused while enable-by is off
+  g.bytes[g.at + 39] = 140;
+  g.view.setInt32(g.at + 80, -1, true); // no round-robin position
+  g.bytes[g.at + 89] = 127; // highest note
+  g.bytes[g.at + 91] = 1;
+  blocks.push(g.bytes);
+
+  inst.samples.forEach((s, i) => {
+    const b = block(SAMPLE, i, s.fileName);
+    const c = b.at;
+    b.view.setUint32(c, s.dataOffset, true);
+    b.view.setUint32(c + 4, s.frames, true);
+    b.view.setUint32(c + 8, s.sampleRate, true);
+    b.view.setUint32(c + 12, s.bitsPerSample, true);
+    b.view.setUint32(c + 16, s.channels, true);
+    b.view.setUint32(c + 20, s.channels, true);
+    b.bytes.set(ascii("EVAW"), c + 28); // "WAVE" as a little-endian word
+    b.view.setUint32(c + 32, s.fileSize, true);
+    b.bytes.set(folder, c + 80);
+    b.bytes.set(ascii(s.fileName), c + 336);
+    blocks.push(b.bytes);
+  });
+
+  const p = block(PARAMS, 0, "Default Param");
+  p.view.setUint32(p.at, PARAM_SLOTS, true);
+  PARAMS_DEFAULT.forEach(([id, value], i) => {
+    p.bytes[p.at + 4 + i] = id;
+    p.view.setInt16(p.at + 4 + PARAM_SLOTS + 2 * i, value, true);
+  });
+  p.view.setUint32(p.at + 4 + 3 * PARAM_SLOTS, PARAM_WIDE_SLOTS, true);
+  blocks.push(p.bytes);
+
+  const out = new Uint8Array(blocks.reduce((n, b) => n + b.length, 0));
+  let at = 0;
+  for (const b of blocks) { out.set(b, at); at += b.length; }
+  return out;
+}
+return { EXS_NAME_MAX, EXS_PATH_MAX, exsDefect, encodeExs };
+})();
+return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m_manifest, ...m_exs });
+})();
+// ---- rcy-sdk end ----
+// rcy-export: cuts a drum break into equal slices and writes a kit.
+// The SDK constant `rcySdk` is defined above this file by the bundler.
+(function rcyExportMain() {
+  "use strict";
+
+  const NODE_MAJOR_REQUIRED = 22;
+  const nodeMajor = Number(String(process.versions.node).split(".")[0]);
+  if (!(nodeMajor >= NODE_MAJOR_REQUIRED)) {
+    process.stderr.write(`rcy-export requires Node.js ${NODE_MAJOR_REQUIRED} or later (running ${process.versions.node})\n`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const fs = require("node:fs");
+  const path = require("node:path");
+
+  // ---- Constants (SPEC.md, Constants table) ----
+
+  /** Hz. The only rate the program accepts and writes; it does not resample. */
+  const SAMPLE_RATE = 44100;
+  /** bits per sample, signed little-endian PCM. The only format accepted and written, so slices are byte copies of the source. */
+  const SAMPLE_WIDTH = 16;
+  /** beats per measure. Every source is treated as 4/4. */
+  const BEATS_PER_MEASURE = 4;
+  /** MIDI key (middle C). Key of the first slice; later slices take the following keys. */
+  const FIRST_KEY = 60;
+  /** MIDI key. The highest MIDI key; a kit cut from audio holds at most LAST_KEY - FIRST_KEY + 1 slices. */
+  const LAST_KEY = 127;
+  /** slices per measure. One slice per quarter note. */
+  const DEFAULT_RESOLUTION = 4;
+  /** ticks per quarter note. Value written by the original implementation, so old and new MIDI files share a grid. */
+  const MIDI_DIVISION = 960;
+  /** MIDI velocity (1..127). Note-on velocity for every slice. */
+  const MIDI_VELOCITY = 100;
+  /** milliseconds. Default: source audio kept either side of each slice in its file when neither the command line nor the manifest states a buffer. 0 keeps a kit's files exactly the slices. */
+  const DEFAULT_BUFFER_MS = 0;
+  /** milliseconds. Parameter bound: the largest --buffer-ms accepted; longer than any drum hit's attack or tail needs. */
+  const MAX_BUFFER_MS = 1000;
+  // MANIFEST_VERSION is rcySdk.MANIFEST_VERSION and is used from there.
+
+  // ---- Errors ----
+
+  /** A refusal: exit 2, one stderr line "error: <message>". */
+  class Refusal extends Error {
+    /** @param {string} message */
+    constructor(message) {
+      super(message);
+      this.name = "Refusal";
+    }
+  }
+
+  /** A command-line syntax error (R01): exit 2, a line on stderr. */
+  class UsageError extends Error {
+    /** @param {string} message */
+    constructor(message) {
+      super(message);
+      this.name = "UsageError";
+    }
+  }
+
+  const USAGE =
+    "usage: rcy-export (--input WAV | --preset ID | --from-manifest FILE) [--out DIR] [--measures M] [--resolution R] [--sfz-dialect {files,offsets}] [--exs] [--buffer-ms N]";
+
+  // ---- Helpers ----
+
+  /**
+   * Absolute path: lexical normalisation, no symlink resolution, no trailing separator.
+   * @param {string} p
+   * @returns {string}
+   */
+  function absPath(p) {
+    return path.resolve(p);
+  }
+
+  /**
+   * @param {string} p
+   * @returns {boolean} whether p names an existing regular file (symlinks followed)
+   */
+  function isExistingFile(p) {
+    try {
+      return fs.statSync(p).isFile();
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * @param {string} p
+   * @returns {boolean} whether p names an existing path that is not a directory
+   */
+  function existsNotDirectory(p) {
+    let st;
+    try {
+      st = fs.statSync(p);
+    } catch {
+      return false;
+    }
+    return !st.isDirectory();
+  }
+
+  /**
+   * @param {unknown} v
+   * @returns {boolean} JSON integer: a number with integral value of magnitude below 2^53
+   */
+  function isInteger(v) {
+    return typeof v === "number" && Number.isSafeInteger(v);
+  }
+
+  /**
+   * @param {unknown} v
+   * @returns {boolean}
+   */
+  function isNumber(v) {
+    return typeof v === "number" && Number.isFinite(v);
+  }
+
+  /**
+   * @param {unknown} v
+   * @returns {boolean}
+   */
+  function isPlainObject(v) {
+    return typeof v === "object" && v !== null && !Array.isArray(v);
+  }
+
+  /**
+   * Compact JSON of a value; `undefined` (a missing member) prints as null.
+   * @param {unknown} v
+   * @returns {string}
+   */
+  function compactJson(v) {
+    if (v === undefined || v === null) return "null";
+    if (typeof v === "boolean") return v ? "true" : "false";
+    if (typeof v === "number") {
+      // SPEC-GAP: "shortest form" for numbers at or above 1e21 or below 1e-6 is
+      // taken as JavaScript's shortest round-trip form (exponent notation, e.g. 1e+21).
+      if (Object.is(v, -0)) return "0";
+      return String(v);
+    }
+    if (typeof v === "string") return rcySdk.jsonString(v);
+    if (Array.isArray(v)) return "[" + v.map(compactJson).join(",") + "]";
+    if (typeof v === "object") {
+      return (
+        "{" +
+        Object.keys(v)
+          .map((k) => rcySdk.jsonString(k) + ":" + compactJson(/** @type {any} */ (v)[k]))
+          .join(",") +
+        "}"
+      );
+    }
+    return "null";
+  }
+
+  /**
+   * JSON.parse that also rejects numbers that overflow to infinity.
+   * @param {string} text
+   * @returns {{ok: true, value: any} | {ok: false}}
+   */
+  function parseJson(text) {
+    let finite = true;
+    let value;
+    try {
+      value = JSON.parse(text, function (_k, v) {
+        if (typeof v === "number" && !Number.isFinite(v)) finite = false;
+        return v;
+      });
+    } catch {
+      return { ok: false };
+    }
+    // SPEC-GAP: a number literal too large for a double (e.g. 1e400) parses to
+    // Infinity in JavaScript; since the Infinity literal makes a file invalid
+    // JSON, such a file is treated as invalid JSON too.
+    if (!finite) return { ok: false };
+    return { ok: true, value };
+  }
+
+  // ---- Command line (R01, R02) ----
+
+  /**
+   * @typedef {{
+   *   input?: string, preset?: string, fromManifest?: string, out?: string,
+   *   measures?: bigint, resolution?: bigint, dialect: "files" | "offsets", exs: boolean
+   * }} Options
+   */
+
+  /**
+   * @param {string} text
+   * @param {string} name
+   * @returns {bigint}
+   */
+  function parseIntArg(text, name) {
+    // SPEC-GAP: surrounding whitespace and a leading sign are accepted in an
+    // integer option value.
+    const t = text.trim();
+    if (!/^[+-]?[0-9]+$/.test(t)) throw new UsageError(`argument ${name}: invalid int value: '${text}'`);
+    return BigInt(t);
+  }
+
+  /**
+   * @param {string[]} argv
+   * @returns {Options}
+   */
+  function parseArgs(argv) {
+    /** @type {Record<string, string>} */
+    const valueOptions = {
+      "--input": "input",
+      "-i": "input",
+      "--preset": "preset",
+      "-p": "preset",
+      "--from-manifest": "fromManifest",
+      "-f": "fromManifest",
+      "--out": "out",
+      "-o": "out",
+      "--measures": "measures",
+      "-m": "measures",
+      "--resolution": "resolution",
+      "-r": "resolution",
+      "--sfz-dialect": "dialect",
+      "--buffer-ms": "bufferMs",
+    };
+    /** @type {Record<string, string>} */
+    const raw = {};
+    let exs = false;
+    for (let i = 0; i < argv.length; i++) {
+      const arg = argv[i];
+      if (arg === "--exs") {
+        exs = true;
+        continue;
+      }
+      let name = arg;
+      /** @type {string | undefined} */
+      let value;
+      // SPEC-GAP: the `--option=value` and `-iVALUE` spellings are accepted as
+      // well as `--option value`.
+      const eq = arg.indexOf("=");
+      if (arg.startsWith("--") && eq > 2) {
+        name = arg.slice(0, eq);
+        value = arg.slice(eq + 1);
+        if (name === "--exs") throw new UsageError("argument --exs: ignored explicit argument");
+      } else if (/^-[a-z]./.test(arg) && !arg.startsWith("--") && Object.hasOwn(valueOptions, arg.slice(0, 2))) {
+        name = arg.slice(0, 2);
+        value = arg.slice(2);
+      }
+      if (!Object.hasOwn(valueOptions, name)) {
+        if (arg.startsWith("-") && arg !== "-") throw new UsageError(`unrecognized arguments: ${arg}`);
+        throw new UsageError(`unrecognized arguments: ${arg}`);
+      }
+      if (value === undefined) {
+        if (i + 1 >= argv.length) throw new UsageError(`argument ${name}: expected one argument`);
+        const next = argv[i + 1];
+        // SPEC-GAP: a following token that starts with "-" and is not a negative
+        // number is not taken as a value; the option then lacks its value (R01).
+        // A following token that looks like an option (and not a negative number) is not a value.
+        if (next.startsWith("-") && next.length > 1 && !/^-[0-9]/.test(next)) {
+          throw new UsageError(`argument ${name}: expected one argument`);
+        }
+        value = next;
+        i++;
+      }
+      // SPEC-GAP: an option given twice keeps its last value (only giving two
+      // different source options is a conflict under R01).
+      raw[valueOptions[name]] = value;
+    }
+
+    const sources = ["input", "preset", "fromManifest"].filter((k) => Object.hasOwn(raw, k));
+    if (sources.length !== 1) {
+      throw new UsageError("exactly one of --input, --preset and --from-manifest is required");
+    }
+
+    /** @type {Options} */
+    const opts = { dialect: "files", exs };
+    if (Object.hasOwn(raw, "input")) opts.input = raw.input;
+    if (Object.hasOwn(raw, "preset")) opts.preset = raw.preset;
+    if (Object.hasOwn(raw, "fromManifest")) opts.fromManifest = raw.fromManifest;
+    if (Object.hasOwn(raw, "out")) opts.out = raw.out;
+    // SPEC-GAP: a non-integer --measures or --resolution is a syntax error in every
+    // mode, including --from-manifest where the values are otherwise ignored.
+    if (Object.hasOwn(raw, "measures")) opts.measures = parseIntArg(raw.measures, "--measures");
+    if (Object.hasOwn(raw, "resolution")) opts.resolution = parseIntArg(raw.resolution, "--resolution");
+    if (Object.hasOwn(raw, "dialect")) {
+      const d = raw.dialect;
+      if (d !== "files" && d !== "offsets") {
+        throw new UsageError(`argument --sfz-dialect: invalid choice: '${d}' (choose from 'files', 'offsets')`);
+      }
+      opts.dialect = d;
+    }
+    if (Object.hasOwn(raw, "bufferMs")) {
+      if (!/^[0-9]+$/.test(raw.bufferMs) || Number(raw.bufferMs) > MAX_BUFFER_MS) {
+        throw new UsageError(`argument --buffer-ms: expected a whole number from 0 to ${MAX_BUFFER_MS}, got '${raw.bufferMs}'`);
+      }
+      opts.bufferMs = Number(raw.bufferMs);
+    }
+    return opts;
+  }
+
+  // ---- Reading the source (R05) ----
+
+  /**
+   * @typedef {ReturnType<typeof rcySdk.parseWav>} Wav
+   */
+
+  /**
+   * Reads and checks the source audio.
+   * @param {string} srcAbs absolute path of the source
+   * @returns {Wav}
+   */
+  function readSource(srcAbs) {
+    let bytes;
+    try {
+      bytes = fs.readFileSync(srcAbs);
+    } catch {
+      // SPEC-GAP: a source that exists but cannot be read is reported with the
+      // "cannot read audio file" message.
+      throw new Refusal(`cannot read audio file: ${srcAbs}`);
+    }
+    /** @type {Wav} */
+    let wav;
+    try {
+      wav = rcySdk.parseWav(bytes);
+    } catch (e) {
+      if (e instanceof rcySdk.WavFormatError) throw new Refusal(`cannot read audio file: ${srcAbs}`);
+      throw e;
+    }
+    if (wav.formatTag !== 1 || wav.frames < 1) throw new Refusal(`cannot read audio file: ${srcAbs}`);
+    if (wav.sampleRate !== SAMPLE_RATE) {
+      throw new Refusal(`Unsupported sample rate: ${wav.sampleRate} Hz. RCY requires 44100 Hz audio files.`);
+    }
+    if (wav.bitsPerSample !== SAMPLE_WIDTH) {
+      throw new Refusal(`unsupported sample width: ${wav.bitsPerSample} bits. RCY requires 16-bit PCM audio files.`);
+    }
+    if (wav.channels > 2) {
+      throw new Refusal(`unsupported channel count: ${wav.channels}. RCY requires mono or stereo audio files.`);
+    }
+    return wav;
+  }
+
+  // ---- Kit model ----
+
+  /**
+   * @typedef {{
+   *   srcAbs: string, wav: Wav, outAbs: string, stem: string,
+   *   bpm: number, measures: number, boundaries: number[],
+   *   slices: {key: number, file: string, role: string}[]
+   * }} KitPlan
+   */
+
+  /**
+   * @param {number} bpm
+   * @returns {void}
+   */
+  function checkTempo(bpm) {
+    if (!rcySdk.tempoWritable(bpm)) {
+      throw new Refusal(`tempo ${rcySdk.fixed(bpm, 2)} BPM cannot be written to MIDI`);
+    }
+  }
+
+  /**
+   * @param {string} outAbs
+   * @returns {string}
+   */
+  function stemOf(outAbs) {
+    return path.basename(outAbs);
+  }
+
+  /**
+   * R09 overwrite check, R24 check (via buildOutputs).
+   * @param {KitPlan} plan
+   * @returns {void}
+   */
+  function checkNoOverwrite(plan) {
+    for (let k = 0; k < plan.slices.length; k++) {
+      const file = plan.slices[k].file;
+      if (absPath(path.join(plan.outAbs, file)) === plan.srcAbs) {
+        throw new Refusal(`slice ${k + 1} file '${file}' would overwrite the source`);
+      }
+    }
+  }
+
+  /**
+   * Cut a source into equal slices (R07, R08, R09).
+   * @param {string} srcAbs
+   * @param {string} outAbs
+   * @param {bigint} measures
+   * @param {bigint} resolution
+   * @returns {KitPlan}
+   */
+  function planFromAudio(srcAbs, outAbs, measures, resolution) {
+    const wav = readSource(srcAbs);
+    const N = wav.frames;
+    const n = measures * resolution;
+    if (n > BigInt(N)) throw new Refusal(`cannot cut ${N} frames into ${n} slices`);
+    const maxSlices = BigInt(LAST_KEY - FIRST_KEY + 1);
+    if (n > maxSlices) {
+      const k = LAST_KEY - FIRST_KEY + 2;
+      throw new Refusal(`slice ${k} key ${FIRST_KEY + k - 1} is not a MIDI note (0..127)`);
+    }
+    const measuresNum = Number(measures);
+    const bpm = (60 * measuresNum * BEATS_PER_MEASURE) / (N / SAMPLE_RATE);
+    checkTempo(bpm);
+    const count = Number(n);
+    const bigN = BigInt(N);
+    /** @type {number[]} */
+    const boundaries = [];
+    for (let i = 0n; i <= n; i++) boundaries.push(Number((i * bigN) / n));
+    const slices = [];
+    for (let k = 1; k <= count; k++) {
+      slices.push({ key: FIRST_KEY + k - 1, file: String(k).padStart(3, "0") + ".wav", role: "" });
+    }
+    /** @type {KitPlan} */
+    const plan = { srcAbs, wav, outAbs, stem: stemOf(outAbs), bpm, measures: measuresNum, boundaries, slices };
+    checkNoOverwrite(plan);
+    return plan;
+  }
+
+  // ---- Outputs ----
+
+  /**
+   * @typedef {{
+   *   slices: {file: string, bytes: Uint8Array}[],
+   *   sfzName: string, sfz: string, midName: string, mid: Uint8Array,
+   *   exsName: string, exs: Uint8Array | null,
+   *   manifestName: string, manifest: string, sliceCount: number
+   * }} Outputs
+   */
+
+  /**
+   * Builds every output in memory; makes the R24 refusal. Writes nothing.
+   * @param {KitPlan} plan
+   * @param {"files" | "offsets"} dialect
+   * @param {boolean} withExs
+   * @returns {Outputs}
+   */
+  function buildOutputs(plan, dialect, withExs) {
+    const { wav, boundaries } = plan;
+    const source = path.relative(plan.outAbs, plan.srcAbs).split(path.sep).join("/");
+    const kit = {
+      source,
+      sampleRate: SAMPLE_RATE,
+      channels: wav.channels,
+      bpm: plan.bpm,
+      measures: plan.measures,
+      boundaries: boundaries.slice(),
+      slices: plan.slices.map((s) => ({ key: s.key, file: s.file, role: s.role })),
+      bufferMs: plan.bufferMs,
+    };
+
+    const sliceFiles = plan.slices.map((s, idx) => {
+      const points = rcySdk.slicePoints(kit, idx, wav.frames);
+      const data = wav.data.subarray(points.fileStart * wav.blockAlign, points.fileEnd * wav.blockAlign);
+      const bytes = rcySdk.encodeWav({ channels: wav.channels, sampleRate: SAMPLE_RATE, bitsPerSample: SAMPLE_WIDTH, data });
+      return { file: s.file, key: s.key, bytes, points };
+    });
+
+    /** @type {Uint8Array | null} */
+    let exs = null;
+    if (withExs) {
+      const instrument = {
+        name: plan.stem,
+        folder: plan.outAbs,
+        samples: sliceFiles.map((sf) => {
+          const info = rcySdk.parseWav(sf.bytes);
+          return {
+            key: sf.key,
+            fileName: sf.file,
+            dataOffset: info.dataOffset,
+            frames: info.frames,
+            sampleRate: info.sampleRate,
+            bitsPerSample: info.bitsPerSample,
+            channels: info.channels,
+            fileSize: sf.bytes.length,
+            start: sf.points.offset,
+            end: sf.points.end,
+          };
+        }),
+      };
+      const defect = rcySdk.exsDefect(instrument);
+      if (defect !== null && defect !== undefined) throw new Refusal(`cannot write EXS instrument: ${defect}`);
+      exs = rcySdk.encodeExs(instrument);
+    }
+
+    const regionStart = boundaries[0];
+    const notes = plan.slices.map((s, idx) => ({
+      key: s.key,
+      velocity: MIDI_VELOCITY,
+      onTick: rcySdk.tickAtFrame(boundaries[idx] - regionStart, plan.bpm, MIDI_DIVISION, SAMPLE_RATE),
+      offTick: rcySdk.tickAtFrame(boundaries[idx + 1] - regionStart, plan.bpm, MIDI_DIVISION, SAMPLE_RATE),
+    }));
+    // SPEC-GAP: if encodeMidi throws for notes the spec allows (e.g. ticks that
+    // collide in a hand-edited manifest), the run fails with exit 1 before any write.
+    const mid = rcySdk.encodeMidi({ division: MIDI_DIVISION, bpm: plan.bpm, notes });
+    const sfz = rcySdk.sfzText(kit, dialect, wav.frames);
+    const manifest = rcySdk.manifestText(kit);
+
+    return {
+      slices: sliceFiles.map((sf) => ({ file: sf.file, bytes: sf.bytes })),
+      sfzName: `${plan.stem}.sfz`,
+      sfz,
+      midName: `${plan.stem}.mid`,
+      mid,
+      exsName: `${plan.stem}.exs`,
+      exs,
+      manifestName: `${plan.stem}.rcy.json`,
+      manifest,
+      sliceCount: plan.slices.length,
+    };
+  }
+
+  /**
+   * Writes the kit (R23, R19). Manifest last.
+   * @param {string} outAbs
+   * @param {Outputs} o
+   * @returns {void}
+   */
+  function writeOutputs(outAbs, o) {
+    fs.mkdirSync(outAbs, { recursive: true });
+    for (const s of o.slices) fs.writeFileSync(path.join(outAbs, s.file), s.bytes);
+    // SPEC-GAP: the SFZ and MIDI files are written after the slice files and
+    // before the EXS file; the spec fixes only EXS after slices and manifest last.
+    fs.writeFileSync(path.join(outAbs, o.sfzName), Buffer.from(o.sfz, "utf8"));
+    fs.writeFileSync(path.join(outAbs, o.midName), o.mid);
+    const exsPath = path.join(outAbs, o.exsName);
+    if (o.exs !== null) {
+      fs.writeFileSync(exsPath, o.exs);
+    } else {
+      // SPEC-GAP: only a non-directory entry named <stem>.exs is removed; a
+      // directory of that name is left alone.
+      let st = null;
+      try {
+        st = fs.lstatSync(exsPath);
+      } catch {
+        st = null;
+      }
+      if (st !== null && !st.isDirectory()) fs.unlinkSync(exsPath);
+    }
+    fs.writeFileSync(path.join(outAbs, o.manifestName), Buffer.from(o.manifest, "utf8"));
+  }
+
+  // ---- Modes ----
+
+  /**
+   * @param {Options} opts
+   * @returns {{plan: KitPlan, resolutionValue: number}}
+   */
+  function modeInput(opts) {
+    if (opts.out === undefined) throw new Refusal("--out is required with --preset or --input");
+    if (existsNotDirectory(opts.out)) throw new Refusal(`output path is not a directory: ${opts.out}`);
+    if (opts.measures === undefined) throw new Refusal("--measures is required with --input");
+    const input = /** @type {string} */ (opts.input);
+    if (!isExistingFile(input)) throw new Refusal(`input file not found: ${input}`);
+    const resolution = opts.resolution === undefined ? BigInt(DEFAULT_RESOLUTION) : opts.resolution;
+    if (opts.measures < 1n || resolution < 1n) throw new Refusal("--measures and --resolution must be positive");
+    const plan = planFromAudio(absPath(input), absPath(opts.out), opts.measures, resolution);
+    return { plan, resolutionValue: plan.slices.length / plan.measures };
+  }
+
+  /**
+   * @param {Options} opts
+   * @returns {{plan: KitPlan, resolutionValue: number}}
+   */
+  function modePreset(opts) {
+    if (opts.out === undefined) throw new Refusal("--out is required with --preset or --input");
+    if (existsNotDirectory(opts.out)) throw new Refusal(`output path is not a directory: ${opts.out}`);
+    const catalogDir = process.env.RCY_PRESETS;
+    if (catalogDir === undefined || catalogDir === "") {
+      throw new Refusal("RCY_PRESETS is not set; it must name the preset catalog directory");
+    }
+    const catalogMsg = `preset catalog not found: ${catalogDir}/presets.json`;
+    const catalogAbs = absPath(catalogDir);
+    let text;
+    try {
+      text = fs.readFileSync(path.join(catalogAbs, "presets.json"), "utf8");
+    } catch {
+      throw new Refusal(catalogMsg);
+    }
+    const parsed = parseJson(text);
+    if (!parsed.ok || !isPlainObject(parsed.value)) throw new Refusal(catalogMsg);
+    const catalog = parsed.value;
+    const id = /** @type {string} */ (opts.preset);
+    // SPEC-GAP: an entry that is not a JSON object is treated as no entry for the id.
+    if (!Object.hasOwn(catalog, id) || !isPlainObject(catalog[id])) throw new Refusal(`preset '${id}' not found`);
+    const entry = catalog[id];
+    /** @type {bigint} */
+    let measures;
+    if (opts.measures !== undefined) {
+      measures = opts.measures;
+    } else {
+      // SPEC-GAP: a catalog `measures` that is absent, null or not an integer
+      // counts as "has no measures".
+      if (!isInteger(entry.measures)) throw new Refusal(`preset '${id}' has no measures; pass --measures`);
+      measures = BigInt(entry.measures);
+    }
+    const resolution = opts.resolution === undefined ? BigInt(DEFAULT_RESOLUTION) : opts.resolution;
+    if (measures < 1n || resolution < 1n) throw new Refusal("--measures and --resolution must be positive");
+    // SPEC-GAP: a `file` member that is missing or not a string names no audio
+    // file; it is reported as preset audio not found at the catalog directory.
+    const audioAbs = typeof entry.file === "string" && entry.file !== "" ? path.resolve(catalogAbs, entry.file) : catalogAbs;
+    // SPEC-GAP: an audio path that exists but is not a regular file (e.g. a
+    // directory) is reported as "preset audio not found".
+    if (!isExistingFile(audioAbs)) throw new Refusal(`preset audio not found: ${audioAbs}`);
+    const plan = planFromAudio(audioAbs, absPath(opts.out), measures, resolution);
+    return { plan, resolutionValue: plan.slices.length / plan.measures };
+  }
+
+  /**
+   * @param {Options} opts
+   * @returns {{plan: KitPlan, resolutionValue: number}}
+   */
+  function modeManifest(opts) {
+    const given = /** @type {string} */ (opts.fromManifest);
+    const manifestAbs = absPath(given);
+    // SPEC-GAP: a manifest path that exists but is not a regular file is
+    // reported as "manifest not found".
+    if (!isExistingFile(manifestAbs)) throw new Refusal(`manifest not found: ${given}`);
+    const manifestDir = path.dirname(manifestAbs);
+    if (opts.out !== undefined && existsNotDirectory(opts.out)) {
+      throw new Refusal(`output path is not a directory: ${opts.out}`);
+    }
+    const outAbs = opts.out !== undefined ? absPath(opts.out) : manifestDir;
+    const stem = stemOf(outAbs);
+
+    let text;
+    try {
+      text = fs.readFileSync(manifestAbs, "utf8");
+    } catch {
+      // SPEC-GAP: a manifest file that exists but cannot be read is reported
+      // as "manifest not found".
+      throw new Refusal(`manifest not found: ${given}`);
+    }
+    const parsed = parseJson(text);
+    if (!parsed.ok) throw new Refusal(`${given}: invalid JSON`);
+    const m = parsed.value;
+    if (!isPlainObject(m)) throw new Refusal("manifest must be a JSON object");
+
+    /** @param {string} k */
+    const get = (k) => (Object.hasOwn(m, k) ? m[k] : undefined);
+
+    const rcy = get("rcy");
+    if (!isInteger(rcy) || rcy !== rcySdk.MANIFEST_VERSION) {
+      throw new Refusal(`unsupported manifest version ${compactJson(rcy)}, expected ${rcySdk.MANIFEST_VERSION}`);
+    }
+    const region = get("region");
+    if (!isPlainObject(region)) throw new Refusal("region must be an object with start and end");
+    const slices = get("slices");
+    if (!Array.isArray(slices)) throw new Refusal("slices must be a list");
+    const boundaries = get("boundaries");
+    if (!Array.isArray(boundaries) || !boundaries.every(isInteger)) {
+      throw new Refusal("boundaries must be a list of integers");
+    }
+    const b = boundaries.length;
+    if (slices.length !== b - 1) {
+      throw new Refusal(`${b} boundaries define ${b - 1} slices, but ${slices.length} slices are listed`);
+    }
+    const source = get("source");
+    if (typeof source !== "string") throw new Refusal(`source must be a string, got ${compactJson(source)}`);
+    const regionStart = Object.hasOwn(region, "start") ? region.start : undefined;
+    const regionEnd = Object.hasOwn(region, "end") ? region.end : undefined;
+    /** @type {[string, unknown][]} */
+    const intMembers = [
+      ["sample_rate", get("sample_rate")],
+      ["channels", get("channels")],
+      ["measures", get("measures")],
+      ["start", regionStart],
+      ["end", regionEnd],
+    ];
+    for (const [name, v] of intMembers) {
+      if (!isInteger(v)) throw new Refusal(`${name} must be an integer, got ${compactJson(v)}`);
+    }
+    const sampleRate = /** @type {number} */ (get("sample_rate"));
+    const channels = /** @type {number} */ (get("channels"));
+    const measures = /** @type {number} */ (get("measures"));
+    const start = /** @type {number} */ (regionStart);
+    const end = /** @type {number} */ (regionEnd);
+    const bpm = get("bpm");
+    if (!isNumber(bpm)) throw new Refusal(`bpm must be a number, got ${compactJson(bpm)}`);
+
+    // SPEC-GAP: each row of the R22 table is checked across all slices before
+    // the next row, so the first defect is found row by row, then slice by slice;
+    // within the index/key row a slice's index is checked before its key.
+    for (const s of slices) {
+      if (!isPlainObject(s)) throw new Refusal("each slice must be a JSON object");
+    }
+    /** @param {any} s @param {string} k */
+    const sget = (s, k) => (Object.hasOwn(s, k) ? s[k] : undefined);
+    for (const s of slices) {
+      for (const k of ["index", "key"]) {
+        const v = sget(s, k);
+        if (!isInteger(v)) throw new Refusal(`${k} must be an integer, got ${compactJson(v)}`);
+      }
+    }
+    for (const s of slices) {
+      const v = sget(s, "file");
+      if (typeof v !== "string") throw new Refusal(`file must be a string, got ${compactJson(v)}`);
+    }
+    for (const s of slices) {
+      if (Object.hasOwn(s, "role") && typeof s.role !== "string") {
+        throw new Refusal(`slice role must be a string, got ${compactJson(s.role)}`);
+      }
+    }
+    if (source === "") throw new Refusal("source must be a non-empty path");
+    if (sampleRate <= 0) throw new Refusal(`sample_rate must be positive, got ${compactJson(sampleRate)}`);
+    if (channels !== 1 && channels !== 2) throw new Refusal(`channels must be 1 or 2, got ${compactJson(channels)}`);
+    if (bpm <= 0) throw new Refusal(`bpm must be a positive number, got ${compactJson(bpm)}`);
+    const bufferMs = get("buffer_ms");
+    if (bufferMs !== undefined && (!isInteger(bufferMs) || bufferMs < 0 || bufferMs > MAX_BUFFER_MS)) {
+      throw new Refusal(`buffer_ms must be an integer from 0 to ${MAX_BUFFER_MS}, got ${compactJson(bufferMs)}`);
+    }
+    if (measures < 1) throw new Refusal(`measures must be >= 1, got ${compactJson(measures)}`);
+    if (start < 0) throw new Refusal(`region start must be >= 0, got ${compactJson(start)}`);
+    if (b < 2) throw new Refusal("boundaries must hold at least the region start and end");
+    for (let i = 1; i < b; i++) {
+      if (!(boundaries[i] > boundaries[i - 1])) throw new Refusal("boundaries must be strictly increasing");
+    }
+    if (boundaries[0] !== start || boundaries[b - 1] !== end) {
+      throw new Refusal(
+        `boundaries must run from region start ${start} to region end ${end}, got ${boundaries[0]}..${boundaries[b - 1]}`
+      );
+    }
+    slices.forEach((s, p) => {
+      if (s.index !== p + 1) {
+        throw new Refusal(`slice at position ${p + 1} has index ${s.index}; indices are 1-based and sequential`);
+      }
+    });
+    for (const s of slices) {
+      if (s.key < 0 || s.key > LAST_KEY) throw new Refusal(`slice ${s.index} key ${s.key} is not a MIDI note (0..127)`);
+    }
+    for (const s of slices) {
+      if (s.file === "") throw new Refusal(`slice ${s.index} has an empty file name`);
+    }
+    for (const s of slices) {
+      const f = s.file;
+      if (f.includes("/") || f.includes("\\") || f === "." || f === "..") {
+        throw new Refusal(`slice ${s.index} file '${f}' must be a bare file name`);
+      }
+    }
+    const seen = new Set();
+    for (const s of slices) {
+      if (seen.has(s.file)) throw new Refusal(`slice file '${s.file}' is used by more than one slice`);
+      seen.add(s.file);
+    }
+    const kitNames = new Set([`${stem}.sfz`, `${stem}.mid`, `${stem}.rcy.json`, `${stem}.exs`]);
+    for (const s of slices) {
+      if (kitNames.has(s.file)) throw new Refusal(`slice ${s.index} file '${s.file}' is a kit file name`);
+    }
+    checkTempo(bpm);
+
+    const srcAbs = path.resolve(manifestDir, source);
+    // SPEC-GAP: a source path that exists but is not a regular file is
+    // reported as "source audio not found".
+    if (!isExistingFile(srcAbs)) throw new Refusal(`source audio not found: ${srcAbs}`);
+    const wav = readSource(srcAbs);
+    if (sampleRate !== wav.sampleRate) {
+      throw new Refusal(`manifest sample_rate ${sampleRate} != source ${wav.sampleRate} (${srcAbs})`);
+    }
+    if (channels !== wav.channels) {
+      throw new Refusal(`manifest channels ${channels} != source ${wav.channels} (${srcAbs})`);
+    }
+    if (end > wav.frames) throw new Refusal(`region end ${end} exceeds source length ${wav.frames} (${srcAbs})`);
+
+    /** @type {KitPlan} */
+    const plan = {
+      srcAbs,
+      wav,
+      outAbs,
+      stem,
+      bpm,
+      measures,
+      boundaries: boundaries.slice(),
+      slices: slices.map((s) => ({ key: s.key, file: s.file, role: Object.hasOwn(s, "role") ? s.role : "" })),
+      bufferMs,
+    };
+    checkNoOverwrite(plan);
+    return { plan, resolutionValue: plan.slices.length / plan.measures };
+  }
+
+  // ---- Main ----
+
+  /**
+   * @param {string[]} argv
+   * @returns {number} exit code
+   */
+  function run(argv) {
+    /** @type {Options} */
+    let opts;
+    try {
+      opts = parseArgs(argv);
+    } catch (e) {
+      if (e instanceof UsageError) {
+        process.stderr.write(`${USAGE}\nrcy-export: error: ${e.message}\n`);
+        return 2;
+      }
+      throw e;
+    }
+    try {
+      const { plan, resolutionValue } =
+        opts.input !== undefined ? modeInput(opts) : opts.preset !== undefined ? modePreset(opts) : modeManifest(opts);
+      // The command line's buffer wins over the manifest's, which wins over the default.
+      plan.bufferMs = opts.bufferMs ?? plan.bufferMs ?? DEFAULT_BUFFER_MS;
+      const outputs = buildOutputs(plan, opts.dialect, opts.exs);
+      writeOutputs(plan.outAbs, outputs);
+      const lines = [
+        `source: ${plan.srcAbs}`,
+        `tempo: ${rcySdk.fixed(plan.bpm, 2)} BPM (${plan.measures} measures x ${rcySdk.significant(resolutionValue, 6)})`,
+        `slices: ${outputs.sliceCount}`,
+        `sfz: ${path.join(plan.outAbs, outputs.sfzName)} (${opts.dialect})`,
+        `midi: ${path.join(plan.outAbs, outputs.midName)}`,
+      ];
+      if (opts.exs) lines.push(`exs: ${path.join(plan.outAbs, outputs.exsName)}`);
+      lines.push(`manifest: ${path.join(plan.outAbs, outputs.manifestName)}`);
+      process.stdout.write(lines.join("\n") + "\n");
+      return 0;
+    } catch (e) {
+      if (e instanceof Refusal) {
+        // SPEC-GAP: a CR or LF inside a refusal message (e.g. from a path) is
+        // replaced by a space so the refusal stays exactly one stderr line.
+        process.stderr.write(`error: ${e.message.replace(/[\r\n]/g, " ")}\n`);
+        return 2;
+      }
+      throw e;
+    }
+  }
+
+  try {
+    process.exitCode = run(process.argv.slice(2));
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    process.stderr.write(`rcy-export: ${msg.replace(/[\r\n]/g, " ")}\n`);
+    process.exitCode = 1;
+  }
+})();
