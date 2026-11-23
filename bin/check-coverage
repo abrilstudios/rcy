@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+"""Fail when a requirement identifier in SPEC.md has no scenario tagged with it,
+or a scenario carries a tag SPEC.md doesn't define."""
+import re
+import sys
+from pathlib import Path
+
+root = Path(__file__).resolve().parents[1]
+defined = set(re.findall(r"^\*\*(R\d\d)\.", (root / "SPEC.md").read_text(), re.M))
+tagged = set()
+for feature in sorted((root / "features").glob("*.feature")):
+    tagged |= set(re.findall(r"@(R\d\d)\b", feature.read_text()))
+missing, unknown = sorted(defined - tagged), sorted(tagged - defined)
+for name in missing:
+    print("no scenario for " + name)
+for name in unknown:
+    print("tag without a requirement: " + name)
+print(f"{len(defined)} requirements, {len(defined & tagged)} covered")
+sys.exit(1 if missing or unknown else 0)

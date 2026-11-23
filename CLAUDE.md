@@ -37,25 +37,24 @@ done
 
 ## 🔧 Available Tools
 
-### Project Tools
-- `just run` - Run the TUI application (**always use this, never run Python directly**)
-- `just test` - Run all tests
-- `just test-file <file>` - Run specific test file
-- `just setup` - Install the project and all extras with uv
-- `just doctor` - Check python, presets, audio output and MIDI
-- `just smoke` - Headless slice and export of a bundled break
-- `./tools/bin/env` - Show environment info
+### Kit programs
+- `just export ...` - Cut a kit (`node export/rcy-export`); `SPEC.md` states every option
+- `just window ...` - Open the slicing window (`window/rcy-window` under Electron); `WINDOW.md` states its behaviour
+- `just build` - Rebuild the SDK and both programs after editing a source
+- `just test` - SDK tests and the window scenarios
+- `just setup-window` - Install Electron and Playwright
 
-### Hardware Tools
-- `tools/bin/s2800` - S2800 sample upload/list/delete
+### Hardware tools (the `hardware/` package)
+- `hardware/tools/bin/s2800` - S2800 sample upload/list/delete
 - `just s2800-agent` - S2800 protocol spec and live device parameters
+- `just mpc` - MPC2000XL sample upload
 - `just controller [PROG]` - TR-909 web GUI for real-time S2800 sound design (no server required)
 - `just agent-start` / `just agent-stop` - ADK agent server
-- `just ask <agent> <query>` - Query a running ADK agent
 
-### Audio Tools
-- `audio-trim <file.wav>` - Analyze and suggest trim points for drum samples
-- `audio-viz <file.wav> --open` - Visualize waveform with trim analysis
+### Playing a file locally
+```bash
+afplay /tmp/kit/001.wav
+```
 
 ---
 
@@ -95,7 +94,7 @@ done
 
 | Task | Use |
 |------|-----|
-| Upload samples | `tools/bin/s2800 upload` |
+| Upload samples | `hardware/tools/bin/s2800 upload` |
 | Configure keygroup params | `just s2800-agent write-kg` in a loop |
 | Read current settings | `just s2800-agent read-kg` |
 | Look up protocol details | `just s2800-agent param` |
@@ -149,18 +148,30 @@ from task 13 instead of restarting everything.
 
 ## 🚨 Critical Rules
 
-### Running the Application
-```bash
-just run
-```
-**That's it.** Don't use `python3 -m main`, don't activate venv, don't set PYTHONPATH manually.
+### The window is launched with its whole task
+A person does only what needs eyes and ears. The command line states the
+manifest, the first-pass split, the task text, where the result goes (`--out`)
+and where the run record goes (`--record`). Never add a file picker, a
+save-as dialog or a setup question to the window.
+
+### Specifications match the code
+`SPEC.md` describes `export/main.js` and `WINDOW.md` describes
+`window/main.js`. A change to either program changes its specification in the
+same commit, and `just build` regenerates `export/rcy-export` and
+`window/rcy-window`, which are never edited directly. A change under
+`rcy-sdk/src` also changes the two SHA-256 pins in each specification
+(`python3 bin/check-sdk` reports a mismatch).
+
+### Run records are kept
+Every window run writes its `--record` file. Keep the records; they are the
+history of what a person changed. They name local paths, so `runs/` is
+ignored by git.
 
 ### Before Long Operations
 **Ask the user before operations >5 minutes.**
 
 Examples:
 - Uploading 12 samples to S2800 (~4-5 minutes)
-- Running full test suite
 - Bulk audio processing
 
 ### Git Workflow
@@ -178,13 +189,16 @@ Examples:
 ## 🏗️ Project Structure
 
 ```
-src/python/          # All source code (use absolute imports)
-config/              # JSON configuration files
-tests/               # Test files
-tools/bin/           # CLI tools (prefer these over writing Python)
+SPEC.md, WINDOW.md   # behaviour of rcy-export and rcy-window
+export/              # rcy-export: main.js (source) and the built program
+window/              # rcy-window: main.js (source) and the built program
+rcy-sdk/             # file formats: WAV, MIDI, SFZ, EXS, manifest
+features/            # acceptance scenarios
+presets/             # preset catalog and audio
+hardware/            # Python MIDI tools: src/python, tools/bin, tests
 ```
 
-### Import Hygiene
+### Python import hygiene (hardware/)
 - All imports at the top of the file
 - Never modify `sys.path` dynamically
 - Use absolute imports: `from s2800 import S2800`
@@ -196,11 +210,11 @@ tools/bin/           # CLI tools (prefer these over writing Python)
 ### Pattern 1: Check Before Upload
 ```bash
 # Always list samples first
-tools/bin/s2800 list
+hardware/tools/bin/s2800 list
 
 # Only upload if needed
 if ! grep -q "KICK" samples.txt; then
-  tools/bin/s2800 upload sounds/kick.wav --name "KICK"
+  hardware/tools/bin/s2800 upload sounds/kick.wav --name "KICK"
 fi
 ```
 
@@ -263,35 +277,13 @@ done
 ## 🧪 Testing
 
 ```bash
-just test                          # Run all tests
-just test-file tests/test_s2800.py # Run specific file
-uv run pytest -m s2800             # Run S2800 hardware tests
+just test                                              # SDK tests and window scenarios
+cd hardware && uv run --with pytest pytest -m s2800    # S2800 tests, device connected
 ```
 
-- Write tests for new features
+- Add a scenario for a new behaviour of the window or the export
 - Run tests before committing
 - Hardware tests require devices connected
-
----
-
-## 🎵 Audio Sample Workflow
-
-### Analyzing Samples
-```bash
-# Check if sample needs trimming
-audio-trim sounds/606/kick.wav
-
-# Visualize the waveform
-audio-viz sounds/606/kick.wav --open
-
-# Trim if needed
-audio-trim sounds/606/kick.wav --trim sounds/606-trimmed/kick.wav
-```
-
-### Playing Samples Locally
-```bash
-afplay sounds/606-trimmed/kick.wav
-```
 
 ---
 
@@ -303,7 +295,7 @@ afplay sounds/606-trimmed/kick.wav
 4. **Use s2800-agent** - Don't guess protocol values, look them up
 5. **Bash loops > Python loops** - For simple iterations, bash is clearer
 6. **Ask before long ops** - Get permission for >5 minute operations
-7. **just run** - That's how you run the app. Period.
+7. **The command line is the task** - Windows open in the state it declares and report through the exit code, `--out` and `--record`
 
 ---
 

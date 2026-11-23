@@ -1,58 +1,19 @@
-# Byte-compiled / optimized / DLL files
+.venv/
 __pycache__/
 *.py[cod]
-*$py.class
-
-# Virtual environment
-venv/
-.env/
-.venv/
-
-# Jupyter Notebook checkpoints
-.ipynb_checkpoints/
-
-# macOS system files
-.DS_Store
-
-# Logs and debug files
-logs/
-*.log
-
-# Export output directory
-exports/
-
-# Python packaging
 *.egg-info/
-*.egg/
-dist/
+.DS_Store
+.env
+**/.claude/settings.local.json
+
+# Local build and trial evidence
+reports/
 build/
 
-# IDE and editor files
-.vscode/
-.idea/
-*.swp
-*.swo
+# Run records name local paths; they are kept outside git
+runs/
 
-# Sample libraries and temporary workspace
-tal/
-scratch/
-
-# Sample pack audio files (downloaded separately)
-sample-packs/*/audio/
-
-# Tutorial sample directories
-mp3/
-wav/
-tutorials/
-
-
-**/.claude/settings.local.json
-.env
-
-# Test and coverage output
-.coverage
-coverage.xml
-htmlcov/
+tools/window-runtime/node_modules/
+.worktrees/
 .pytest_cache/
-.mypy_cache/
-.ruff_cache/
+.agent-sessions.db

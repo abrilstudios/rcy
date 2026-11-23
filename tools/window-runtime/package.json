@@ -1,0 +1,10 @@
+{
+  "name": "rcy-window-runtime",
+  "private": true,
+  "version": "0.0.0",
+  "main": "main.js",
+  "devDependencies": {
+    "electron": "33.4.11",
+    "playwright-core": "1.65.1"
+  }
+}

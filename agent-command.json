@@ -1,0 +1,1 @@
+["claude", "-p", "--model", "{model}", "--permission-mode", "acceptEdits", "--allowedTools", "Read,Write,Edit,Bash", "--max-turns", "60"]

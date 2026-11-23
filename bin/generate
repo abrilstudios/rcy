@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+"""Generate an rcy-export candidate through riemann-generate.
+
+riemann-generate prepares a pinned input directory, runs the agent command
+from agent-command.json with bin/prompt.md on stdin, checks that no input byte
+changed, verifies output/build-manifest.json against output/rcy-export and the
+SPEC.md bytes, and publishes all three into the build directory. Evidence of
+each attempt stays under <build>/generations/.
+
+The agent runs under macOS sandbox-exec with reads denied on this repository's
+scenarios, harness and reports and on every --deny-read path, so the program
+is written from SPEC.md and INVARIANTS.md alone. The build directory must lie
+outside this repository.
+
+Usage: bin/generate --model MODEL --command-file agent-command.json
+                    --build-dir /abs/build --interpreter /abs/node
+                    --deny-read PATH [--deny-read PATH ...]
+"""
+import argparse
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from harness import inputs as export_target
+from harness import window_inputs as window_target
+from harness.inputs import ROOT, WITHHELD
+from riemann_harness.generate import main
+
+SANDBOX = Path("/usr/bin/sandbox-exec")
+
+p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+p.add_argument("--target", choices=["export", "window"], default="export",
+               help="export: rcy-export from SPEC.md; window: rcy-window from WINDOW.md")
+p.add_argument("--model", required=True)
+p.add_argument("--command-file", required=True)
+p.add_argument("--build-dir", required=True)
+p.add_argument("--interpreter", required=True,
+               help="Absolute path to the node the agent tests its program on; the same one bin/trial is given")
+p.add_argument("--deny-read", action="append", required=True, metavar="PATH",
+               help="Existing path the agent must not read, such as the reference implementation's "
+                    "repository and the directory of session transcripts; repeatable")
+a = p.parse_args()
+target = window_target if a.target == "window" else export_target
+ARTIFACT, INPUTS, PROMPT, arguments = target.ARTIFACT, target.INPUTS, target.PROMPT, target.arguments
+SPEC = "WINDOW.md" if a.target == "window" else "SPEC.md"
+
+if subprocess.call([sys.executable, str(ROOT / "bin/check-sdk"), "--spec", str(ROOT / SPEC)]):
+    sys.exit("bin/generate: rebuild the SDK or update the pin in SPEC.md")
+missing = [name for name in INPUTS if not (ROOT / name).is_file()] + ([] if PROMPT.is_file() else [str(PROMPT)])
+if missing:
+    sys.exit("bin/generate: missing generator input: " + ", ".join(missing))
+if not SANDBOX.is_file():
+    sys.exit(f"bin/generate: {SANDBOX} not found; the agent can't be run without a read sandbox")
+build = Path(a.build_dir).resolve()
+if build == ROOT or ROOT in build.parents:
+    sys.exit("bin/generate: --build-dir must be outside the repository: " + str(build))
+denied = [ROOT / name for name in WITHHELD]
+for given in a.deny_read:
+    path = Path(given).resolve()
+    if not path.exists():
+        sys.exit("bin/generate: --deny-read path doesn't exist: " + given)
+    denied.append(path)
+for path in denied:
+    if path == build or path in build.parents:
+        sys.exit(f"bin/generate: --build-dir {build} lies inside denied path {path}")
+    if '"' in str(path):
+        sys.exit("bin/generate: denied path holds a double quote: " + str(path))
+
+interpreter = Path(a.interpreter)
+if not interpreter.is_absolute() or interpreter.name != "node" or not interpreter.is_file():
+    sys.exit("bin/generate: --interpreter must be an absolute path to a file named node")
+# The agent's `node` is the interpreter the trial grades on.
+os.environ["PATH"] = f"{interpreter.parent}:{os.environ['PATH']}"
+if a.target == "window":
+    electron = window_target.RUNTIME / "node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"
+    if not electron.is_file():
+        sys.exit(f"bin/generate: {electron} not found; run npm ci in {window_target.RUNTIME}")
+    # The agent launches its candidate with this Electron and drives it with
+    # the playwright-core beside it.
+    os.environ["RCY_ELECTRON"] = str(electron)
+    os.environ["NODE_PATH"] = str(window_target.RUNTIME / "node_modules")
+
+command = json.loads(Path(a.command_file).read_text())
+if not isinstance(command, list) or not command or not all(isinstance(v, str) for v in command):
+    sys.exit("bin/generate: command file must be a JSON argv array")
+profile = "(version 1)(allow default)" + "".join(f'(deny file-read* (subpath "{path}"))' for path in denied)
+build.mkdir(parents=True, exist_ok=True)
+wrapped = build / "sandboxed-agent-command.json"
+wrapped.write_text(json.dumps([str(SANDBOX), "-p", profile] + command, indent=2) + "\n")
+
+status = main(["--model", a.model, "--command-file", str(wrapped), "--build-dir", str(build)] + arguments())
+artifact = build / ARTIFACT
+if artifact.is_file():
+    gaps = [f"{number}: {line.strip()}" for number, line in enumerate(artifact.read_text().splitlines(), start=1)
+            if "SPEC-GAP:" in line]
+    (build / "spec-gaps.txt").write_text("".join(gap + "\n" for gap in gaps))
+    print(f"{len(gaps)} SPEC-GAP notes written to {build / 'spec-gaps.txt'}")
+sys.exit(status)

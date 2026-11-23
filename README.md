@@ -1,306 +1,149 @@
-# RCY
+# rcy
 
-**RCY** is a terminal-based breakbeat slicer for cutting drum loops into samples and exporting them in the **SFZ** format for samplers like **TAL-Sampler**. Inspired by New Order's Movement, brutalist design, and hauntological software.
+rcy cuts a drum break into a sampler kit. It has two programs: `rcy-export`,
+a command-line program that writes the kit, and `rcy-window`, a single window
+where a person places the cuts by eye and ear. An agent or a script starts
+both with a complete command line; the window asks the person for nothing the
+command line could have said.
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│ amen.wav  137.7 BPM  4 bars  4 slices                                │
-├──────────────────────────────────────────────────────────────────────┤
-│L                ▼                ▼                ▼                 R│
-│▇▄▆▁▅▂▂▂▂▂▂▃▅▅▁▂▁▆▃▄▅▁▅▁▁▂▂▂▃▅▅▄▁▂▁▆▂▆▂▅▃▂▁▂▂▂▇▁▃▁▅▂▂▂▃▄▆▅▁▂▂▂▃▇▃▃▂▅▃▃│
-│▇▄▆▁▅▂▂▂▂▂▂▃▅▅▁▂▁▆▃▄▅▁▅▁▁▂▂▂▃▅▅▄▁▂▁▆▂▆▂▅▃▂▁▂▂▂▇▁▃▁▅▂▂▂▃▄▆▅▁▂▂▂▃▇▃▃▂▅▃▃│
-│        1                2                 3                4         │
-│0.00s                            3.49s                           6.97s│
-└──────────────────────────────────────────────────────────────────────┘
-```
+This is an alpha. The file formats and command lines can still change.
 
-## Quick Start
+## What a kit is
 
-Needs [uv](https://docs.astral.sh/uv/) and, optionally, [just](https://github.com/casey/just).
+`rcy-export` writes one directory:
 
-```bash
-git clone https://github.com/tnn1t1s/rcy.git
-cd rcy
-just setup                       # uv sync --all-extras
-just doctor                      # python, presets, audio output, MIDI
-just smoke                       # slice the bundled Apache break headlessly
-just tui                         # Launch with Amen break
-just tui-preset apache_break     # Launch with Apache break
-```
+| File | Contents |
+|---|---|
+| `001.wav`, `002.wav`, ... | One WAV per slice, copied from the source without resampling, fades or gain change. |
+| `<name>.sfz` | An SFZ instrument, one region per slice from MIDI key 60 upward. |
+| `<name>.exs` | With `--exs`, a Logic Pro Sampler instrument. |
+| `<name>.mid` | A MIDI file that plays the slices in order at the break's tempo. |
+| `<name>.rcy.json` | The manifest: source, tempo, cut positions in frames, and each slice's key and file. |
 
-Without `just`, run `uv sync --all-extras` and then `uv run rcy`.
+The manifest is the editable form of a kit. The window reads and writes it,
+and `rcy-export --from-manifest` cuts the kit again from it.
 
-## Usage
-
-### Launch
-
-```bash
-just run                    # Load default (Amen break)
-just run --skin hacienda    # Load with hacienda color skin
-just run --preset think_break  # Load specific preset
-just run --skin list        # List available skins
-```
-
-### Modal Input System
-
-RCY uses a **vim-style modal input** with two modes:
-
-| Mode | Status Bar | Description |
-|------|------------|-------------|
-| **INSERT** | `[INSERT]` | Type commands (`/slice 4`) or natural language queries |
-| **SEGMENT** | `[SEGMENT]` | Keys directly trigger segment playback |
-
-**Mode switching:**
-- **ESC** (in INSERT) → SEGMENT mode
-- **i** (in SEGMENT) → INSERT mode
-
-### Keyboard Controls
-
-**SEGMENT Mode** (direct playback):
-
-| Key | Action |
-|-----|--------|
-| `1-0` | Play segments 1-10 |
-| `qwertyuop` | Play segments 11-19 (`i` reserved for mode switch) |
-| `←/→` | Nudge focused marker (~10ms) |
-| `Shift+←/→` | Fine nudge (~1ms) |
-| `Ctrl+←/→` | Coarse nudge (~100ms) |
-| `[` / `]` | Cycle focus through markers (L, segments, R) |
-| `i` | Switch to INSERT mode |
-| `ESC` | Switch to INSERT mode |
-
-**INSERT Mode** (text input):
-
-| Key | Action |
-|-----|--------|
-| `/` | Start a command |
-| `Up/Down` | Navigate command history |
-| `Ctrl-R` | Reverse search history |
-| `Enter` | Submit command |
-| `ESC` | Switch to SEGMENT mode |
-
-### Commands
-
-Type `/` to enter command mode, then:
-
-```
-/preset <id>              Load preset by ID
-/presets                  List available presets
-/import <file.wav>        Load audio file (44100Hz)
-
-/slice <n>                Slice by measure count
-/slice --transients <n>   Slice by transients (0-100)
-/slice --clear            Clear all slices
-
-/set bars <n>             Set number of bars (recalculates BPM)
-/set release <ms>         Set tail fade duration (default: 3ms)
-/markers <start> <end>    Set L/R markers (seconds)
-/markers --reset          Reset markers to full file
-/cut                      Cut audio to L/R region in-place
-/nudge left|right         Nudge focused marker (use with --fine or --coarse)
-
-/tempo <bpm>              Set adjusted playback tempo
-/tempo --measures <n>     Calculate source tempo from measures
-
-/play 1 2 3 4             Play pattern once (1-0 = segments 1-10)
-/play q w e r             Play segments 11-14 (q-p = segments 11-20)
-/play 1 q 2 w --loop      Mix numbers and keys, loop pattern
-/loop                     Loop all segments (shortcut for /play --loop)
-/stop                     Stop playback
-
-/export <dir>             Export SFZ + samples
-/zoom in|out              Zoom view
-/skin                     List available color skins
-/skin <name>              Switch to skin (default, high-contrast, monochrome, hacienda)
-/help                     Show help
-/quit                     Exit
-```
-
-## Presets
-
-RCY includes classic breakbeats ready to slice:
-
-### Core Breaks
-
-| ID | Name | Artist | Bars |
-|----|------|--------|------|
-| `amen_classic` | Amen Break | The Winstons | 4 |
-| `think_break` | Think (About It) | Lyn Collins | 1 |
-| `apache_break` | Apache | Incredible Bongo Band | 2 |
-| `apache_L` | Apache (Left Channel) | Incredible Bongo Band | 2 |
-| `apache_R` | Apache (Right Channel) | Incredible Bongo Band | 2 |
-
-### Rhythm Lab Collection
-
-Download additional breaks from [rhythm-lab.com](https://rhythm-lab.com/breakbeats/):
-
-```bash
-./venv/bin/python sample-packs/rhythm-lab/setup.py          # Download all
-./venv/bin/python sample-packs/rhythm-lab/setup.py --list   # List available
-```
-
-Available presets after download:
-
-| ID | Name | Artist |
-|----|------|--------|
-| `rl_hot_pants` | Hot Pants | 20th Century |
-| `rl_walk_this_way` | Walk This Way | Aerosmith |
-| `rl_black_water_gold` | Black Water Gold | African Music Machine |
-| `rl_house_rising_funk_1` | House Of Rising Funk (part1) | Afrique |
-| `rl_house_rising_funk_2` | House Of Rising Funk (part2) | Afrique |
-| `rl_cramp_your_style` | Cramp Your Style | All The People |
-| `rl_keep_on_dancing` | Keep On Dancing | Alvin Cash |
-| `rl_the_get_away` | The Get Away | Alvin Cash |
-| `rl_no_good` | You Know I'm No Good | Amy Winehouse |
-| `rl_the_rock` | The Rock | Atomic Rooster |
-| `rl_its_moral_issue` | It's a Moral Issue | Baader Meinhof |
-| `rl_keep_your_distance` | Keep Your Distance | Babe Ruth |
-| `rl_listen_to_me` | Listen to Me | Baby Huey & The Babysitters |
-| `rl_shack_up` | Shack Up | Banbarra |
-| `rl_big_beat` | Big Beat | Billy Squier |
-| `rl_blackbyrds_theme` | Blackbyrds Theme | Blackbyrds |
-| `rl_take_me_mardi_gras` | Take Me To the Mardi Gras | Bob James |
-| `rl_i_know_got_soul` | I Know You Got Soul | Bobby Byrd |
-
-## Sampler Support
-
-### Teenage Engineering EP-133 K.O. II
-
-RCY includes direct integration with the EP-133 sampler via MIDI SysEx. Slice a break and upload it directly to your EP-133's pads.
-
-**Setup**: Connect EP-133 via USB. No additional configuration needed.
-
-**Commands**:
-```
-/ep133 connect              Connect to EP-133 (auto-detects MIDI)
-/ep133 disconnect           Disconnect from EP-133
-/ep133 status               Check connection status
-/ep133 set project <1-9>    Set target project (must match your EP-133 selection)
-/ep133 list                 List sounds on device
-/ep133 upload <bank> <slot> Upload segments to bank (A/B/C/D) starting at slot
-/ep133 clear <bank>         Clear all pad assignments in bank
-```
-
-**Workflow example**:
-```
-/preset amen_classic       # Load the Amen break
-/slice 8                   # Slice into 8 segments
-/ep133 connect             # Connect to EP-133
-/ep133 set project 9       # Target project 9 (match your EP-133 dial)
-/ep133 upload A 700        # Upload segments to bank A, slots 700+
-```
-
-Samples are named `{preset}_{segment:03d}` (e.g., `amen_classic_001`) for easy identification on the device.
-
-The agent also understands natural language: "slice into 16 pieces and upload the first 12 to bank A starting at slot 800"
-
-**EP-133 Structure**:
-- 9 projects (1-9) — set via `/ep133 set project <n>` (no SysEx for project switching; manual: Main + pad 1-9)
-- 4 banks per project (A, B, C, D)
-- 12 pads per bank
-- 999 sound slots (USER1: 700-799 recommended)
-
-### SFZ Export
-
-Export sliced samples to SFZ format for software samplers like TAL-Sampler:
-
-```
-/export ~/Desktop/my_break
-```
-
-Creates an SFZ file with all sliced samples mapped chromatically starting at C3.
-
-The same export runs headlessly:
-
-```bash
-uv run rcy-export --preset apache_break --out exports/apache
-uv run rcy-export --input break.wav --measures 2 --resolution 4 --out exports/break
-```
-
-Output is `001.wav ... NNN.wav`, `<dir>.sfz` and `<dir>.mid` inside `--out`.
-See [AGENTS.md](AGENTS.md) for flags and the full CLI list.
-
-## Features
-
-- **Breakbeat Slicing**: Slice by measures or transient detection
-- **Pattern Playback**: Play segments in custom sequences with looping
-- **ASCII Waveform**: Visual display with L/R markers and slice points
-- **Vim-Style Modal Input**: SEGMENT mode for instant playback, INSERT mode for commands
-- **Marker Nudging**: Fine-tune slice points with arrow keys (normal/fine/coarse)
-- **Hardware Integration**: Direct upload to EP-133 K.O. II with project/bank/slot control
-- **SFZ Export**: Generate SFZ files for software samplers
-- **Command History**: Bash-style history with reverse search
-- **Preset System**: Quick access to 900+ classic breaks (core + Rhythm Lab collection)
-- **Configurable Skins**: Switch color themes at runtime or via CLI (`--skin hacienda`)
-- **Agent Architecture**: Extensible command system with Pydantic validation
-
-## Architecture
-
-### Agent System
-
-RCY uses an agent-based architecture for command processing. Commands are validated through Pydantic schemas before execution, enabling:
-
-- **Type-safe command parsing**: Arguments are validated against schemas
-- **Extensible tool registry**: New commands can be added as tool schemas
-- **LLM integration**: Natural language commands via OpenRouter
-
-The agent system lives in `src/python/tui/agents/`:
-
-```
-agents/
-├── base.py        # BaseAgent class and ToolRegistry
-├── default.py     # DefaultAgent - dispatches commands without LLM
-├── openrouter.py  # OpenRouterAgent - LLM-powered natural language
-├── tools.py       # Pydantic schemas for all commands
-└── factory.py     # Agent factory for selecting agent type
-```
-
-**Default Agent**: Parses commands like `/slice 4` or `/play 1 2 3 --loop`, validates arguments against Pydantic schemas, and dispatches to registered handlers. No API key required.
-
-**OpenRouter Agent**: Enables natural language interaction (e.g., "slice this into 8 pieces"). Uses Claude Sonnet via OpenRouter API. Requires API key.
-
-**Configuration** (`config/config.json`):
-```json
-{
-  "agent": {
-    "type": "openrouter",
-    "openrouter": {
-      "default_model": "anthropic/claude-sonnet-4",
-      "temperature": 0.3,
-      "max_tokens": 1024
-    }
-  }
-}
-```
-
-To use the OpenRouter agent, create a `.env` file:
-```
-OPENROUTER_API_KEY=your-key-here
-```
-
-**Routing**: Commands starting with `/` always use the fast DefaultAgent. Natural language input is routed to the LLM agent when configured.
-
-## Documentation
-
-- [TUI User Guide](docs/tui-guide.md) - Complete guide to the terminal interface
-- [Breakbeat Science](docs/breakbeat-science.md) - Core workflows that shaped jungle, drum & bass, and big beat
+Sources are 16-bit WAV at 44.1 kHz, mono or stereo. Tempo comes from the
+length of the break and its measure count; nothing is time-stretched.
 
 ## Requirements
 
-- Python 3.11 or newer (uv installs 3.12 from `.python-version`)
-- uv; dependencies are declared in `pyproject.toml` and pinned in `uv.lock`
-- Extras: `hardware` (MIDI backend), `agent` (ADK server), `llm` (OpenRouter agent in the TUI), `viz` (plots). `just setup` installs all of them.
+- Node.js 22 or later for `rcy-export`.
+- Electron 33 for `rcy-window`, installed by `npm ci --prefix tools/window-runtime`.
+  The window is built and tested on macOS.
 
-## Development
+## Cutting a kit
 
-```bash
-just test    # Run tests (hardware tests deselected by default)
-just lint    # Run linter
-just check   # lint + typecheck
+```
+RCY_PRESETS=presets node export/rcy-export --preset amen_classic --out /tmp/amen --exs
+node export/rcy-export --input break.wav --measures 2 --resolution 8 --out /tmp/kit
+node export/rcy-export --from-manifest /tmp/kit/kit.rcy.json --out /tmp/kit2 --buffer-ms 20
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+`--measures` is the length of the break in 4/4 measures and `--resolution` the
+number of equal slices per measure. `--preset` reads the catalog directory
+named by `RCY_PRESETS`.
 
-## License
+`--buffer-ms N` keeps N milliseconds of source audio either side of each
+slice in its file and writes the slice's start and end points into the SFZ
+and EXS instruments. A cut placed a few milliseconds into a hit then loses
+nothing, and the points stay adjustable in the sampler. Without the option a
+file holds exactly its slice.
 
-[MIT License](LICENSE)
+`SPEC.md` states every option, file format rule and refusal message.
+
+## Placing cuts in the window
+
+```
+electron window/rcy-window --manifest kit.rcy.json --record run.json --out edited.rcy.json \
+    --split transients --sensitivity 72 \
+    --task "Put one cut at the start of every hit you want on its own pad."
+```
+
+`electron` is `tools/window-runtime/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron`
+after the install above.
+
+The command line states the run: the manifest to open, the first-pass split
+the window performs at startup (`--split measures` with `--resolution`, or
+`--split transients` with `--sensitivity`), the view and selection, the task
+shown to the person, where the result is written, and with `--expect-slices`
+the slice count the result must have before Save is available.
+
+In the window a click plays a slice, a drag moves a cut, a double-click adds
+or removes one, and the wheel or `=` and `-` zoom down to single frames.
+
+| Exit code | Meaning |
+|---|---|
+| 0 | Saved: the manifest was written to `--out`. |
+| 3 | Closed without saving. |
+| 2 | Refused at launch; the reason is on stderr. |
+
+Every run writes the file named by `--record`: the arguments, the opening
+state, each edit, undo, redo and audition with its time, the final cuts and
+the exit code. The records are the history of what a person changed and are
+meant to be kept.
+
+`WINDOW.md` states the window's behaviour, keys and controls.
+
+## A whole task
+
+```
+node export/rcy-export --input break.wav --measures 4 --resolution 1 --out work/source
+electron window/rcy-window --manifest work/source/source.rcy.json --split measures --resolution 8 \
+    --task "Move each cut onto its hit." --out work/edited.rcy.json --record work/run.json
+node export/rcy-export --from-manifest work/edited.rcy.json --out work/kit --exs --buffer-ms 20
+```
+
+The second command returns when the person saves or closes, so the third
+runs only on exit code 0.
+
+## Layout
+
+| Path | Contents |
+|---|---|
+| `SPEC.md`, `WINDOW.md` | The behaviour of the two programs. They are kept in step with the code. |
+| `export/main.js`, `window/main.js` | The programs' sources. |
+| `export/rcy-export`, `window/rcy-window` | The programs as run: each is the SDK followed by its source, in one file. |
+| `rcy-sdk/` | The code for every file format (WAV, MIDI, SFZ, EXS, manifest), with its tests and `dist/bundle.cjs`, which builds a program file. |
+| `presets/` | The preset catalog and its audio. |
+| `features/` | Acceptance scenarios: Gherkin for `rcy-export`, a Playwright script for the window. |
+| `harness/`, `bin/` | Step definitions and tooling for the Gherkin scenarios and for generating `rcy-export` from `SPEC.md` with a coding agent. |
+| `INVARIANTS.md`, `VALIDATION.md`, `BASELINE.md`, `DEFERRED.md` | Rules and records for that generation process. |
+| `research/` | Notes on the behaviour of the earlier Python application. |
+| `hardware/` | MIDI tools for the Akai S2800, the MPC2000XL and the EP-133. See `hardware/README.md`. |
+
+## Changing the programs
+
+Edit `export/main.js`, `window/main.js` or `rcy-sdk/src`, change `SPEC.md` or
+`WINDOW.md` to match, then rebuild:
+
+```
+node rcy-sdk/bin/build.cjs
+node rcy-sdk/dist/bundle.cjs export/main.js export/rcy-export
+node rcy-sdk/dist/bundle.cjs window/main.js window/rcy-window
+```
+
+Both specifications pin the SDK build and its README by SHA-256, and
+`python3 bin/check-sdk` reports a mismatch, so a change to the SDK also
+updates those two hashes in each specification.
+
+## Tests
+
+```
+cd rcy-sdk && node --test "test/*.test.ts"
+```
+
+The SDK tests need Node.js 23.6 or later.
+
+```
+NODE_PATH=tools/window-runtime/node_modules node features/window/scenarios.js \
+    "$PWD/tools/window-runtime/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron" \
+    "$PWD/window/rcy-window" "$PWD/export/rcy-export" "$PWD/presets/amen.wav"
+```
+
+The window scenarios open real windows and drive them with the pointer and
+keyboard, so the machine's own pointer should stay still while they run.
+
+The Gherkin scenarios for `rcy-export` run through `uv run bin/trial`. They
+depend on `riemann-harness`, a private repository pinned in `pyproject.toml`,
+and can't be installed without access to it.

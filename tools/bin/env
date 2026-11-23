@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-# RCY environment information. Same checks as `just doctor`.
-PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-exec uv run --project "$PROJECT_ROOT" python -m utils.doctor "$@"

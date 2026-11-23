@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+"""Run the Gherkin corpus against an rcy-export candidate through pytest-bdd.
+
+A generated candidate is run with --build-manifest, which makes the harness
+check that the artifact and SPEC.md hash to what the manifest records. The
+reference implementation has no manifest and runs with --unbound; every
+report then records the waiver.
+"""
+import argparse
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+from riemann_harness.features import ENV
+
+root = Path(__file__).resolve().parents[1]
+p = argparse.ArgumentParser(description=__doc__)
+p.add_argument("--command", required=True, help="Candidate as a JSON argv array; command[0] is an absolute path")
+p.add_argument("--features", default=str(root / "features"), help="Feature file or directory")
+p.add_argument("--out", default="reports/trial")
+p.add_argument("--spec", default=str(root / "SPEC.md"), help="The SPEC.md the candidate was generated from")
+p.add_argument("--build-manifest", help="build-manifest.json binding the artifact to that SPEC.md")
+p.add_argument("--unbound", action="store_true", help="Waive the binding check")
+p.add_argument("--interpreter", required=True,
+               help="Absolute path to the node that a `#!/usr/bin/env node` candidate runs on")
+p.add_argument("-k", default="", help="pytest scenario selection expression")
+p.add_argument("-m", default="", help="pytest tag selection expression")
+a = p.parse_args()
+try:
+    command = json.loads(a.command)
+    if not isinstance(command, list) or not command or not all(isinstance(v, str) and v for v in command):
+        raise ValueError("command must be a nonempty JSON string array")
+except ValueError as exc:
+    p.error(str(exc))
+if bool(a.build_manifest) == a.unbound:
+    p.error("pass exactly one of --build-manifest and --unbound")
+if a.build_manifest:
+    # A bound candidate must embed the SDK build that its SPEC.md pins.
+    check = subprocess.call([sys.executable, str(root / "bin/check-sdk"), "--spec", a.spec, command[0]])
+    if check:
+        raise SystemExit(check)
+out = Path(a.out).resolve()
+out.mkdir(parents=True, exist_ok=True)
+env = dict(os.environ, **{ENV: str(Path(a.features).resolve())})
+args = [sys.executable, "-m", "pytest", "features/test_features.py", "-p", "no:cacheprovider",
+        "--harness-command", json.dumps(command), "--harness-out", str(out),
+        "--harness-spec", str(Path(a.spec).resolve()), "--rcy-interpreter", a.interpreter, "--junitxml", str(out / "junit.xml"), "-q"]
+if a.build_manifest:
+    args += ["--harness-build-manifest", str(Path(a.build_manifest).resolve())]
+if a.unbound:
+    args += ["--rcy-unbound"]
+if a.k:
+    args += ["-k", a.k]
+if a.m:
+    args += ["-m", a.m]
+raise SystemExit(subprocess.call(args, cwd=root, env=env))
