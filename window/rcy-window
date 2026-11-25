@@ -564,10 +564,18 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
   const DEFAULT_SENSITIVITY = 50;
   // Characters (keyboard keys). Key i (0-based) in this string plays slice i + 1.
   const AUDITION_KEYS = "1234567890qwertyuiop";
+  // Decimal places. The tempo control shows the tempo rounded to this many
+  // places, the precision rcy-export prints a tempo with. The stored tempo is
+  // not rounded.
+  const TEMPO_DECIMALS = 2;
+
+  // A tempo as the command line or the control gives it: digits, optionally a
+  // point and more digits.
+  const TEMPO_GRAMMAR = /^\d+(\.\d+)?$/;
 
   const CONSTANTS = {
     FIRST_KEY, LAST_KEY, MIN_VIEW_FRAMES, ZOOM_STEP, PICK_PIXELS, TAIL_FADE_MS,
-    TAIL_FADE_POWER, DEFAULT_RESOLUTION, DEFAULT_SENSITIVITY, AUDITION_KEYS,
+    TAIL_FADE_POWER, DEFAULT_RESOLUTION, DEFAULT_SENSITIVITY, AUDITION_KEYS, TEMPO_DECIMALS,
   };
 
   // ---------------------------------------------------------------------
@@ -612,7 +620,7 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
 
   function parseArguments(args) {
     const opts = { manifest: null, out: null, record: null, split: null, resolution: null, sensitivity: null,
-                   view: null, select: null, task: null, "expect-slices": null };
+                   bpm: null, view: null, select: null, task: null, "expect-slices": null };
     const VALUE_OPTIONS = Object.keys(opts).map((k) => "--" + k);
     for (let i = 0; i < args.length; i++) {
       const a = args[i];
@@ -646,6 +654,10 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
     whole("select", 0, 128);
     whole("expect-slices", 1, 128);
     if (opts.resolution !== null && !["1", "2", "4", "8", "16", "32"].includes(opts.resolution)) refuse("--resolution must be 1, 2, 4, 8, 16 or 32");
+    if (opts.bpm !== null) {
+      if (!TEMPO_GRAMMAR.test(opts.bpm)) refuse("--bpm must be a decimal number of beats per minute");
+      opts.bpm = Number(opts.bpm);
+    }
     if (opts.view !== null) {
       const m = /^(\d+):(\d+)$/.exec(opts.view);
       if (!m || Number(m[1]) >= Number(m[2])) refuse("--view must be START:END in frames with START below END");
@@ -760,6 +772,12 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
 
   const launch = loadLaunch();
   if (launchOptions.view && launchOptions.view[1] > launch.wav.frames) refuse(`--view ends beyond the source's ${launch.wav.frames} frames`);
+  // A new tempo must be in the range rcy-export applies (SPEC.md R15), so the
+  // window is never launched towards a manifest the export refuses. A --bpm
+  // equal to the manifest's tempo changes nothing and is not checked.
+  if (launchOptions.bpm !== null && launchOptions.bpm !== launch.bpm && !rcySdk.tempoWritable(launchOptions.bpm)) {
+    refuse(`--bpm ${launchOptions.bpm} cannot be written to MIDI`);
+  }
   const recordPath = path.resolve(launchOptions.record);
 
   // ---------------------------------------------------------------------
@@ -778,8 +796,16 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
       typeof s.file === "string" && typeof s.role === "string");
   }
 
-  function saveManifest(boundaries, slices) {
+  // A tempo the person or the command line set must be one rcy-export can
+  // write; the tempo as read is saved unchanged whatever it is.
+  function validTempo(bpm) {
+    if (bpm === launch.bpm) return true;
+    return typeof bpm === "number" && Number.isFinite(bpm) && rcySdk.tempoWritable(bpm);
+  }
+
+  function saveManifest(boundaries, slices, bpm) {
     if (!validEdit(boundaries, slices)) return { ok: false, error: "the edit is not a valid manifest" };
+    if (!validTempo(bpm)) return { ok: false, error: "the tempo cannot be written to MIDI" };
     const rel = path.relative(path.dirname(launch.outPath), launch.sourcePath).split(path.sep).join("/");
     let text;
     try {
@@ -787,7 +813,7 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
         source: rel,
         sampleRate: launch.sampleRate,
         channels: launch.channels,
-        bpm: launch.bpm,
+        bpm,
         measures: launch.measures,
         bufferMs: launch.bufferMs,
         boundaries,
@@ -832,6 +858,8 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
 
     let boundaries = [];
     let slices = [];
+    let bpm = 0; // beats per minute; the manifest's value until the tempo control or --bpm changes it
+    let tempoSession = null; // the history position of the latest edit while it is a tempo change
     let history = []; // snapshots; history[0] is the manifest as read
     let hpos = 0;
     let selected = null;
@@ -850,6 +878,7 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
     const selResolution = $("resolution");
     const rngSensitivity = $("sensitivity");
     const sensValue = $("sens-value");
+    const fldTempo = $("bpm");
     const statusReadout = $("status-readout");
     const statusMsg = $("status-msg");
     const dialog = $("discard-confirm");
@@ -869,6 +898,7 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
         selected,
         cursor: editCursor,
         playing: voice !== null,
+        bpm,
         dirty: hpos !== 0,
       };
     };
@@ -879,34 +909,88 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
 
     const pad3 = (n) => String(n).padStart(3, "0") + ".wav";
     const copySlices = (ss) => ss.map((s) => ({ key: s.key, file: s.file, role: s.role }));
-    const snapshot = () => ({ b: boundaries.slice(), s: copySlices(slices) });
+    const snapshot = () => ({ b: boundaries.slice(), s: copySlices(slices), bpm });
+    const tempoText = (v) => String(Number(v.toFixed(K.TEMPO_DECIMALS)));
+    let tempoRefused = false; // the press or key now being handled made the control refuse its text
+    let tempoTouched = false; // the person typed or stepped in the tempo control since the window last wrote it
+    function showTempo() { fldTempo.value = tempoText(bpm); tempoTouched = false; }
     const namesDefault = (ss) => ss.every((s, i) => s.file === pad3(i + 1));
 
     function applySnapshot(snap) {
       boundaries = snap.b.slice();
       slices = copySlices(snap.s);
+      bpm = snap.bpm;
+      showTempo();
       if (selected !== null && selected >= boundaries.length) selected = null;
     }
 
     function commit(b, s, sel) {
       history.length = hpos + 1;
-      history.push({ b: b.slice(), s: copySlices(s) });
+      history.push({ b: b.slice(), s: copySlices(s), bpm });
       hpos = history.length - 1;
       applySnapshot(history[hpos]);
       selected = sel === undefined ? selected : sel;
       if (selected !== null && selected >= boundaries.length) selected = null;
       transientSession = null;
-      lastEdit = logEvent("edit", { what: "", boundaries: boundaries.slice(), slices: slices.length });
+      tempoSession = null;
+      lastEdit = logEvent("edit", { what: "", boundaries: boundaries.slice(), slices: slices.length, bpm });
       changed();
+    }
+
+    // W24: a tempo change is an edit. One that directly follows another
+    // replaces it, so a run of steps on the control is one undo step.
+    function setTempo(value) {
+      if (value === bpm) return;
+      const follows = tempoSession !== null && tempoSession === hpos && hpos === history.length - 1;
+      // Back at the text the run started from: the run is removed, which
+      // restores the exact tempo that text was showing.
+      if (follows && tempoText(history[hpos - 1].bpm) === tempoText(value)) {
+        history.length = hpos;
+        hpos--;
+        tempoSession = null;
+      } else {
+        if (follows) history[hpos].bpm = value;
+        else {
+          history.length = hpos + 1;
+          history.push({ b: boundaries.slice(), s: copySlices(slices), bpm: value });
+          hpos = history.length - 1;
+        }
+        tempoSession = hpos;
+      }
+      applySnapshot(history[hpos]);
+      transientSession = null;
+      logEvent("edit", { what: `Tempo ${tempoText(bpm)} bpm`, boundaries: boundaries.slice(), slices: slices.length, bpm });
+      message(`Tempo ${tempoText(bpm)} bpm`);
+      changed();
+    }
+
+    // The control shows a rounded tempo, so its text is read only after the
+    // person typed or stepped in it; an untouched tempo stays exact.
+    // Returns false when the text was refused.
+    function onTempo() {
+      if (!ready || !tempoTouched) return true;
+      const text = fldTempo.value.trim();
+      if (text === tempoText(bpm)) { showTempo(); return true; }
+      const v = Number(text);
+      if (!info.tempoGrammar.test(text) || !ipcRenderer.sendSync("rcy-tempo-writable", v)) {
+        showTempo();
+        tempoRefused = true;
+        message("Tempo not changed: it must be a decimal number of beats per minute that a MIDI file can hold", true);
+        return false;
+      }
+      tempoTouched = false;
+      setTempo(v);
+      return true;
     }
 
     function undo() {
       if (drag) return;
       transientSession = null;
+      tempoSession = null;
       if (hpos === 0) { message("Nothing to undo"); return; }
       hpos--;
       applySnapshot(history[hpos]);
-      logEvent("undo", { boundaries: boundaries.slice() });
+      logEvent("undo", { boundaries: boundaries.slice(), bpm });
       message("Undo");
       changed();
     }
@@ -914,10 +998,11 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
     function redo() {
       if (drag) return;
       transientSession = null;
+      tempoSession = null;
       if (hpos >= history.length - 1) { message("Nothing to redo"); return; }
       hpos++;
       applySnapshot(history[hpos]);
-      logEvent("redo", { boundaries: boundaries.slice() });
+      logEvent("redo", { boundaries: boundaries.slice(), bpm });
       message("Redo");
       changed();
     }
@@ -1085,7 +1170,7 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
       const L = boundaries[0];
       const R = boundaries[boundaries.length - 1];
       const snap = transientSnapshot(sens, L, R);
-      history[hpos] = { b: snap.b, s: snap.s };
+      history[hpos] = { b: snap.b, s: snap.s, bpm };
       applySnapshot(history[hpos]);
       selected = null;
       transientSession.sens = sens;
@@ -1606,7 +1691,7 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
       return e;
     }
     function runReport() {
-      return { opening, events, final: { boundaries: boundaries.slice(), slices: copySlices(slices), dirty: hpos !== 0 } };
+      return { opening, events, final: { boundaries: boundaries.slice(), slices: copySlices(slices), bpm, dirty: hpos !== 0 } };
     }
     let expectSlices = null;
     let editCursor = null; // frame of the last click on the waveform; where Add cut puts a cut
@@ -1801,17 +1886,28 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
 
     // ------------------------------------------------------------------
     // Keys. One capture-phase listener: every key acts whichever element has
-    // focus, except Left and Right while the sensitivity control has it.
+    // focus, except Left and Right while the sensitivity control has it and
+    // plain keys while the tempo control has it.
     // ------------------------------------------------------------------
 
     function onKeyDown(e) {
       if (e.isComposing) return;
+      tempoRefused = false;
       const key = e.key;
       const lower = key.length === 1 ? key.toLowerCase() : key;
       const code = e.code || "";
       // SPEC-GAP: Cmd is the shortcut modifier on macOS and Ctrl elsewhere;
       // either is accepted on every platform, so a driver can't pick wrong.
+      const inTempo = document.activeElement === fldTempo;
       if ((e.metaKey || e.ctrlKey) && !e.altKey) {
+        // Save and Close first apply a tempo still being typed and do not act
+        // if it is refused; Undo and Redo discard it.
+        if (inTempo && (lower === "s" || lower === "w")) {
+          const ok = onTempo();
+          fldTempo.blur();
+          if (!ok) { e.preventDefault(); e.stopPropagation(); return; }
+        }
+        if (inTempo && lower === "z") { showTempo(); fldTempo.blur(); }
         if (lower === "s" || code === "KeyS") { e.preventDefault(); e.stopPropagation(); if (!e.repeat) save(); return; }
         if (lower === "w" || code === "KeyW") { e.preventDefault(); e.stopPropagation(); if (!e.repeat) requestClose(); return; }
         if (lower === "z" || code === "KeyZ") {
@@ -1822,6 +1918,11 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
         return;
       }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (inTempo) {
+        if (key === "Enter") { e.preventDefault(); onTempo(); fldTempo.blur(); }
+        else if (key === "Escape") { e.preventDefault(); showTempo(); fldTempo.blur(); }
+        return;
+      }
       if ((key === "ArrowLeft" || key === "ArrowRight") && document.activeElement === rngSensitivity) return;
       if (!ready) return;
       let handled = true;
@@ -1878,7 +1979,7 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
       message("Saving…");
       let r;
       try {
-        r = await ipcRenderer.invoke("rcy-save", { boundaries: boundaries.slice(), slices: copySlices(slices), report: runReport() });
+        r = await ipcRenderer.invoke("rcy-save", { boundaries: boundaries.slice(), slices: copySlices(slices), bpm, report: runReport() });
       } catch (err) {
         r = { ok: false, error: String(err && err.message ? err.message : err) };
       }
@@ -2452,8 +2553,11 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
     overCanvas.addEventListener("dblclick", onDoubleClick);
     $("add-cut").addEventListener("click", () => { $("add-cut").blur(); if (ready && canAddAtCursor()) addCut(editCursor); });
     $("delete-cut").addEventListener("click", () => { $("delete-cut").blur(); if (ready && selected !== null) removeCut(selected); });
-    $("save").addEventListener("click", () => { $("save").blur(); save(); });
-    $("close").addEventListener("click", () => { $("close").blur(); requestClose(); });
+    // A press on a button first ends typing in the tempo control; if that
+    // text was refused, the button does not act.
+    window.addEventListener("mousedown", () => { tempoRefused = false; }, true);
+    $("save").addEventListener("click", () => { $("save").blur(); if (!tempoRefused) save(); });
+    $("close").addEventListener("click", () => { $("close").blur(); if (!tempoRefused) requestClose(); });
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
     document.addEventListener("mouseleave", () => { pointer.inside = false; updateReadout(); scheduleOverlay(); });
@@ -2468,6 +2572,10 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
     selResolution.addEventListener("change", () => { selResolution.blur(); });
     rngSensitivity.addEventListener("input", onSensitivity);
     rngSensitivity.addEventListener("change", onSensitivity);
+    fldTempo.addEventListener("input", () => { tempoTouched = true; });
+    fldTempo.addEventListener("change", onTempo);
+    // A press on the waveform ends typing in the tempo control.
+    overCanvas.addEventListener("mousedown", () => { if (document.activeElement === fldTempo) { onTempo(); fldTempo.blur(); } }, true);
     $("discard-yes").addEventListener("click", () => ipcRenderer.send("rcy-exit", 3, runReport()));
     $("discard-no").addEventListener("click", () => { dialog.hidden = true; $("discard-no").blur(); });
     ipcRenderer.on("rcy-close-request", () => requestClose());
@@ -2493,12 +2601,14 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
       pyramid = f32.map(buildPyramid);
       boundaries = init.boundaries.slice();
       slices = copySlices(init.slices);
+      bpm = init.bpm;
+      showTempo();
       history = [snapshot()];
       hpos = 0;
       viewStart = 0;
       viewEnd = N;
       $("file-name").textContent = init.title;
-      $("file-info").textContent = `${(N / sr).toFixed(3)} s · ${sr} Hz · ${nch === 1 ? "mono" : nch === 2 ? "stereo" : nch + " ch"} · ${Number(init.bpm.toFixed(2))} bpm · ${init.measures} measure${init.measures === 1 ? "" : "s"}`;
+      $("file-info").textContent = `${(N / sr).toFixed(3)} s · ${sr} Hz · ${nch === 1 ? "mono" : nch === 2 ? "stereo" : nch + " ch"} · ${init.measures} measure${init.measures === 1 ? "" : "s"}`;
       audioInit();
       computeLayout();
       drawWave();
@@ -2511,6 +2621,7 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
       if (o.resolution !== null) selResolution.value = String(o.resolution);
       if (o.sensitivity !== null) { rngSensitivity.value = String(o.sensitivity); sensValue.textContent = String(o.sensitivity); }
       if (o["expect-slices"] !== null) expectSlices = o["expect-slices"];
+      if (o.bpm !== null) setTempo(o.bpm);
       if (o.split === "measures") splitByMeasures();
       if (o.split === "transients") splitByTransients();
       if (o.view !== null) setView(o.view[0], o.view[1] - o.view[0]);
@@ -2518,7 +2629,8 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
       if (o.task !== null) { $("task-text").textContent = o.task; $("task").hidden = false; }
       if (o.task !== null || expectSlices !== null) { $("task").hidden = false; onResize(); }
       events = [];
-      opening = { boundaries: boundaries.slice(), slices: copySlices(slices), viewStart, viewEnd, selected,
+      tempoSession = null;
+      opening = { boundaries: boundaries.slice(), slices: copySlices(slices), bpm, viewStart, viewEnd, selected,
                   resolution: Number(selResolution.value), sensitivity: Number(rngSensitivity.value) };
       changed();
       setTimeout(() => { ensureCandidates(); }, 30);
@@ -2557,6 +2669,8 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
     button:active { background: #3a4757; }
     select { font: inherit; color: #e6edf3; background: #27303b; border: 1px solid #36414e; border-radius: 5px; padding: 3px 4px; }
     input[type=range] { width: 140px; accent-color: #f3c04f; }
+    input[type=number] { font: inherit; color: #e6edf3; background: #27303b; border: 1px solid #36414e; border-radius: 5px;
+      padding: 3px 4px; width: 9ch; font-variant-numeric: tabular-nums; user-select: text; -webkit-user-select: text; }
     #sens-value { display: inline-block; width: 2ch; text-align: right; color: #e6edf3; font-variant-numeric: tabular-nums; }
     #file { margin-left: auto; text-align: right; line-height: 1.25; }
     #file-name { color: #e6edf3; font-weight: 600; }
@@ -2597,6 +2711,11 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
     <label for="sensitivity">sensitivity</label>
     <input id="sensitivity" type="range" min="0" max="99" step="1" value="50">
     <span id="sens-value">50</span>
+  </div>
+  <div class="group">
+    <label for="bpm">tempo</label>
+    <input id="bpm" type="number" step="any" min="0" tabindex="-1" title="Beats per minute saved with the kit; the audio is not changed">
+    <label for="bpm">bpm</label>
   </div>
   <div class="group">
     <button id="add-cut" type="button" tabindex="-1" disabled title="Adds a cut where you last clicked the waveform">Add cut</button>
@@ -2672,15 +2791,19 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
     slices: launch.slices,
     bpm: launch.bpm,
     measures: launch.measures,
+    tempoGrammar: TEMPO_GRAMMAR,
     title: path.basename(launch.manifestPath),
     options: launchOptions,
   }));
 
   ipcMain.handle("rcy-save", (_e, edit) => {
-    const r = saveManifest(edit && edit.boundaries, edit && edit.slices);
+    const r = saveManifest(edit && edit.boundaries, edit && edit.slices, edit && edit.bpm);
     if (r.ok) { pageReport = edit.report; setImmediate(() => exitWith(0)); }
     return r;
   });
+
+  // The page asks before it accepts a typed tempo: the range is the SDK's.
+  ipcMain.on("rcy-tempo-writable", (e, v) => { e.returnValue = typeof v === "number" && Number.isFinite(v) && rcySdk.tempoWritable(v); });
 
   ipcMain.on("rcy-exit", (_e, code, report) => { pageReport = report || null; exitWith(code === 0 ? 0 : 3); });
 
