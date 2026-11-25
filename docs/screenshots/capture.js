@@ -20,6 +20,10 @@ const MAX_ZOOM_STEPS = 12;      // parameter: most presses of "=" for the close-
 const CUTS_IN_CLOSE_UP = 2;      // parameter: zoom in until at most this many cuts are in view
 const DRAG_PIXELS = 30;          // parameter: pointer travel in the close-up
 const PICK_COUNT = 5;            // parameter: pads asked for in the exact-count shots
+const LAUNCH_BPM = "165";        // parameter: tempo stated at launch in the tempo shots
+const REFUSED_BPM = "1";         // parameter: a tempo a MIDI file can't hold, typed to show the refusal
+const VIEW_SLICES = 3;           // parameter: slices in view in the --view and --select shot
+const SELECTED = 9;              // parameter: the slice --select names in that shot
 
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "rcy-shots-"));
 const r = spawnSync("node", [path.join(ROOT, "export", "rcy-export"), "--input", path.join(ROOT, "presets", "amen.wav"),
@@ -81,5 +85,26 @@ const midY = (s) => s.plot.y + s.plot.height / 2;
   await w.page.mouse.move(xOf(s, s.frames / 2), s.plot.y + 4);
   await w.shot("pick-hits-count-met.png");
   w.close();
-  console.log("wrote 4 screenshots to " + OUT);
+
+  // A launch that states the tempo, then a tempo the control refuses.
+  w = await open("tempo", ["--split", "measures", "--resolution", "4", "--bpm", LAUNCH_BPM,
+    "--task", "Check the tempo against the break, correct it if it is wrong, then Save."]);
+  await w.shot("tempo-control.png");
+  await w.page.click("#bpm");
+  await w.page.keyboard.press("Meta+a");
+  await w.page.keyboard.type(REFUSED_BPM);
+  await w.page.keyboard.press("Enter");
+  if ((await w.state()).bpm !== Number(LAUNCH_BPM)) throw new Error("the refused tempo was applied");
+  await w.shot("tempo-refused.png");
+  w.close();
+
+  // A launch that points the person at one slice: --view and --select.
+  const perSlice = Math.floor(s.frames / 32);
+  const from = (SELECTED - 2) * perSlice, to = from + VIEW_SLICES * perSlice;
+  w = await open("one-cut", ["--split", "measures", "--resolution", "8",
+    "--view", from + ":" + to, "--select", String(SELECTED),
+    "--task", "The selected slice starts late. Move its left cut onto the hit, then Save."]);
+  await w.shot("one-cut-in-view.png");
+  w.close();
+  console.log("wrote 7 screenshots to " + OUT);
 })().catch((e) => { console.error(e); process.exit(1); });

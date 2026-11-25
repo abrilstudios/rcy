@@ -1,7 +1,7 @@
 # rcy-window
 
 A slicing window. It shows a source WAV file with the cuts a kit manifest
-holds, lets a person correct the cuts by eye and ear, and writes the manifest
+holds, lets a person correct the cuts by eye and ear and set the tempo, and writes the manifest
 back. A program or agent starts it with a manifest and reads the result when
 it exits. It cuts no audio files; `rcy-export --from-manifest` does that from
 the manifest this window saves.
@@ -43,12 +43,14 @@ described by `rcy-sdk/README.md` with SHA-256
 | `DEFAULT_RESOLUTION` | 4 slices per measure | default | Initial value of the resolution control. |
 | `DEFAULT_SENSITIVITY` | 50 | default | Initial value of the sensitivity control, range 0 to 99. |
 | `AUDITION_KEYS` | `1234567890qwertyuiop` | default | Key `i` (0-based) in this string plays slice `i + 1`. |
+| `TEMPO_DECIMALS` | 2 decimal places | default | The tempo control shows the tempo rounded to this many places. Display only: the stored tempo is not rounded. Two places is what `rcy-export` prints (SPEC.md R18); the two need not match. |
 
 ## Launch
 
 ```
 electron rcy-window --manifest FILE --record FILE [--out FILE]
                      [--split {measures,transients}] [--resolution R] [--sensitivity S]
+                     [--bpm B]
                      [--view START:END] [--select I] [--task TEXT] [--expect-slices K]
 ```
 
@@ -83,21 +85,25 @@ or changes no file:
 Paths are made absolute lexically; symbolic links are not resolved, here or
 in W04.
 
-The wording of the line is not specified. `sample_rate`, `channels`, `bpm`
-and `measures` are read and kept as they are; `sample_rate` and `channels`
+The wording of the line is not specified. `sample_rate`, `channels` and
+`measures` are read and kept as they are, and `bpm` is kept unless W24
+changes it; `sample_rate` and `channels`
 are replaced by the source's own values on save only if they were absent.
 
 ## Declared opening state and end condition
 
 **W20.** After the source is loaded and before `ready` becomes true, in this
-order: `--resolution` and `--sensitivity` set their controls; `--split` runs
-W11 or W12 once, as an undoable edit, so the window opens with unsaved edits;
+order: `--resolution` and `--sensitivity` set their controls; `--bpm` sets
+the tempo (W24) as an undoable edit when it differs from the manifest's;
+`--split` runs W11 or W12 once, as an undoable edit (after either of these
+edits the window opens with unsaved edits);
 `--view` sets `viewStart` and `viewEnd` in frames; `--select` selects that
 boundary index if it exists; `--task` is shown in an element with id `task`
 above the plot. `--resolution` is one of the control's values, `--sensitivity`
 a whole number from 0 to 99, `--view` two whole numbers with the first below
-the second and the second at most `N`. A value outside these is a W03
-refusal.
+the second and the second at most `N`, `--bpm` a decimal number (digits,
+optionally a point and more digits) that either equals the manifest's `bpm`
+or makes `rcySdk.tempoWritable` true. A value outside these is a W03 refusal.
 
 **W21.** With `--expect-slices K`, Save is refused while the slice count is
 not `K`: the `save` button is disabled, the shortcut writes nothing and the
@@ -108,11 +114,12 @@ current count. Exit code 0 therefore means the declared end condition held.
 launch, whether saved or closed, the program writes `FILE` as JSON:
 `rcy_window_run` (1), `arguments`, `started_at`, `ended_at`, `duration_ms`,
 `exit_code`, `outcome`, `manifest`, `manifest_read` (boundaries, slices, bpm,
-measures as read), `opening` (boundaries, slices, view, selection and control
-values once W20 is applied), `events` and `final` (boundaries, slices, and
-whether edits were unsaved). `events` lists, in order with `t_ms` since the
-page started, every edit (`kind` "edit", a description, the boundaries after
-it), undo, redo and audition (`kind` "play", `from`, `to`) the person made.
+measures as read), `opening` (boundaries, slices, bpm, view, selection and
+control values once W20 is applied), `events` and `final` (boundaries, slices,
+bpm, and whether edits were unsaved). `events` lists, in order with `t_ms`
+since the page started, every edit (`kind` "edit", a description, the
+boundaries and `bpm` after it), undo, redo (each with the boundaries and `bpm`
+after it) and audition (`kind` "play", `from`, `to`) the person made.
 If the record can't be written the program writes a line to stderr and exits
 with code 1. A W03 refusal writes no record.
 
@@ -131,7 +138,7 @@ belongs to the export (SPEC.md R25).
 **W04. Save** is Cmd+S (Ctrl+S elsewhere). It writes the output file as the
 UTF-8 text `rcySdk.manifestText` returns for: `source`, the source's path
 relative to the output file's directory with `/` separators; `sampleRate`,
-`channels`, `bpm` and `measures` as read; and the current `boundaries` and
+`channels` and `measures` as read; and the current `bpm`, `boundaries` and
 `slices`. The program then exits with code 0. If the file can't be written,
 the status line says why, nothing exits and the edits stay unsaved. A save with no edit, writing in
 place, leaves a manifest written by `rcy-export` byte for byte the same.
@@ -144,8 +151,9 @@ ids `discard-yes` and `discard-no`; `discard-yes` exits with code 3 and
 
 ## What the window changes
 
-**W06.** The window changes `boundaries` and `slices` and nothing else.
-Moving a locator does not change `bpm` or `measures`.
+**W06.** The window changes `boundaries`, `slices` and `bpm` and nothing
+else. Only W24 changes `bpm`; moving a locator does not change `bpm` or
+`measures`.
 
 **W07. Default names.** The file names are *default* when slice `k`'s file is
 `k` as three decimal digits followed by `.wav`, for every slice.
@@ -206,12 +214,42 @@ does. The detection method is the program's own. It must satisfy:
 On a recorded drum break, sensitivity 99 gives more cuts than sensitivity 0.
 
 Changing the sensitivity control after a Split by Transients, with no other
-edit in between, runs the split again before the control's event handler
+edit (a tempo change is one) in between, runs the split again before the control's event handler
 returns; the new result replaces the previous split as one undo step.
 
 **W13. Undo** is Cmd+Z and **redo** Shift+Cmd+Z (Ctrl elsewhere). Each move,
-add, remove and split is one step; a drag from press to release is one move. Undoing every step leaves the boundaries
-and slices as read, and the window then has no unsaved edit.
+add, remove, split and run of tempo changes (W24) is one step; a drag from press to release is one move. Undoing every step leaves the boundaries,
+slices and tempo as read, and the window then has no unsaved edit.
+
+**W24. Tempo.** The tempo is the `bpm` the saved manifest will hold: the
+manifest's value at launch, then whatever `--bpm` or the `bpm` control last
+set. `rcy-export --from-manifest` takes it from the manifest (SPEC.md R21)
+and writes it to the kit's MIDI file (R15). Changing it changes no boundary,
+no slice and nothing about audition (W18).
+
+The `bpm` control shows the tempo rounded to `TEMPO_DECIMALS` places, without
+trailing zeros (`165.5`, `137.72`). Its `step` attribute is `any`, so one
+press of the element's arrows adds or subtracts 1 from the shown value. When
+the control reports a change after the person typed or stepped in it:
+
+- text equal to the shown text is no change;
+- text in the `--bpm` form (W20) whose number makes `rcySdk.tempoWritable`
+  true becomes the tempo, exactly as typed and unrounded, as one edit;
+- any other text is refused: the tempo is unchanged, the control shows the
+  tempo again and the status line says why.
+
+The range check applies to a new tempo only. A manifest tempo that fails it
+is shown, and saved unchanged, like any other.
+
+A tempo the control never changed is saved as the exact number read, so W04's
+byte-for-byte rule holds for a manifest whose tempo has more decimal places
+than the control shows.
+
+A tempo change made through the control that directly follows another, with
+no other edit, undo or redo between them, replaces it, so a run of changes is
+one undo step. If a change brings the shown text back to the text shown
+before the run, the run is removed and the tempo is again the exact number it
+was before the run. `--bpm` is not part of a run.
 
 ## Display
 
@@ -260,7 +298,13 @@ anything.
 
 Every key in this document, including Save, Close, Undo and Redo, acts when
 its `keydown` event reaches the page, whichever element has focus, except
-that Left and Right belong to the sensitivity control while it has focus. An
+that Left and Right belong to the sensitivity control while it has focus, and
+that every key pressed without Cmd or Ctrl belongs to the `bpm` control while
+it has focus. There, Enter applies the typed tempo (W24) and Escape restores
+the shown tempo, and both release focus; a press in the plot applies the typed
+tempo and releases focus. Save and Close, by key or by button, apply the
+typed tempo first and do not act if it is refused. Undo and Redo discard the
+typed text and then act. An
 application menu item with the same shortcut, if there is one, does the same
 thing. Closing through the window's own close event follows W05 too.
 
@@ -279,6 +323,7 @@ These are HTML elements with these ids, visible in the window:
 | `split-transients` | button | W12 |
 | `resolution` | `select` | Option values `1`, `2`, `4`, `8`, `16`, `32` (slices per measure); initial `DEFAULT_RESOLUTION` |
 | `sensitivity` | `input type="range"` | `min` 0, `max` 99, step 1; initial `DEFAULT_SENSITIVITY` |
+| `bpm` | `input type="number"` | The tempo in beats per minute (W24); typed, or stepped with the element's own arrows |
 | `status` | any | The status line (W16) |
 | `add-cut` | button | Adds a cut at the cursor (W09) and selects it. Disabled while there is no cursor or a cut can't be added there. |
 | `delete-cut` | button | Removes the selected cut (W10). Disabled unless a cut is selected. |
@@ -319,6 +364,7 @@ at any time after load:
   selected: number | null,   // index into boundaries
   cursor: number | null,     // frame
   playing: boolean,
+  bpm: number,               // the applied tempo (W24); text still being typed in the control is not in it
   dirty: boolean,            // an unsaved edit exists
 }
 ```
@@ -338,4 +384,5 @@ global functions a driver could call, not this channel.
 ## Out of scope
 
 Opening another file, changing the source, export of audio or kit files,
-tempo and measure editing, effects, settings, and any network access.
+measure editing, playing or stretching audio at another tempo, effects,
+settings, and any network access.

@@ -162,7 +162,7 @@ const scenarios = {
     const bad = path.join(scratch, "amen", "bad.rcy.json"), m = read(amenManifest);
     [m.boundaries[2], m.boundaries[3]] = [m.boundaries[3], m.boundaries[2]];
     fs.writeFileSync(bad, JSON.stringify(m)); const before = fs.readFileSync(bad);
-    for (const args of [["--manifest", bad, "--record", path.join(scratch, "r.json")], [], ["--manifest", amenManifest], ["--manifest", path.join(scratch, "absent.json"), "--record", path.join(scratch, "r.json")], ["--manifest", amenManifest, "--record", path.join(scratch, "r.json"), "--bogus"], ["--manifest", amenManifest, "--record", path.join(scratch, "r.json"), "--view", "5:999999999"]]) {
+    for (const args of [["--manifest", bad, "--record", path.join(scratch, "r.json")], [], ["--manifest", amenManifest], ["--manifest", path.join(scratch, "absent.json"), "--record", path.join(scratch, "r.json")], ["--manifest", amenManifest, "--record", path.join(scratch, "r.json"), "--bogus"], ["--manifest", amenManifest, "--record", path.join(scratch, "r.json"), "--view", "5:999999999"], ["--manifest", amenManifest, "--record", path.join(scratch, "r.json"), "--bpm", "fast"], ["--manifest", amenManifest, "--record", path.join(scratch, "r.json"), "--bpm", "1"]]) {
       const child = spawn(ELECTRON, [ARTIFACT, ...args], { stdio: ["ignore", "ignore", "pipe"] });
       let err = ""; child.stderr.on("data", (d) => { err += d; });
       const code = await new Promise((resolve, reject) => {
@@ -368,6 +368,75 @@ const scenarios = {
     await leave(w.page.keyboard.press("Meta+s"));
     assert.equal(await w.exitCode(), 0);
     assert.equal(fs.readFileSync(out, "utf8"), text);
+  },
+  "17 the tempo is set at launch and by the control, undone, and saved": async () => {
+    const out = path.join(scratch, "tempo.rcy.json"), a = read(amenManifest);
+    const w = await open(amenManifest, out, ["--bpm", "165.5"]);
+    const type = async (text, end) => {
+      await w.page.locator("#bpm").click(); await w.page.keyboard.press("Meta+a");
+      await w.page.keyboard.type(text); await w.page.keyboard.press(end);
+    };
+    let t = await w.state();
+    assert.equal(t.bpm, 165.5); assert.equal(t.dirty, true);
+    assert.equal(await w.page.locator("#bpm").inputValue(), "165.5");
+    await type("170", "Enter");
+    t = await w.state();
+    assert.equal(t.bpm, 170); assert.equal(t.playing, false, "digits typed in the control play nothing");
+    assert.deepEqual(t.boundaries, a.boundaries);
+    assert.equal(await w.page.evaluate(() => document.activeElement.id), "", "Enter releases focus");
+    await type("172.25", "Enter");
+    assert.equal((await w.state()).bpm, 172.25);
+    await type("1", "Enter");
+    assert.equal((await w.state()).bpm, 172.25, "a tempo MIDI cannot hold is not taken");
+    assert.equal(await w.page.locator("#bpm").inputValue(), "172.25");
+    await w.page.locator("#bpm").click();
+    for (let i = 0; i < 3; i++) await w.page.keyboard.press("ArrowUp");
+    await w.page.keyboard.press("Enter");
+    assert.equal((await w.state()).bpm, 175.25, "three steps of the control's arrows");
+    await type("172.25", "Enter");
+    await type("90", "Escape");
+    assert.equal((await w.state()).bpm, 172.25, "Escape restores");
+    await w.page.keyboard.press("Meta+z");
+    assert.equal((await w.state()).bpm, 165.5, "two changes on the control are one undo step");
+    await w.page.keyboard.press("Meta+z");
+    t = await w.state();
+    assert.equal(t.bpm, a.bpm); assert.equal(t.dirty, false);
+    await w.page.keyboard.press("Shift+Meta+z"); await w.page.keyboard.press("Shift+Meta+z");
+    assert.equal((await w.state()).bpm, 172.25);
+    await leave(type("174", "Meta+s"));
+    assert.equal(await w.exitCode(), 0);
+    const b = read(out);
+    assert.equal(b.bpm, 174, "Save applies the typed tempo"); assert.equal(b.measures, a.measures);
+    assert.deepEqual(b.boundaries, a.boundaries); assert.deepEqual(meta(b), meta(a));
+    const r = read(w.record);
+    assert.equal(r.manifest_read.bpm, a.bpm); assert.equal(r.opening.bpm, 165.5); assert.equal(r.final.bpm, 174);
+    assert.deepEqual(r.events.filter((e) => e.kind === "edit").map((e) => e.bpm), [170, 172.25, 173.25, 174.25, 175.25, 172.25, 174]);
+    acceptedByExport(out);
+  },
+  "18 an untouched or restored tempo stays exact, and a refused tempo stops Save": async () => {
+    const out = path.join(scratch, "tempo-exact.rcy.json"), a = read(amenManifest);
+    assert.notEqual(a.bpm, Number(a.bpm.toFixed(2)), "the fixture's tempo has more than two decimals");
+    const w = await open(amenManifest, out);
+    const bpmField = w.page.locator("#bpm");
+    await bpmField.click(); await w.page.keyboard.press("Enter");
+    assert.equal((await w.state()).dirty, false, "Enter on untouched text");
+    await bpmField.click(); await w.page.keyboard.press("ArrowUp");
+    await w.page.keyboard.press("Enter");
+    let t = await w.state();
+    assert.equal(t.dirty, true); near(t.bpm, Number(a.bpm.toFixed(2)) + 1, 1e-9, "one step from the shown value");
+    await bpmField.click(); await w.page.keyboard.press("ArrowDown"); await w.page.keyboard.press("Enter");
+    t = await w.state();
+    assert.equal(t.bpm, a.bpm, "back at the shown text restores the exact tempo"); assert.equal(t.dirty, false);
+    await bpmField.click(); await w.page.keyboard.press("Meta+a"); await w.page.keyboard.type("1");
+    await w.page.keyboard.press("Meta+s");
+    assert.equal((await w.state()).ready, true); assert.equal(fs.existsSync(out), false, "Save by key with a refused tempo");
+    await bpmField.click(); await w.page.keyboard.press("Meta+a"); await w.page.keyboard.type("1e2");
+    await w.page.locator("#save").click();
+    assert.equal((await w.state()).bpm, a.bpm); assert.equal(fs.existsSync(out), false, "Save by button with a refused tempo");
+    await leave(w.page.locator("#save").click());
+    assert.equal(await w.exitCode(), 0);
+    const bpmLine = (f) => fs.readFileSync(f, "utf8").split("\n").find((l) => l.includes('"bpm"'));
+    assert.equal(bpmLine(out), bpmLine(amenManifest), "the saved tempo is the text read");
   },
 };
 

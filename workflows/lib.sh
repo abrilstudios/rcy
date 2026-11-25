@@ -15,6 +15,11 @@ RCY_WINDOW="$ROOT/window/rcy-window"
 # from one amen kit cut by ear, not from a comparison of values.
 BUFFER_MS=${RCY_BUFFER_MS:-20}
 
+# Parameter: the kit's tempo in beats per minute, when it should differ from
+# the tempo rcy-export works out from the break's length and measure count.
+# No default: unset, the window opens at the manifest's tempo.
+BPM=${RCY_BPM:-}
+
 # The Electron binary. RCY_ELECTRON names another one; the default is where
 # `npm ci --prefix tools/window-runtime` puts it on macOS.
 ELECTRON=${RCY_ELECTRON:-$ROOT/tools/window-runtime/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron}
@@ -40,6 +45,7 @@ new_task_dir() {
 edit_then_cut() {
   manifest=$1; dir=$2; shift 2
   kit="$dir/$(basename "$dir")"
+  [ -z "$BPM" ] || set -- "$@" --bpm "$BPM"
   set +e
   "$ELECTRON" "$RCY_WINDOW" --manifest "$manifest" \
       --out "$dir/edited.rcy.json" --record "$dir/run.json" "$@"
