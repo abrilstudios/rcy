@@ -1,68 +1,176 @@
 # rcy
 
-rcy cuts a drum break into a sampler kit. An agent runs it: the agent picks
-the break, guesses where the cuts go, and writes the whole task onto one
-command line. Then a window opens in front of a person, because nobody has
-yet taught a command line to hear a snare.
+rcy turns a recorded drum break into a sampler kit: one audio file per drum
+hit, with the instrument and MIDI files a sampler needs to play them. An
+agent prepares the cut and a person corrects it in a window. This page
+explains why the work is divided that way, what the division implies about
+agents and people working together, and how one break goes through it.
 
-![The window as an agent opens it: 32 cuts on an eighth-note grid, with the task written across the top](docs/screenshots/new-kit-opening.png)
+## Why a person still looks at the waveform
 
-The person drags the cuts onto the hits and presses Save. The window closes,
-the agent reads an exit code, and a kit lands on disk. No file picker, no
-save-as dialog and no setup screen appear at any point, since every answer
-they'd ask for is already in the arguments.
+Finding where drum hits begin is an old problem with good solutions. The
+`onset_detect` function in librosa returns a list of onset times for a break
+in well under a second, and the window's own Split by Transients does the
+same job. Cutting a break is a different question from detecting its
+onsets, in two ways.
 
-This is an alpha; the file formats and command lines can still change.
+The first is which onsets become cuts. Four bars of a funk break hold a ride
+cymbal stroke on most eighth notes, kicks and snares on some of them, and
+quieter ghost notes between. A detector reports as many of these as its
+threshold admits. A kit, though, has a fixed number of pads, and each pad has
+to be worth playing by itself. Whether a ghost note belongs to the snare
+after it or gets its own pad depends on what the kit is for, and the answer
+changes with the track being made. The audio doesn't contain it.
 
-## RLHI
+The second is where exactly a cut goes. A detector marks the frame where
+energy rises past a threshold. The useful cut is usually a little earlier,
+at the start of the attack, and it has to avoid the previous hit's tail,
+because a slice that begins in the middle of a loud waveform clicks when a
+sampler triggers it. On a break recorded live to tape there is no silence
+between hits to cut in; the cymbal rings through everything. Every cut lands
+in sounding audio, and the person choosing it is trading a clipped attack
+against a click against a few milliseconds of the previous drum. People who
+do this listen to each slice alone and move the cut until it sounds right.
+We don't know how to write that judgment down as a function.
 
-We call the loop RLHI, reinforcement learning with human input, and the name
-is a joke with a straight face. Nothing in this repository trains a model.
-What it does have is the bookkeeping an RL person would recognise, written
-down on every run:
+So the detector's output is a first draft. It is a good one, and it saves
+most of the work. The remaining part needs someone to hear the result, and
+hearing takes a person, a waveform they can zoom to single samples, and a
+way to play one slice.
 
-| RL word | What it is in rcy |
-|---|---|
-| Episode | One run of the window. |
-| Action | The opening split the agent proposed: `opening` in the run record. |
-| Environment | A person with headphones. |
-| Feedback | The split the person kept (`final`), and every edit, undo and audition on the way there (`events`). |
-| Reward | The exit code. 0 means they saved. 3 means they closed the window on you. |
-| Policy update | The agent reading its own run records before it proposes again. No program here does that part for it. |
+## What this implies for agents
 
-```mermaid
-flowchart LR
-    A["Agent: break, split, task text"] -->|one command line| W[rcy-window]
-    W -->|waveform and sound| P["Person: drag, listen, Save"]
-    P -->|exit code| A
-    P -->|edited manifest| X[rcy-export]
-    X --> K["Kit: WAV, SFZ, EXS, MIDI"]
-    W -->|run record| R[("run.json")]
-    R -.->|"read by the agent or a person, by no program here"| A
-```
+An agent can do everything in this job except the listening: find the file,
+work out the tempo, run the detector, choose a grid, cut the audio, write
+the sampler formats, upload the kit to hardware. The design question is how
+to put the person's judgment into that sequence without making the person
+operate the software.
 
-Two programs do the work. `rcy-export` writes kits and never asks anything;
-`rcy-window` is the window.
+rcy's answer is that the window is a function the agent calls. The agent
+states the whole task on the command line: which manifest, which first-draft
+split, the sentence the person reads at the top of the window, where the
+result goes, and optionally the tempo and the number of slices the result
+must have. The window opens already in that state. It has no file picker, no
+save dialog and no settings screen, because the agent has answered
+everything those would ask. The person does the one thing that was left for
+them and presses Save, and the agent gets back an exit code and an edited
+manifest.
 
-## One episode
+Two properties of that arrangement matter beyond drum breaks.
+
+The person's time goes only to judgment. They never choose a file or name an
+output, so a correction that takes thirty seconds of listening takes thirty
+seconds in total.
+
+Every run also leaves a record of the disagreement between the two parties.
+The file named by `--record` holds the cuts the agent proposed, the cuts the
+person kept, and every edit, undo and audition between them with its time in
+milliseconds. A pile of those records is a dataset about taste: where one
+person, on real material, moved a machine's proposal and by how much. That
+is what the records are for, and it's the reason the window writes one even
+when the person closes without saving. No program in this repository reads
+them. The detector doesn't improve from them and nothing is trained; an
+agent or a person can read the pile and see, for instance, that the
+proposals on a given break are consistently early. The records name local
+paths, so `runs/` is ignored by git.
+
+## One break: four bars of the Amen
+
+The file `presets/amen.wav` is the drum break from "Amen, Brother" by The
+Winstons (1969), played by Gregory Coleman. It runs 6.971 seconds, which rcy
+takes as four bars of 4/4 and therefore 137.72 beats per minute.
 
 ```
 workflows/new-kit presets/amen.wav 4 work/amen
 ```
 
-That's the source, its length in 4/4 measures, and a new task directory. The
-script cuts the break into one slice per measure, opens the window on it with
-an eighth-note split, and waits.
+That command gives the person an eighth-note grid as the first draft, 32
+equal slices of 217.8 ms each:
 
-The person clicks a slice to hear it, drags a cut onto its hit, and
-double-clicks to add or remove one. The wheel, or `=` and `-`, zooms as far
-as single frames, which is where a cut gets placed on the start of a hit
-rather than near it:
+![The Amen break in the window with 32 cuts on an eighth-note grid and the task text above the waveform](docs/screenshots/new-kit-opening.png)
 
-![Zoomed in on one cut while it is dragged](docs/screenshots/moving-a-cut.png)
+At this zoom the grid looks right. It isn't, and the size of the error is
+measurable, because the detector can be run on the same file:
 
-Save ends the run. The script cuts the kit from the saved manifest, keeping
-20 ms of source audio either side of each slice, and leaves this behind:
+![The same break split by transient detection at sensitivity 50: 8 slices, with a count of 5 asked for and Save unavailable](docs/screenshots/pick-hits-count-unmet.png)
+
+At its default sensitivity the detector finds seven onsets. Each of them
+falls after the nearest grid line, by these amounts:
+
+| Detected onset | Nearest grid cut | Onset is later by |
+|---|---|---|
+| 0.445 s | 2 | 9.0 ms |
+| 1.101 s | 5 | 11.5 ms |
+| 1.979 s | 9 | 18.4 ms |
+| 3.299 s | 15 | 31.1 ms |
+| 4.170 s | 19 | 31.5 ms |
+| 5.021 s | 23 | 10.8 ms |
+| 5.249 s | 24 | 21.2 ms |
+
+Cuts are numbered as the window's status line numbers them. The grid assumes
+32 eighth notes of equal length in a file that is exactly four bars long,
+and the offsets, largest in the middle of the break, say that at least one
+of those assumptions is wrong for this recording. The table can't separate
+a drummer's timing from an imprecise bar count or from the detector's own
+placement, and it doesn't need to: a grid cut that is 31 ms early puts 31 ms
+of the previous hit at the front of the slice, whatever the cause.
+
+Zoomed in on grid cut 5, the gap is visible. The hit the cut belongs to
+starts at about 1.10 s, to the right of the cut, and everything between
+them is the tail of the hit before. (The script that takes these pictures
+has dragged the cut a further 30 pixels left, only to show a drag in
+progress.)
+
+![Zoomed in on grid cut 5 during a drag: the cut is the red line at about 1.08 s, and the hit it belongs to starts near 1.10 s](docs/screenshots/moving-a-cut.png)
+
+The detector is not simply the better draft, though. It returned seven
+onsets from four bars that hold several times that many drum strokes, so a
+kit cut from it has eight long slices, most of them containing more than one
+hit. Raising the sensitivity returns more onsets, and at no setting does the
+detector know which of them the kit should keep. The grid has the opposite
+fault: a cut for every eighth note, each a few milliseconds off. The person
+starts from whichever draft is closer to the kit they want and fixes the
+rest by ear.
+
+When the kit must have an exact number of pads, the agent says so, and the
+window enforces it:
+
+```
+workflows/pick-hits presets/amen.wav 4 5 work/five
+```
+
+Save stays unavailable while the count is wrong, as in the picture above,
+and becomes available when it matches:
+
+![The break with 5 slices after cuts were removed: the count reads "5 slices, as asked" and Save is available](docs/screenshots/pick-hits-count-met.png)
+
+The pictures on this page come from a script that drives the window, so the
+five slices shown are whichever were left after it removed the first three
+cuts, not a musician's choice. Which five hits of the Amen deserve pads is
+exactly the decision the window exists to hand to a person.
+
+Tempo gets the same treatment as cuts. The 137.72 is arithmetic on the
+file's length and a bar count somebody supplied; if either is off, so is the
+tempo in the kit's MIDI file. The agent can state a tempo at launch with
+`--bpm` (or `RCY_BPM` in front of a workflow), and the person can change it
+in the toolbar. Only the recorded tempo changes. The audio is never
+time-stretched.
+
+![A window launched with --bpm 165: the tempo field in the toolbar reads 165](docs/screenshots/tempo-control.png)
+
+A tempo that a MIDI file can't hold is refused where it was typed, and the
+field returns to the last accepted number:
+
+![A tempo of 1 typed and refused: the field reads 165 again and the status line gives the reason in red](docs/screenshots/tempo-refused.png)
+
+A task can also point the person at a single cut with `--view` and
+`--select`, for the case where an agent, or a person listening to the kit,
+has found one slice that starts wrong:
+
+![A window opened zoomed to three slices with one cut selected and a task asking for that cut to be moved onto the hit](docs/screenshots/one-cut-in-view.png)
+
+After Save, the workflow cuts the kit from the saved manifest and leaves
+this:
 
 ```
 work/amen/
@@ -72,11 +180,18 @@ work/amen/
   amen/              the kit: WAV slices, .sfz, .exs, .mid, .rcy.json
 ```
 
-The script exits with the window's code, so the caller reads one number.
+Each slice file keeps 20 ms of source audio either side of its cut, with the
+cut written into the instrument files as the start point. A cut that turns
+out a few milliseconds late can then be corrected in the sampler without
+going back to the window.
 
-## The contract
+## Reference
 
-A window run is a function call with a person inside it.
+This is an alpha; the file formats and command lines can still change.
+`rcy-export` writes kits and never asks anything. `rcy-window` is the
+window. `SPEC.md` and `WINDOW.md` state their complete behaviour.
+
+### The contract of a window run
 
 | | |
 |---|---|
@@ -100,64 +215,39 @@ $ echo $?
 2
 ```
 
-## Asking for exactly five
+### Workflows
+
+Each script in `workflows/` is one whole task in a few lines of `sh`: it
+prepares the manifest, opens the window, waits, and exits with the window's
+code. Each takes a task directory that doesn't exist yet.
+
+| Command | First draft the person sees |
+|---|---|
+| `workflows/new-kit SOURCE.wav MEASURES TASK_DIR` | A grid, eighth notes by default. |
+| `workflows/pick-hits SOURCE.wav MEASURES COUNT TASK_DIR` | Detected transients; Save needs exactly `COUNT` slices. |
+| `workflows/recut KIT.rcy.json TASK_DIR` | The kit's own cuts, unchanged. |
+
+### Settings
+
+The workflows read these from the environment.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `RCY_BUFFER_MS` | 20 | Milliseconds of source audio kept either side of each slice. |
+| `RCY_SPLIT_RESOLUTION` | 8 | `new-kit`: slices per measure in the opening split. |
+| `RCY_SENSITIVITY` | 50 | `pick-hits`: transient sensitivity of the opening split, 0 to 99. |
+| `RCY_BPM` | unset: the tempo worked out from the break's length and measure count | The kit's tempo in beats per minute when the window opens. The person can change it with the window's `bpm` control. |
+| `RCY_ELECTRON` | the binary under `tools/window-runtime` | The Electron binary that runs the window. |
+
+### Calling the window directly
 
 ```
-workflows/pick-hits presets/amen.wav 4 5 work/five
+electron window/rcy-window --manifest KIT.rcy.json --out EDITED.rcy.json --record RUN.json \
+    [--split measures --resolution R | --split transients --sensitivity S] \
+    [--bpm B] [--view START:END] [--select I] [--task TEXT] [--expect-slices K]
 ```
 
-The third argument is the number of slices the result must have. An agent
-filling a five-pad program wants five files, and "about five" is a bug it
-would have to handle later. So the window opens with cuts at detected
-transients and keeps Save unavailable while the count is wrong:
-
-![pick-hits at opening: 8 slices, 5 asked, Save unavailable](docs/screenshots/pick-hits-count-unmet.png)
-
-The person deletes cuts until the count matches, and Save becomes available:
-
-![pick-hits with 5 slices: Save available](docs/screenshots/pick-hits-count-met.png)
-
-The constraint lives in the window rather than in a retry loop, which means
-the agent never receives a kit of four or six.
-
-## Tempo
-
-`rcy-export` works a tempo out from the break's length and its measure
-count. When the agent knows better, it says so at launch with `--bpm`, or
-with `RCY_BPM` in front of a workflow:
-
-```
-RCY_BPM=165 workflows/recut work/amen/amen/amen.rcy.json work/amen-165
-```
-
-The person can overrule it in the `bpm` field of the toolbar; typing a number
-and pressing Enter is one undoable edit, like moving a cut.
-
-![A window launched with --bpm 165: the tempo field in the toolbar reads 165](docs/screenshots/tempo-control.png)
-
-A tempo the MIDI file can't hold is refused in place. The field goes back to
-the last good number and the window says why; a Save pressed with the bad
-number still in the field doesn't save:
-
-![A tempo of 1 typed into the field and refused, with the reason shown](docs/screenshots/tempo-refused.png)
-
-The tempo goes into the manifest and the kit's MIDI file. The audio isn't
-time-stretched, and auditioning a slice plays the source as recorded.
-
-## Fixing a kit that already exists
-
-```
-workflows/recut work/amen/amen/amen.rcy.json work/amen-2
-```
-
-The window opens on the kit's own cuts, unchanged, and the script cuts a new
-kit from whatever the person saves. To point them at the one cut in question,
-call the window directly with `--view` and `--select` (see below).
-
-## The run record
-
-Every run writes the file named by `--record`, whether the person saved or
-not. Shortened, a run of `pick-hits` looks like this:
+### The run record
 
 ```json
 {
@@ -175,50 +265,9 @@ not. Shortened, a run of `pick-hits` looks like this:
 }
 ```
 
-`opening` is what the agent proposed and `final` is what the person kept.
-Between them, `events` holds each edit, undo, redo and audition with its time
-in milliseconds, so the record shows which cuts the person moved, which they
-listened to twice, and how long the whole thing took them.
+The example is shortened. Positions are in frames at 44.1 kHz.
 
-Keep the records. Compared across many runs, `opening` against `final` shows
-where the first-pass split is wrong, and that comparison is the only
-"learning" in RLHI: an agent, or a person, reading the pile. The
-records name local paths, so `runs/` is ignored by git.
-
-## Writing a different task
-
-A workflow is a few lines of `sh` around one launch, short enough to read
-before running. To state a task none of them covers, call the window
-yourself:
-
-```
-electron window/rcy-window --manifest KIT.rcy.json --out EDITED.rcy.json --record RUN.json \
-    [--split measures --resolution R | --split transients --sensitivity S] \
-    [--bpm B] [--view START:END] [--select I] [--task TEXT] [--expect-slices K]
-```
-
-`--view` opens zoomed to a frame range and `--select` opens with one slice
-selected, so a task can point the person at the one cut in question:
-
-![A window opened with --view and --select: zoomed to a few slices with one selected](docs/screenshots/one-cut-in-view.png)
-
-`--task` is the sentence across the top of the window, and its reader has
-never seen the agent's plan.
-`WINDOW.md` states every option, key and refusal.
-
-### Settings
-
-The workflows read these from the environment.
-
-| Variable | Default | Meaning |
-|---|---|---|
-| `RCY_BUFFER_MS` | 20 | Milliseconds of source audio kept either side of each slice. |
-| `RCY_SPLIT_RESOLUTION` | 8 | `new-kit`: slices per measure in the opening split. |
-| `RCY_SENSITIVITY` | 50 | `pick-hits`: transient sensitivity of the opening split, 0 to 99. |
-| `RCY_BPM` | unset: the tempo worked out from the break's length and measure count | The kit's tempo in beats per minute when the window opens. The person can change it with the window's `bpm` control. |
-| `RCY_ELECTRON` | the binary under `tools/window-runtime` | The Electron binary that runs the window. |
-
-## Kits
+### Kits
 
 `rcy-export` writes one directory:
 
@@ -248,7 +297,7 @@ file holds exactly its slice.
 
 `SPEC.md` states every option, file format rule and refusal message.
 
-## Install
+### Install
 
 ```
 git clone https://github.com/abrilstudios/rcy && cd rcy
@@ -261,12 +310,13 @@ and tested on macOS.
 
 ## How the programs are built
 
-The programs are built by the same loop, one level up: each has a
-specification that states its whole behaviour in numbered requirements, `SPEC.md` for `rcy-export`,
-`WINDOW.md` for the window, and a coding agent writes or changes the program
-against that text while scenarios that drive the real program decide whether
-it did. The person's part is to say what the program should do and to use
-the result; a toolbar that looks wrong is feedback no scenario gives.
+Each program has a specification that states its whole behaviour in numbered
+requirements: `SPEC.md` for `rcy-export` and `WINDOW.md` for the window. A
+coding agent changes the program against that text, and scenarios that drive
+the real program check the result. The division of work is the one described
+above for cuts. The scenarios settle everything that can be stated as a
+check, and a person using the window reports what can't, such as a toolbar
+that is hard to read.
 
 A change goes like this. Edit `export/main.js`, `window/main.js` or
 `rcy-sdk/src`, change `SPEC.md` or `WINDOW.md` to match in the same commit,
