@@ -21,6 +21,12 @@ export interface Manifest {
    * after its end, as far as the source reaches. Absent means 0.
    */
   bufferMs?: number;
+  /**
+   * The slices in the order they play: slice numbers (1-based). A slice may
+   * appear more than once or not at all. Absent or empty means source order,
+   * and source order is written as absent.
+   */
+  order?: number[];
 }
 
 /** The whole number of frames nearest `ms` milliseconds at `sampleRate`. */
@@ -56,6 +62,13 @@ export function manifestText(m: Manifest): string {
   if (m.slices.length !== m.boundaries.length - 1) throw new RangeError("slices must number one fewer than boundaries");
   const b = m.boundaries;
   const comma = (i: number, n: number) => (i < n - 1 ? "," : "");
+  const order = m.order ?? [];
+  if (order.length > 0) {
+    if (order.some((v) => !Number.isInteger(v) || v < 1 || v > m.slices.length)) {
+      throw new RangeError("order must hold slice numbers");
+    }
+  }
+  const reordered = order.length > 0 && (order.length !== m.slices.length || order.some((v, i) => v !== i + 1));
   const lines = [
     "{",
     `  "rcy": ${MANIFEST_VERSION},`,
@@ -83,7 +96,7 @@ export function manifestText(m: Manifest): string {
       `      "role": ${jsonString(s.role)}`,
       `    }${comma(i, m.slices.length)}`,
     ]),
-    "  ]",
+    ...(reordered ? ["  ],", '  "order": [', ...order.map((v, i) => `    ${v}${comma(i, order.length)}`), "  ]"] : ["  ]"]),
     "}",
   ];
   return lines.join("\n") + "\n";

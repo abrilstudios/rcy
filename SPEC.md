@@ -14,9 +14,9 @@ not reimplement it.
 
 This document is written against rcy-sdk 0.1.0, the file
 `rcy-sdk/dist/rcy-sdk.js` with SHA-256
-`fd976bc2b709c41e1db25f4b9aeccc5dec99f24c90755561e19769a92403d6a9`,
+`09bd1d3fb303b8d6e1028956cab71af3b933e99867a673830d058250501d81cd`,
 described by `rcy-sdk/README.md` with SHA-256
-`47f210129fa0c1eaa95fffd3ac8d6f336d6d1819e3c2149edc1a18efd6f82da3`.
+`a8e6ef80d5863c90719cd1b16dbecaa2a38c610232e3dcf2f11c3b917ac05dd5`.
 
 Each requirement carries an identifier (`R01`, `R02`, ...). A scenario under
 `features/` is tagged with the identifiers it checks, and `bin/check-coverage`
@@ -304,7 +304,8 @@ each slice's `key`, `file` and `role` from the manifest. Each slice's `start`
 and `end` are taken from `boundaries`; the values stored in the slice objects
 are ignored on read, may be absent, and are rewritten on write. A slice object
 without `role` has the empty role. The written manifest's `source` is recomputed for the new
-output directory by R17.
+output directory by R17. The manifest's `order` member (WINDOW.md W25), when present, is not read, and the
+written manifest has none.
 
 **R22.** A manifest refusal names the first defect in this order. `<path>` is
 the manifest path as given, `<source>` is the absolute path of the source, and

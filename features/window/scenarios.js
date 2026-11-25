@@ -438,6 +438,94 @@ const scenarios = {
     const bpmLine = (f) => fs.readFileSync(f, "utf8").split("\n").find((l) => l.includes('"bpm"'));
     assert.equal(bpmLine(out), bpmLine(amenManifest), "the saved tempo is the text read");
   },
+  "19 dragging a slice's handle reorders playback; cuts are locked until Source order": async () => {
+    const out = path.join(scratch, "ordered.rcy.json"), a = read(amenManifest);
+    const w = await open(amenManifest, out);
+    const errors = []; w.page.on("pageerror", (e) => errors.push(String(e)));
+    let s = await w.state();
+    assert.deepEqual(s.order, a.slices.map((_, i) => i + 1)); assert.deepEqual(s.shown, a.boundaries);
+    const stripY = s.plot.y - 12, mid = (k) => (xOf(s, s.shown[k - 1]) + xOf(s, s.shown[k])) / 2;
+    // slice 2's handle, dropped just right of slice 3's middle: 1 3 2 4 ...
+    await w.page.mouse.move(mid(2), stripY); await w.page.mouse.down();
+    await w.page.mouse.move(mid(3) + 4, stripY, { steps: 6 }); await w.page.mouse.up();
+    s = await w.state();
+    const want = a.slices.map((_, i) => i + 1); want[1] = 3; want[2] = 2;
+    assert.deepEqual(s.order, want); assert.deepEqual(s.boundaries, a.boundaries, "the manifest's boundaries stay in source order");
+    assert.equal(s.shown[2] - s.shown[1], a.boundaries[3] - a.boundaries[2], "slot 2 shows slice 3");
+    assert.equal(s.dirty, true);
+    // a cut can't be added while reordered
+    await w.page.mouse.dblclick(xOf(s, s.shown[4] + 9000), midY(s));
+    assert.equal((await w.state()).boundaries.length, a.boundaries.length);
+    // a second drag straight after, made while Space loops: slice 1 to after slot 2; the loop goes on
+    await w.page.keyboard.press("Space"); assert.equal((await w.state()).playing, true);
+    s = await w.state();
+    await w.page.mouse.move(mid(1), stripY); await w.page.mouse.down();
+    await w.page.mouse.move(mid(2) + 4, stripY, { steps: 6 }); await w.page.mouse.up();
+    const first = want.slice(); want[0] = 3; want[1] = 1;
+    s = await w.state();
+    assert.deepEqual(s.order, want); assert.equal(s.playing, true, "the loop plays on in the new order");
+    if (process.env.RCY_SHOT) await w.page.screenshot({ path: process.env.RCY_SHOT });
+    await w.page.keyboard.press("Space"); assert.equal((await w.state()).playing, false);
+    // each reorder is one undo step (after the pointer work: Electron's menu takes the shortcut's key release)
+    await w.page.keyboard.press("Meta+z"); assert.deepEqual((await w.state()).order, first);
+    await w.page.keyboard.press("Meta+Shift+z"); assert.deepEqual((await w.state()).order, want);
+    assert.deepEqual(errors, []);
+    await leave(w.page.keyboard.press("Meta+s"));
+    assert.equal(await w.exitCode(), 0);
+    const m = read(out);
+    assert.deepEqual(m.order, want); assert.deepEqual(m.boundaries, a.boundaries); assert.deepEqual(meta(m), meta(a));
+    assert.deepEqual(read(w.record).final.order, want);
+    acceptedByExport(out);
+    // reopened, the order is as saved; Source order removes it
+    const out2 = path.join(scratch, "ordered2.rcy.json");
+    const w2 = await open(out, out2);
+    assert.deepEqual((await w2.state()).order, want);
+    await w2.page.locator("#source-order").click();
+    assert.deepEqual((await w2.state()).order, a.slices.map((_, i) => i + 1));
+    await leave(w2.page.keyboard.press("Meta+s"));
+    assert.equal(await w2.exitCode(), 0);
+    assert.equal("order" in read(out2), false, "source order is written as no order member");
+  },
+  "20 copy, paste, duplicate and cut build an order with repeats and gaps": async () => {
+    const out = path.join(scratch, "repeats.rcy.json"), a = read(amenManifest), n = a.slices.length;
+    const w = await open(amenManifest, out);
+    const errors = []; w.page.on("pageerror", (e) => errors.push(String(e)));
+    let s = await w.state();
+    const stripY = s.plot.y - 12, mid = (k) => (xOf(s, s.shown[k - 1]) + xOf(s, s.shown[k])) / 2;
+    const ident = a.slices.map((_, i) => i + 1), len = (k) => a.boundaries[k] - a.boundaries[k - 1];
+    await w.page.mouse.click(mid(2), stripY);
+    assert.equal((await w.state()).slot, 1);
+    await w.page.keyboard.press("Meta+d");                      // 1 2 2 3 ...
+    s = await w.state();
+    assert.deepEqual(s.order, [1, 2, 2].concat(ident.slice(2))); assert.equal(s.slot, 2);
+    assert.equal(s.shownFrames, s.frames + len(2)); assert.equal(s.shown.length, n + 2);
+    assert.deepEqual(s.boundaries, a.boundaries);
+    await w.page.keyboard.press("Meta+c");
+    await w.page.mouse.click(mid(1), stripY);
+    await w.page.keyboard.press("Meta+v");                      // 1 2 2 2 3 ...
+    s = await w.state();
+    assert.deepEqual(s.order, [1, 2, 2, 2].concat(ident.slice(2))); assert.equal(s.slot, 1);
+    await w.page.keyboard.press("Meta+x");                      // 1 2 2 3 ...
+    await w.page.mouse.click(mid(1), stripY);
+    await w.page.keyboard.press("Meta+x");                      // 2 2 3 ...: slice 1 plays nowhere
+    s = await w.state();
+    assert.deepEqual(s.order, [2, 2].concat(ident.slice(2)));
+    assert.equal(s.shownFrames, s.frames + len(2) - len(1));
+    await w.page.keyboard.press("Space"); assert.equal((await w.state()).playing, true);
+    await w.page.keyboard.press("Space");
+    await w.page.keyboard.press("Meta+z"); assert.deepEqual((await w.state()).order, [1, 2, 2].concat(ident.slice(2)));
+    await w.page.keyboard.press("Meta+Shift+z");
+    assert.deepEqual(errors, []);
+    await leave(w.page.keyboard.press("Meta+s"));
+    assert.equal(await w.exitCode(), 0);
+    const m = read(out);
+    assert.deepEqual(m.order, [2, 2].concat(ident.slice(2))); assert.deepEqual(m.boundaries, a.boundaries); assert.deepEqual(meta(m), meta(a));
+    acceptedByExport(out);
+    const w2 = await open(out, path.join(scratch, "repeats2.rcy.json"));
+    const s2 = await w2.state();
+    assert.deepEqual(s2.order, m.order); assert.equal(s2.shownFrames, s2.frames + len(2) - len(1));
+    w2.kill();
+  },
 };
 
 (async () => {

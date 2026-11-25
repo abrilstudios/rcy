@@ -103,6 +103,15 @@ test(label + " " + "a kit with a buffer", () => {
   assert.deepEqual(slicePoints(m, 1, 260), { fileStart: 56, fileEnd: 260, offset: 44, end: 194 });
   assert.equal(manifestText(m).split("\n")[7], '  "buffer_ms": 1,');
   assert.equal(manifestText({ ...m, bufferMs: 0 }), manifestText({ ...m, bufferMs: undefined }));
+  // order: source order adds no member; another order is written after slices; a bad one throws
+  assert.equal(manifestText({ ...m, order: [1, 2] }), manifestText(m));
+  assert.ok(manifestText({ ...m, order: [2, 1] }).endsWith('  ],\n  "order": [\n    2,\n    1\n  ]\n}\n'));
+  assert.deepEqual(JSON.parse(manifestText({ ...m, order: [2, 1] })).order, [2, 1]);
+  assert.deepEqual(JSON.parse(manifestText({ ...m, order: [1, 1, 2] })).order, [1, 1, 2]);
+  assert.deepEqual(JSON.parse(manifestText({ ...m, order: [2] })).order, [2]);
+  assert.equal(manifestText({ ...m, order: [] }), manifestText(m));
+  assert.throws(() => manifestText({ ...m, order: [0, 1] }), RangeError);
+  assert.throws(() => manifestText({ ...m, order: [3] }), RangeError);
   assert.equal(sfzText(m, "files", 260), "<region> sample=001.wav offset=10 end=99 key=60\n<region> sample=002.wav offset=44 end=193 key=61");
   assert.throws(() => sfzText(m, "files"), RangeError);
   const sample = { key: 60, fileName: "001.wav", dataOffset: 44, frames: 144, sampleRate: 44100, bitsPerSample: 16, channels: 1, fileSize: 332 };

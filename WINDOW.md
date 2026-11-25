@@ -13,9 +13,9 @@ a function for something this document asks for, the program calls it.
 
 This document is written against rcy-sdk 0.1.0, the file
 `rcy-sdk/dist/rcy-sdk.js` with SHA-256
-`fd976bc2b709c41e1db25f4b9aeccc5dec99f24c90755561e19769a92403d6a9`,
+`09bd1d3fb303b8d6e1028956cab71af3b933e99867a673830d058250501d81cd`,
 described by `rcy-sdk/README.md` with SHA-256
-`47f210129fa0c1eaa95fffd3ac8d6f336d6d1819e3c2149edc1a18efd6f82da3`.
+`a8e6ef80d5863c90719cd1b16dbecaa2a38c610232e3dcf2f11c3b917ac05dd5`.
 
 ## Terms
 
@@ -37,12 +37,13 @@ described by `rcy-sdk/README.md` with SHA-256
 | `LAST_KEY` | 127 | invariant | The highest MIDI key; no edit may produce a higher one. |
 | `MIN_VIEW_FRAMES` | 32 frames | parameter | Narrowest view; wide enough to see a zero crossing, narrow enough to place a cut on one frame. |
 | `ZOOM_STEP` | 0.5 | parameter | One zoom-in key press halves the visible span; zoom-out doubles it. |
-| `PICK_PIXELS` | 6 px | parameter | A press within this distance of a boundary's line acts on that boundary. |
+| `PICK_PIXELS` | 6 px | parameter | A press within this distance of a boundary's line acts on that boundary; a press on the strip becomes a reorder drag (W25) after more than this travel. |
 | `TAIL_FADE_MS` | 3 ms | default | Audition ends each slice with a fade to zero of this length, the value rcy uses. |
 | `TAIL_FADE_POWER` | 3 | default | The fade gain is `t^3` for `t` falling from 1 to 0, rcy's "exponential" curve. |
 | `DEFAULT_RESOLUTION` | 4 slices per measure | default | Initial value of the resolution control. |
 | `DEFAULT_SENSITIVITY` | 50 | default | Initial value of the sensitivity control, range 0 to 99. |
 | `AUDITION_KEYS` | `1234567890qwertyuiop` | default | Key `i` (0-based) in this string plays slice `i + 1`. |
+| `ORDER_MAX_SLOTS` | 256 slots | parameter | Longest order paste and duplicate build (W25); it bounds the audio the window lays out. A manifest's own longer order is read as it is. |
 | `TEMPO_DECIMALS` | 2 decimal places | default | The tempo control shows the tempo rounded to this many places. Display only: the stored tempo is not rounded. Two places is what `rcy-export` prints (SPEC.md R18); the two need not match. |
 
 ## Launch
@@ -76,6 +77,8 @@ or changes no file:
 5. `slices` is an array with one object per pair of neighbouring boundaries,
    each with an integer `key` from 0 to `LAST_KEY`, a string `file`, and a
    `role` that is a string or absent (absent reads as the empty string);
+   `order`, when present, is a non-empty array of integers from 1 to the
+   slice count (W25);
 6. `source`, resolved against the manifest's directory when relative, is a
    file `rcySdk.parseWav` accepts with 16 bits per sample;
 7. the last boundary is at most `N`;
@@ -120,6 +123,9 @@ bpm, and whether edits were unsaved). `events` lists, in order with `t_ms`
 since the page started, every edit (`kind` "edit", a description, the
 boundaries and `bpm` after it), undo, redo (each with the boundaries and `bpm`
 after it) and audition (`kind` "play", `from`, `to`) the person made.
+`opening`, `final` and each reorder, undo and redo event also hold `order`
+(W25); boundaries in the record are the manifest's, in source order, and a
+"play" event's `from` and `to` are frames of the audio as shown.
 If the record can't be written the program writes a line to stderr and exits
 with code 1. A W03 refusal writes no record.
 
@@ -151,8 +157,8 @@ ids `discard-yes` and `discard-no`; `discard-yes` exits with code 3 and
 
 ## What the window changes
 
-**W06.** The window changes `boundaries`, `slices` and `bpm` and nothing
-else. Only W24 changes `bpm`; moving a locator does not change `bpm` or
+**W06.** The window changes `boundaries`, `slices`, `bpm` and `order` and
+nothing else. Only W24 changes `bpm` and only W25 changes `order`; moving a locator does not change `bpm` or
 `measures`.
 
 **W07. Default names.** The file names are *default* when slice `k`'s file is
@@ -251,6 +257,56 @@ one undo step. If a change brings the shown text back to the text shown
 before the run, the run is removed and the tempo is again the exact number it
 was before the run. `--bpm` is not part of a run.
 
+**W25. Order.** The order is the sequence the slices play in: a list of
+slice numbers (1-based, by position in the source), each entry a **slot**. A
+slice may fill several slots or none. It is the manifest's `order` member at
+launch, source order (every slice once, ascending) when the manifest has
+none, and the saved manifest holds it as `rcySdk.manifestText` writes it: no
+member for source order. W03 refuses a manifest whose `order` is anything else.
+
+The window shows and plays the audio in that order. Between L and R the
+slots are laid end to end, each with its slice's own frames and length;
+before L and after R the audio is the source's. With repeats or slices left
+out the shown audio is longer or shorter than the source, R is drawn at the
+end of the last slot, and the shown length is `shownFrames` (W19). The waveform, the cut
+lines, the playback line, a click on a slice and Space (L to R, looping) all
+follow this layout, so Space plays the reordered loop. A slice keeps its
+number, `key`, `file` and `role` wherever it plays; a slice shown away from
+its source position has its number in the cut colour. The manifest's
+`boundaries` and `slices` stay in source order: reordering changes `order`
+and nothing else.
+
+Each slice wide enough shows a handle of six dots before its number. Dragging
+a slice by the strip moves it to the drop line: before the first slice whose
+middle is right of the pointer, or last. A drop that leaves the order
+unchanged is no edit. A reorder is one undo step and clears the selection and
+the cursor. A press on the strip while audio plays does not stop it until
+the release shows the press was a click; when the L-to-R loop is playing at
+a reorder, it starts again from L in the new order, and any other sound stops.
+
+A click on a slice in the strip selects its slot, shown with a tint; a click
+in the strip outside every slice clears the selection. With a slot selected:
+
+| Key | Effect |
+|---|---|
+| Cmd+C (Ctrl elsewhere) | Copies the slot's slice. No edit. |
+| Cmd+V | Inserts the copied slice after the selected slot, or last when none is selected, and selects the new slot. |
+| Cmd+D | Inserts the slot's slice again directly after it and selects the new slot. |
+| Cmd+X | Copies the slot's slice and removes the slot. The only slot can't be cut. |
+
+Each is one undo step. Paste and duplicate are not applied when the order
+already holds `ORDER_MAX_SLOTS` slots. While the `bpm` control has focus
+these keys belong to it.
+
+While the order is not source order, cuts and locators are fixed: move, add,
+remove and both splits are not applied, and the status line says to press
+Source order first. This is a limit of this version, kept because a cut
+between two slices that are not neighbours in the source has no single
+meaning.
+
+The joins between reordered slices are played as cut, with no fade.
+`rcy-export` does not read `order` and does not write it (SPEC.md R21).
+
 ## Display
 
 **W14.** One plot per channel, stacked, sharing the horizontal axis; one plot
@@ -283,10 +339,11 @@ integer, then limited by W08 or W09.
 | Left or Right with a boundary selected | Moves it one frame. With Shift, the number of frames one pixel covers, at least one. |
 | Double-click, or Option-click (Alt-click), in the plot, not on a boundary | Adds a cut at that frame (W09) and selects it. Audio the first click of a double-click started is stopped. |
 | Double-click or Option-click on a cut, or Delete or Backspace with a cut selected | Removes it (W10). |
+| Press on a slice in the strip above the plots (its handle and number), not on a boundary, and drag more than `PICK_PIXELS` | Reorders (W25): a line shows where the slice would drop, and the release moves it there. A press released without that travel is a click in the plot. |
 | Click in the plot, not on a boundary, no modifier | Sets the cursor to that frame. If audio is playing, stops it. Otherwise plays the slice under the pointer from its start. |
 | Shift-click in the plot | Plays from the clicked frame to the end of that slice. |
 | Space | If audio is playing, stops it. Otherwise plays from L to R, looping until stopped. |
-| A key in `AUDITION_KEYS` | Plays that slice from its start. A press while audio plays replaces the sound. |
+| A key in `AUDITION_KEYS` | Plays the slice with that number (W25) from its start. A press while audio plays replaces the sound. |
 | `=` | Zooms in by `ZOOM_STEP`, keeping the frame under the pointer at the same pixel when the pointer is over the plot, otherwise the frame at the plot's centre. The new span is `max(span * ZOOM_STEP, MIN_VIEW_FRAMES)`. |
 | `-` | Zooms out the same way. The view never extends outside 0 to `N`. |
 | Wheel or pinch over the plot | Vertical wheel zooms about the pointer; horizontal wheel scrolls. |
@@ -327,6 +384,7 @@ These are HTML elements with these ids, visible in the window:
 | `status` | any | The status line (W16) |
 | `add-cut` | button | Adds a cut at the cursor (W09) and selects it. Disabled while there is no cursor or a cut can't be added there. |
 | `delete-cut` | button | Removes the selected cut (W10). Disabled unless a cut is selected. |
+| `source-order` | button | Puts the slices back in source order (W25), as one edit. Disabled while they are in source order. |
 | `save` | button | Save (W04). Its label includes the shortcut. |
 | `close` | button | Close (W05), labelled so that it is clear nothing is saved. Its label includes the shortcut. |
 | `hint` | any | One line, always visible, naming how to audition, move, add and remove a cut, zoom and save. |
@@ -356,8 +414,12 @@ at any time after load:
 {
   ready: boolean,            // true once the source is decoded and the first draw is done
   frames: number,            // N
-  boundaries: number[],
+  boundaries: number[],      // the manifest's, in source order
   slices: { key, file, role }[],
+  order: number[],           // slice numbers in play order (W25)
+  shown: number[],           // the boundaries as drawn, one more than the order has slots; equal to boundaries in source order
+  shownFrames: number,       // length of the audio as shown; equal to frames in source order
+  slot: number | null,       // the selected slot, 0-based index into order
   viewStart: number,
   viewEnd: number,
   plot: { x, y, width, height },   // CSS pixels in the viewport; the top channel's plot
