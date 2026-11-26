@@ -199,6 +199,16 @@
       slices.push({ key: sl.key, file: sl.file, role: sl.role === undefined ? "" : sl.role });
     }
 
+    // 5a. order (W25): absent, or each slice number from 1 to the slice count once.
+    let order = slices.map((_, i) => i);
+    if (Object.prototype.hasOwnProperty.call(m, "order")) {
+      const o = m.order;
+      const ok = Array.isArray(o) && o.length >= 1 &&
+        o.every((v) => typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= slices.length);
+      if (!ok) refuse(`order must be a list of slice numbers from 1 to ${slices.length}`);
+      order = o.map((v) => v - 1);
+    }
+
     // 6. source.
     if (typeof m.source !== "string" || m.source === "") refuse("source is not a file name");
     const sourcePath = path.resolve(path.dirname(manifestPath), m.source);
@@ -243,6 +253,7 @@
       bufferMs: Number.isInteger(m.buffer_ms) && m.buffer_ms > 0 ? m.buffer_ms : 0,
       boundaries: b.slice(),
       slices,
+      order,
     };
   }
 
@@ -279,8 +290,12 @@
     return typeof bpm === "number" && Number.isFinite(bpm) && rcySdk.tempoWritable(bpm);
   }
 
-  function saveManifest(boundaries, slices, bpm) {
+  function saveManifest(boundaries, slices, bpm, order) {
     if (!validEdit(boundaries, slices)) return { ok: false, error: "the edit is not a valid manifest" };
+    if (!Array.isArray(order) || order.length < 1 ||
+        !order.every((v) => Number.isInteger(v) && v >= 0 && v < slices.length)) {
+      return { ok: false, error: "the slice order is not valid" };
+    }
     if (!validTempo(bpm)) return { ok: false, error: "the tempo cannot be written to MIDI" };
     const rel = path.relative(path.dirname(launch.outPath), launch.sourcePath).split(path.sep).join("/");
     let text;
@@ -294,6 +309,7 @@
         bufferMs: launch.bufferMs,
         boundaries,
         slices: slices.map((s) => ({ key: s.key, file: s.file, role: s.role })),
+        order: order.map((v) => v + 1),
       });
     } catch (e) {
       return { ok: false, error: e.message };
@@ -327,13 +343,28 @@
     let N = 0;
     let sr = 44100;
     let nch = 1;
+    // f32, i16 and pyramid hold the audio as the window shows and plays it:
+    // the source, with the slices between L and R laid out in play order (W25).
     let f32 = []; // per channel, -1..1
     let i16 = []; // per channel, the stored values
     let pyramid = []; // per channel, min/max/sum-of-squares levels for drawing
+    let srcF32 = []; // the source as read, per channel
+    let srcI16 = [];
+    let srcPyramid = [];
+    let srcN = 0; // the source's frame count; N is the length of the audio as shown
+    let base = null; // { b, s }: the manifest's boundaries and slices while the order is not source order
+    let slot = null; // the selected slot (index into order), for copy, paste, duplicate and cut
+    let clip = null; // the copied slice (source index)
+    const ORDER_MAX_SLOTS = 256; // parameter: longest order paste and duplicate build; bounds the audio laid out
+    let arrangedKey = ""; // names the order and cuts f32 was laid out for; empty for source order
     let info = null;
 
+    // boundaries and slices are in play order, as shown: slot i of the plot
+    // holds source slice order[i] (0-based). In source order they are the
+    // manifest's own; toSource() gives the manifest's at any time.
     let boundaries = [];
     let slices = [];
+    let order = [];
     let bpm = 0; // beats per minute; the manifest's value until the tempo control or --bpm changes it
     let tempoSession = null; // the history position of the latest edit while it is a tempo change
     let history = []; // snapshots; history[0] is the manifest as read
@@ -365,9 +396,13 @@
       const p = layout.plot;
       return {
         ready,
-        frames: N,
-        boundaries: boundaries.slice(),
-        slices: slices.map((s) => ({ key: s.key, file: s.file, role: s.role })),
+        frames: srcN,
+        shownFrames: N,
+        slot,
+        boundaries: toSource().b,
+        slices: toSource().s,
+        order: order.map((v) => v + 1),
+        shown: boundaries.slice(),
         viewStart,
         viewEnd,
         plot: { x: p.x, y: p.y, width: p.width, height: p.height },
@@ -385,7 +420,64 @@
 
     const pad3 = (n) => String(n).padStart(3, "0") + ".wav";
     const copySlices = (ss) => ss.map((s) => ({ key: s.key, file: s.file, role: s.role }));
-    const snapshot = () => ({ b: boundaries.slice(), s: copySlices(slices), bpm });
+    const identity = (n) => Array.from({ length: n }, (_, i) => i);
+    const reordered = () => base !== null;
+    const isIdentity = (o, n) => o.length === n && o.every((v, i) => v === i);
+    const orderText = (o) => o.map((v) => v + 1).join(" ");
+    // The manifest's boundaries and slices: the shown ones put back in source order.
+    function toSource() {
+      if (base === null) return { b: boundaries.slice(), s: copySlices(slices) };
+      return { b: base.b.slice(), s: copySlices(base.s) };
+    }
+    // A snapshot holds source-order boundaries and slices, the tempo and the order.
+    const snapshot = () => { const src = toSource(); return { b: src.b, s: src.s, bpm, o: order.slice() }; };
+    // W25: cuts and locators are edited in source order only.
+    function cutsLocked() {
+      if (!reordered()) return false;
+      message("The slices are reordered: press Source order before editing cuts", true);
+      return true;
+    }
+    // Lays the audio out for the order: before L and after R as the source, between them the
+    // slots end to end. The shown audio is longer or shorter than the source when slices repeat or are left out.
+    function arrange(srcB) {
+      const key = reordered() ? order.join(",") + "|" + srcB.join(",") : "";
+      if (key === arrangedKey) return;
+      arrangedKey = key;
+      const oldN = N;
+      if (key === "") { f32 = srcF32; i16 = srcI16; pyramid = srcPyramid; N = srcN; }
+      else {
+        const L = srcB[0];
+        const R = srcB[srcB.length - 1];
+        let total = 0;
+        for (const v of order) total += srcB[v + 1] - srcB[v];
+        const n = srcN - (R - L) + total;
+        const lay = (src, Type) => src.map((x) => {
+          const d = new Type(n);
+          d.set(x.subarray(0, L), 0);
+          let pos = L;
+          for (const v of order) {
+            const seg = x.subarray(srcB[v], srcB[v + 1]);
+            d.set(seg, pos);
+            pos += seg.length;
+          }
+          d.set(x.subarray(R), pos);
+          return d;
+        });
+        f32 = lay(srcF32, Float32Array);
+        i16 = lay(srcI16, Int16Array);
+        pyramid = f32.map(buildPyramid);
+        N = n;
+      }
+      if (ready && N !== oldN) {
+        const full = viewStart <= 0 && viewEnd >= oldN;
+        if (full) { viewStart = 0; viewEnd = N; } else setView(Math.min(viewStart, Math.max(0, N - 1)), Math.min(viewEnd, N) - Math.min(viewStart, Math.max(0, N - 1)));
+      }
+      stopAudio();
+      fullBuffer = null;
+      candidates = null;
+      overviewCache = null;
+      if (ready) scheduleWave();
+    }
     const tempoText = (v) => String(Number(v.toFixed(K.TEMPO_DECIMALS)));
     let tempoRefused = false; // the press or key now being handled made the control refuse its text
     let tempoTouched = false; // the person typed or stepped in the tempo control since the window last wrote it
@@ -393,8 +485,16 @@
     const namesDefault = (ss) => ss.every((s, i) => s.file === pad3(i + 1));
 
     function applySnapshot(snap) {
-      boundaries = snap.b.slice();
-      slices = copySlices(snap.s);
+      const o = snap.o;
+      const b = [snap.b[0]];
+      const s = [];
+      for (let i = 0; i < o.length; i++) { b.push(b[i] + snap.b[o[i] + 1] - snap.b[o[i]]); s.push(snap.s[o[i]]); }
+      boundaries = b;
+      slices = copySlices(s);
+      order = o.slice();
+      base = isIdentity(o, snap.s.length) ? null : { b: snap.b.slice(), s: copySlices(snap.s) };
+      if (slot !== null && slot >= order.length) slot = null;
+      arrange(snap.b);
       bpm = snap.bpm;
       showTempo();
       if (selected !== null && selected >= boundaries.length) selected = null;
@@ -402,7 +502,7 @@
 
     function commit(b, s, sel) {
       history.length = hpos + 1;
-      history.push({ b: b.slice(), s: copySlices(s), bpm });
+      history.push({ b: b.slice(), s: copySlices(s), bpm, o: identity(s.length) });
       hpos = history.length - 1;
       applySnapshot(history[hpos]);
       selected = sel === undefined ? selected : sel;
@@ -428,14 +528,14 @@
         if (follows) history[hpos].bpm = value;
         else {
           history.length = hpos + 1;
-          history.push({ b: boundaries.slice(), s: copySlices(slices), bpm: value });
+          history.push(Object.assign(snapshot(), { bpm: value }));
           hpos = history.length - 1;
         }
         tempoSession = hpos;
       }
       applySnapshot(history[hpos]);
       transientSession = null;
-      logEvent("edit", { what: `Tempo ${tempoText(bpm)} bpm`, boundaries: boundaries.slice(), slices: slices.length, bpm });
+      logEvent("edit", { what: `Tempo ${tempoText(bpm)} bpm`, boundaries: toSource().b, slices: slices.length, bpm });
       message(`Tempo ${tempoText(bpm)} bpm`);
       changed();
     }
@@ -466,7 +566,7 @@
       if (hpos === 0) { message("Nothing to undo"); return; }
       hpos--;
       applySnapshot(history[hpos]);
-      logEvent("undo", { boundaries: boundaries.slice(), bpm });
+      logEvent("undo", { boundaries: toSource().b, order: order.map((v) => v + 1), bpm });
       message("Undo");
       changed();
     }
@@ -478,9 +578,75 @@
       if (hpos >= history.length - 1) { message("Nothing to redo"); return; }
       hpos++;
       applySnapshot(history[hpos]);
-      logEvent("redo", { boundaries: boundaries.slice(), bpm });
+      logEvent("redo", { boundaries: toSource().b, order: order.map((v) => v + 1), bpm });
       message("Redo");
       changed();
+    }
+
+    // W25: a new order is one edit. o holds source slice indexes in play order.
+    function setOrder(o, text, newSlot) {
+      const src = toSource();
+      const looping = voice !== null && voice.loop; // the L-to-R loop goes on in the new order
+      history.length = hpos + 1;
+      history.push({ b: src.b, s: src.s, bpm, o: o.slice() });
+      hpos = history.length - 1;
+      applySnapshot(history[hpos]);
+      if (looping) playLoop();
+      slot = newSlot === undefined || newSlot === null || newSlot >= order.length ? null : newSlot;
+      selected = null;
+      editCursor = null;
+      transientSession = null;
+      tempoSession = null;
+      lastEdit = logEvent("edit", { what: text, boundaries: src.b, slices: slices.length, bpm, order: order.map((v) => v + 1) });
+      message(text);
+      changed();
+    }
+    // Moves the slice in slot i so that it sits before the slice now in slot j (j = slice count: last).
+    function moveSlice(i, j) {
+      if (j === i || j === i + 1) return;
+      const o = order.slice();
+      const v = o.splice(i, 1)[0];
+      o.splice(j > i ? j - 1 : j, 0, v);
+      setOrder(o, `Order ${orderText(o)}`, j > i ? j - 1 : j);
+    }
+    function sourceOrder() {
+      if (!reordered()) return;
+      setOrder(identity(toSource().s.length), "Source order", null);
+    }
+    // W25: copy, paste, duplicate and cut act on the selected slot.
+    function insertAfter(v, at, what) {
+      if (order.length >= ORDER_MAX_SLOTS) { message(`${what} not applied: the order already holds ${ORDER_MAX_SLOTS} slices`, true); return; }
+      const o = order.slice();
+      o.splice(at + 1, 0, v);
+      setOrder(o, `${what} slice ${v + 1}: order ${orderText(o)}`, at + 1);
+    }
+    function copySlot() {
+      if (slot === null) { message("Click a slice's number to select it first"); return; }
+      clip = order[slot];
+      message(`Copied slice ${clip + 1}`);
+    }
+    function pasteSlot() {
+      if (clip === null) { message("Nothing copied"); return; }
+      if (clip >= toSource().s.length) { message("The copied slice no longer exists"); return; }
+      insertAfter(clip, slot === null ? order.length - 1 : slot, "Pasted");
+    }
+    function duplicateSlot() {
+      if (slot === null) { message("Click a slice's number to select it first"); return; }
+      insertAfter(order[slot], slot, "Duplicated");
+    }
+    function cutSlot() {
+      if (slot === null) { message("Click a slice's number to select it first"); return; }
+      if (order.length === 1) { message("The last slice can't be cut"); return; }
+      clip = order[slot];
+      const o = order.slice();
+      o.splice(slot, 1);
+      setOrder(o, `Cut slice ${clip + 1}: order ${orderText(o)}`, Math.min(slot, o.length - 1));
+    }
+    // The slot a slice dropped at x goes before: the number of slices whose middle is left of x.
+    function dropSlot(x) {
+      let j = 0;
+      for (let i = 0; i < slices.length; i++) if ((xOfFrame(boundaries[i]) + xOfFrame(boundaries[i + 1])) / 2 < x) j++;
+      return j;
     }
 
     function clampMove(i, f, b) {
@@ -515,6 +681,7 @@
 
     // W08: a move changes that boundary only; slices keep key, file and role.
     function moveBy(i, delta) {
+      if (cutsLocked()) return;
       if (i === 0 || i === boundaries.length - 1) {
         const r = locatorMove(snapshot(), i === 0, boundaries[i] + delta);
         if (r.b.length === boundaries.length && r.b[i === 0 ? 0 : r.b.length - 1] === boundaries[i]) return;
@@ -530,6 +697,7 @@
 
     // W09
     function addCut(f) {
+      if (cutsLocked()) return;
       const b = boundaries;
       if (!(f > b[0] && f < b[b.length - 1])) { message("A cut must lie strictly between L and R"); return; }
       let k = 1;
@@ -562,6 +730,7 @@
 
     // W10
     function removeCut(i) {
+      if (cutsLocked()) return;
       if (i <= 0 || i >= boundaries.length - 1) { message("Locators can't be removed"); return; }
       const wasDefault = namesDefault(slices);
       const s = copySlices(slices);
@@ -586,6 +755,7 @@
 
     // W11
     function splitByMeasures() {
+      if (cutsLocked()) return;
       const m = info.measures;
       const r = Number(selResolution.value);
       const L = boundaries[0];
@@ -622,6 +792,7 @@
     }
 
     function splitByTransients() {
+      if (cutsLocked()) return;
       const L = boundaries[0];
       const R = boundaries[boundaries.length - 1];
       const sens = Number(rngSensitivity.value);
@@ -646,7 +817,7 @@
       const L = boundaries[0];
       const R = boundaries[boundaries.length - 1];
       const snap = transientSnapshot(sens, L, R);
-      history[hpos] = { b: snap.b, s: snap.s, bpm };
+      history[hpos] = { b: snap.b, s: snap.s, bpm, o: identity(snap.s.length) };
       applySnapshot(history[hpos]);
       selected = null;
       transientSession.sens = sens;
@@ -1167,7 +1338,8 @@
       return e;
     }
     function runReport() {
-      return { opening, events, final: { boundaries: boundaries.slice(), slices: copySlices(slices), bpm, dirty: hpos !== 0 } };
+      const src = toSource();
+      return { opening, events, final: { boundaries: src.b, slices: src.s, order: order.map((v) => v + 1), bpm, dirty: hpos !== 0 } };
     }
     let expectSlices = null;
     let editCursor = null; // frame of the last click on the waveform; where Add cut puts a cut
@@ -1233,6 +1405,12 @@
         if (k >= 0) playRange(f, boundaries[k + 1]);
         return;
       }
+      if (pick !== null && reordered()) {
+        selected = pick;
+        cutsLocked();
+        changed();
+        return;
+      }
       if (pick !== null) {
         selected = pick;
         drag = { kind: "boundary", index: pick, origin: boundaries[pick], x0: x, base: snapshot(),
@@ -1242,8 +1420,13 @@
       }
       editCursor = pointerFrame(x);
       changed();
-      if (voice) { stopAudio(); return; }
       const k = sliceAt(Math.min(N - 1, Math.max(0, Math.floor(frameAtX(x)))));
+      // W25: a press on a slice in the strip above the plots may become a drag that reorders.
+      // Audio already playing goes on until the release shows whether it was a click.
+      const onHandle = k >= 0 && slices.length > 1 && y < layout.stripTop + STRIP_H;
+      if (onHandle) { slot = k; drag = { kind: "slice", index: k, x0: x, moved: false, target: k, wasPlaying: voice !== null }; }
+      else if (y < layout.stripTop + STRIP_H) slot = k >= 0 ? k : null;
+      if (voice) { if (!onHandle) stopAudio(); return; }
       if (k >= 0) playSlice(k);
     }
 
@@ -1266,6 +1449,7 @@
     function updateButtons() {
       $("add-cut").disabled = !canAddAtCursor();
       $("delete-cut").disabled = !(selected !== null && selected > 0 && selected < boundaries.length - 1);
+      $("source-order").disabled = !reordered();
       $("save").classList.toggle("dirty", hpos !== 0);
       $("unsaved").hidden = hpos === 0;
       if (expectSlices !== null) {
@@ -1293,6 +1477,9 @@
             if (f !== boundaries[i]) boundaries[i] = f;
           }
         }
+      } else if (drag && drag.kind === "slice") {
+        if (Math.abs(e.clientX - drag.x0) > K.PICK_PIXELS) drag.moved = true;
+        if (drag.moved) drag.target = dropSlot(e.clientX);
       } else if (drag && drag.kind === "overview") {
         overviewTo(e.clientX);
       }
@@ -1316,6 +1503,9 @@
         } else {
           changed();
         }
+      } else if (d.kind === "slice") {
+        if (d.moved) moveSlice(d.index, d.target);
+        else if (d.wasPlaying) stopAudio(); // a click while audio plays stops it
       }
       onMouseMove(e);
     }
@@ -1355,7 +1545,11 @@
     function updateCursor() {
       let c = "default";
       if (drag && drag.kind === "boundary") c = "ew-resize";
-      else if (ready && inPlotArea(pointer.x, pointer.y)) c = pickBoundary(pointer.x) !== null ? "ew-resize" : "crosshair";
+      else if (drag && drag.kind === "slice") c = "grabbing";
+      else if (ready && inPlotArea(pointer.x, pointer.y)) {
+        c = pickBoundary(pointer.x) !== null ? (reordered() ? "default" : "ew-resize")
+          : pointer.y < layout.stripTop + STRIP_H && slices.length > 1 ? "grab" : "crosshair";
+      }
       else if (ready && inOverview(pointer.x, pointer.y)) c = "pointer";
       if (overCanvas.style.cursor !== c) overCanvas.style.cursor = c;
     }
@@ -1391,6 +1585,13 @@
           if (e.shiftKey) redo(); else undo();
           return;
         }
+        // W25: copy, paste, duplicate and cut the selected slot; the tempo control keeps its own while it has focus
+        if (!inTempo && !e.shiftKey && ready && !drag && "cvdx".indexOf(lower) >= 0 && lower.length === 1) {
+          e.preventDefault(); e.stopPropagation();
+          if (e.repeat) return;
+          if (lower === "c") copySlot(); else if (lower === "v") pasteSlot(); else if (lower === "d") duplicateSlot(); else cutSlot();
+          return;
+        }
         return;
       }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -1423,7 +1624,7 @@
       } else if (lower === "z") {
         fitSliceUnderPointer();
       } else if (key.length === 1 && K.AUDITION_KEYS.indexOf(lower) >= 0) {
-        if (!e.repeat) playSlice(K.AUDITION_KEYS.indexOf(lower));
+        if (!e.repeat) playSlice(order.indexOf(K.AUDITION_KEYS.indexOf(lower)));
       } else {
         handled = false;
       }
@@ -1455,7 +1656,7 @@
       message("Saving…");
       let r;
       try {
-        r = await ipcRenderer.invoke("rcy-save", { boundaries: boundaries.slice(), slices: copySlices(slices), bpm, report: runReport() });
+        r = await ipcRenderer.invoke("rcy-save", { boundaries: toSource().b, slices: toSource().s, order: order.slice(), bpm, report: runReport() });
       } catch (err) {
         r = { ok: false, error: String(err && err.message ? err.message : err) };
       }
@@ -1880,11 +2081,21 @@
         g.beginPath();
         g.rect(xa + 1, top, xb - xa - 2, STRIP_H);
         g.clip();
-        const tx = xa + (k === 0 ? 14 : 7);
-        g.fillStyle = COLORS.label;
-        g.fillText(String(k + 1), tx, top + 19);
+        const dragged = drag && drag.kind === "slice" && drag.moved && drag.index === k;
+        if (dragged) { g.fillStyle = "rgba(243,192,79,0.25)"; g.fillRect(xa, top, xb - xa, STRIP_H - 2); }
+        else if (slot === k) { g.fillStyle = "rgba(90,174,255,0.28)"; g.fillRect(xa, top, xb - xa, STRIP_H - 2); }
+        let tx = xa + (k === 0 ? 14 : 7);
+        // the handle: six dots, where a press starts a reorder drag (W25)
+        if (slices.length > 1 && xb - xa >= 34) {
+          g.fillStyle = dragged ? COLORS.cut : COLORS.labelDim;
+          for (let hx = 0; hx < 2; hx++) for (let hy = 0; hy < 3; hy++) g.fillRect(tx + hx * 4, top + 10 + hy * 4, 2, 2);
+          tx += 12;
+        }
+        const num = String(order[k] + 1); // a slice keeps its source number wherever it plays
+        g.fillStyle = order[k] === k ? COLORS.label : COLORS.cut;
+        g.fillText(num, tx, top + 19);
         if (role) {
-          const w = g.measureText(String(k + 1)).width;
+          const w = g.measureText(num).width;
           g.fillStyle = COLORS.labelDim;
           g.fillText(role, tx + w + 5, top + 19);
         }
@@ -1931,6 +2142,13 @@
           g.closePath();
           g.fill();
         }
+      }
+
+      // the place a dragged slice would drop
+      if (drag && drag.kind === "slice" && drag.moved) {
+        const X = Math.min(right, Math.max(p.x, xOfFrame(b[drag.target])));
+        g.fillStyle = COLORS.cutSel;
+        g.fillRect(X - 1.5, top, 3, bottom - top);
       }
 
       // hover: the frame a press would act on
@@ -2040,11 +2258,14 @@
     overCanvas.addEventListener("wheel", onWheel, { passive: false });
     window.addEventListener("contextmenu", (e) => e.preventDefault());
     window.addEventListener("resize", onResize);
+    // the toolbar can grow by a line (the unsaved mark appearing); the plots follow the area
+    new ResizeObserver(() => { if (ready) onResize(); }).observe(area);
     window.addEventListener("dragover", (e) => e.preventDefault());
     window.addEventListener("drop", (e) => e.preventDefault());
 
     btnMeasures.addEventListener("click", () => { btnMeasures.blur(); if (ready) splitByMeasures(); });
     btnTransients.addEventListener("click", () => { btnTransients.blur(); if (ready) splitByTransients(); });
+    $("source-order").addEventListener("click", () => { $("source-order").blur(); if (ready) sourceOrder(); });
     selResolution.addEventListener("change", () => { selResolution.blur(); });
     rngSensitivity.addEventListener("input", onSensitivity);
     rngSensitivity.addEventListener("change", onSensitivity);
@@ -2075,10 +2296,8 @@
         f32.push(f);
       }
       pyramid = f32.map(buildPyramid);
-      boundaries = init.boundaries.slice();
-      slices = copySlices(init.slices);
-      bpm = init.bpm;
-      showTempo();
+      srcF32 = f32; srcI16 = i16; srcPyramid = pyramid; srcN = N;
+      applySnapshot({ b: init.boundaries, s: init.slices, bpm: init.bpm, o: init.order });
       history = [snapshot()];
       hpos = 0;
       viewStart = 0;
@@ -2106,7 +2325,7 @@
       if (o.task !== null || expectSlices !== null) { $("task").hidden = false; onResize(); }
       events = [];
       tempoSession = null;
-      opening = { boundaries: boundaries.slice(), slices: copySlices(slices), bpm, viewStart, viewEnd, selected,
+      opening = { boundaries: toSource().b, slices: toSource().s, order: order.map((v) => v + 1), bpm, viewStart, viewEnd, selected,
                   resolution: Number(selResolution.value), sensitivity: Number(rngSensitivity.value) };
       changed();
       setTimeout(() => { ensureCandidates(); }, 30);
@@ -2196,6 +2415,7 @@
   <div class="group">
     <button id="add-cut" type="button" tabindex="-1" disabled title="Adds a cut where you last clicked the waveform">Add cut</button>
     <button id="delete-cut" type="button" tabindex="-1" disabled title="Removes the selected cut">Delete cut</button>
+    <button id="source-order" type="button" tabindex="-1" disabled title="Puts reordered slices back in the order they have in the source">Source order</button>
   </div>
   <div id="file"><div id="file-name"></div><div id="file-info"></div></div>
   <div class="group end">
@@ -2206,7 +2426,7 @@
 </div>
 <div id="task" hidden><span id="task-text"></span><span id="expect"></span></div>
 <div id="area"><canvas id="wave"></canvas><canvas id="over"></canvas></div>
-<div id="hint">Click a slice to hear it · drag a line to move it · double-click the waveform to add a cut, double-click a cut to remove it · scroll or = and − to zoom, F for the whole file · Space plays L to R · Save when done</div>
+<div id="hint">Click a slice to hear it · drag a line to move it · drag a slice's number to reorder, ⌘C ⌘V ⌘D ⌘X copy, paste, duplicate, cut it · double-click the waveform to add a cut, double-click a cut to remove it · scroll or = and − to zoom, F for the whole file · Space plays L to R · Save when done</div>
 <div id="status"><span id="status-readout">Loading…</span><span id="status-msg"></span></div>
 <div id="discard-confirm" hidden><div id="discard-box">
   <p>The slices have unsaved edits. Close and discard them?</p>
@@ -2265,6 +2485,7 @@
     pcm: new Uint8Array(launch.wav.data), // a copy of the frames only
     boundaries: launch.boundaries,
     slices: launch.slices,
+    order: launch.order,
     bpm: launch.bpm,
     measures: launch.measures,
     tempoGrammar: TEMPO_GRAMMAR,
@@ -2273,7 +2494,7 @@
   }));
 
   ipcMain.handle("rcy-save", (_e, edit) => {
-    const r = saveManifest(edit && edit.boundaries, edit && edit.slices, edit && edit.bpm);
+    const r = saveManifest(edit && edit.boundaries, edit && edit.slices, edit && edit.bpm, edit && edit.order);
     if (r.ok) { pageReport = edit.report; setImmediate(() => exitWith(0)); }
     return r;
   });

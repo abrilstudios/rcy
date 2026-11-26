@@ -104,6 +104,7 @@ type Manifest = {
   boundaries: number[],    // frame positions, strictly increasing
   slices: { key: number, file: string, role: string }[],   // one per pair of neighbouring boundaries
   bufferMs?: number,       // source audio each slice file holds either side of its slice; absent means 0
+  order?: number[],        // slice numbers (1-based) in the order the slices play; a slice may repeat or be left out; absent or empty means source order
 }
 
 manifestText(manifest): string
@@ -120,6 +121,9 @@ order. `region` is the first and last boundary. Each slice object carries
 `file` and `role`. `bpm` prints as the shortest digits that read back to the
 same double, with `.0` when integral. A `bufferMs` above 0 adds the member
 `buffer_ms` after `measures`; a kit without a buffer has no such member.
+An `order` that differs from `1, 2, ..., n` adds the member `order` after
+`slices`, one number per line; source order, given or absent, adds no member.
+An `order` entry that is not a slice number throws `RangeError`.
 Encode the text as UTF-8.
 
 `bufferFrames` is the whole number of frames nearest `ms` milliseconds.
