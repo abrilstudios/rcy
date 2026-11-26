@@ -1,0 +1,222 @@
+#!/usr/bin/env node
+// rcy-player: plays a kit the way a sampler would, to check a kit by ear.
+//
+//   rcy-player KIT_DIR [LOOPS] [BPM] [--out FILE.wav]
+//
+// KIT_DIR holds <name>.mid, <name>.sfz and the slices, as rcy-export writes
+// them, where <name> is the directory's name. Each note of the MIDI file
+// triggers the SFZ region with that key, from the region's offset to its end,
+// at the note's time. One voice: a note ends where the next begins, with a
+// 2 ms fade. A note starts on its MIDI tick, so it can sit a few frames from
+// where the slice was cut; the output is what a sampler plays, not a copy of
+// the source.
+//
+// LOOPS repeats the MIDI file end to end (default 1); "forever" repeats it
+// until Ctrl-C. BPM plays it at that tempo and resamples every slice by
+// BPM / the file's tempo, so pitch rises with speed as on a sampler; there is
+// no time-stretch.
+//
+// Without --out the audio is streamed, a block at a time, to sox's `play`
+// and nothing is kept. Before each repeat the program looks at the MIDI and
+// SFZ files, and when either has changed it reads the kit again, so a new
+// arrangement is heard from the next repeat without a restart. A changed kit
+// that can't be read is reported on stderr and the earlier one keeps playing.
+// With --out the same audio is written to FILE.wav and not played.
+// Exit codes: 0 played, stopped with Ctrl-C or written; 1 `play` failed;
+// 2 the command line or the kit was refused.
+"use strict";
+const fs = require("fs"), path = require("path");
+const { spawn } = require("child_process");
+
+const FADE_SECONDS = 0.002;  // parameter: fade on a note cut short by the next, long enough that the cut doesn't click
+const BLOCK_FRAMES = 4096;   // parameter: frames per write to `play`, about 93 ms at 44.1 kHz; smaller blocks only add writes
+
+function refuse(why) { console.error("rcy-player: " + why); process.exit(2); }
+const argv = process.argv.slice(2);
+let outFile = null;
+const at = argv.indexOf("--out");
+if (at !== -1) {
+  if (at + 1 >= argv.length) refuse("--out needs a file");
+  outFile = argv[at + 1];
+  argv.splice(at, 2);
+}
+const [dir, loopsArg, bpmArg] = argv;
+if (!dir || argv.length > 3) refuse("usage: rcy-player KIT_DIR [LOOPS|forever] [BPM] [--out FILE.wav]");
+if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) refuse("no such directory: " + dir);
+const forever = loopsArg === "forever";
+const loops = forever ? Infinity : loopsArg === undefined ? 1 : Number(loopsArg);
+if (!forever && (!Number.isInteger(loops) || loops < 1)) refuse('LOOPS must be a whole number of 1 or more, or "forever"');
+if (forever && outFile) refuse("--out can't be used with forever");
+if (bpmArg !== undefined && !(Number(bpmArg) > 0)) refuse("BPM must be a number above 0");
+const stem = path.basename(path.resolve(dir));
+const midFile = path.join(dir, stem + ".mid"), sfzFile = path.join(dir, stem + ".sfz");
+
+function wav(file) {
+  const d = fs.readFileSync(file);
+  let i = 12, fmt = null, data = null;
+  while (i + 8 <= d.length) {
+    const id = d.toString("latin1", i, i + 4), n = d.readUInt32LE(i + 4);
+    if (id === "fmt ") fmt = { channels: d.readUInt16LE(i + 10), rate: d.readUInt32LE(i + 12), bits: d.readUInt16LE(i + 22) };
+    if (id === "data") data = d.subarray(i + 8, i + 8 + n);
+    i += 8 + n + (n & 1);
+  }
+  if (!fmt || !data || fmt.bits !== 16) throw new Error("not a 16-bit PCM WAV: " + file);
+  return { ...fmt, data };
+}
+
+// Reads the kit's MIDI and SFZ files and its slices. Throws with the reason
+// when the kit can't be played.
+function load() {
+  for (const f of [midFile, sfzFile]) if (!fs.existsSync(f)) throw new Error(f + " is missing");
+  const regions = new Map();
+  for (const line of fs.readFileSync(sfzFile, "utf8").split("\n")) {
+    if (!line.startsWith("<region>")) continue;
+    const f = Object.fromEntries(line.slice(8).trim().split(/\s+/).map((kv) => kv.split("=")));
+    regions.set(Number(f.key), { w: wav(path.join(dir, f.sample)), offset: Number(f.offset || 0), end: f.end === undefined ? null : Number(f.end) });
+  }
+  const m = fs.readFileSync(midFile);
+  const division = m.readUInt16BE(12);
+  let usPerQuarter = 500000;
+  const notes = [];
+  let p = 14, endTick = 0;
+  while (p < m.length) {
+    const len = m.readUInt32BE(p + 4), stop = p + 8 + len;
+    let i = p + 8, tick = 0, status = 0;
+    while (i < stop) {
+      let v = 0, b;
+      do { b = m[i++]; v = (v << 7) | (b & 0x7f); } while (b & 0x80);
+      tick += v;
+      if (m[i] === 0xff) {
+        const type = m[i + 1], n = m[i + 2];
+        if (type === 0x51) usPerQuarter = m.readUIntBE(i + 3, 3);
+        i += 3 + n;
+        continue;
+      }
+      if (m[i] & 0x80) status = m[i++];
+      const key = m[i], vel = m[i + 1];
+      i += 2;
+      if ((status & 0xf0) === 0x90 && vel > 0) notes.push({ tick, key, vel });
+    }
+    endTick = Math.max(endTick, tick);
+    p = stop;
+  }
+  if (regions.size === 0) throw new Error("the SFZ file has no region");
+  if (notes.length === 0) throw new Error("the MIDI file has no note");
+  if (endTick === 0) throw new Error("the MIDI file has no length");
+  const any = regions.values().next().value.w;
+  const rate = any.rate, ch = any.channels;
+  const fileBpm = 6e7 / usPerQuarter;
+  const ratio = bpmArg ? Number(bpmArg) / fileBpm : 1;
+  notes.sort((a, b) => a.tick - b.tick);
+  for (const n of notes) {
+    n.r = regions.get(n.key);
+    if (!n.r) throw new Error(`the MIDI file plays key ${n.key} and the SFZ file has no region for it`);
+    const srcFrames = (n.r.end === null ? n.r.w.data.length / (2 * ch) : n.r.end + 1) - n.r.offset;
+    n.full = Math.floor(srcFrames / ratio);
+    n.gain = n.vel / 100; // velocity 100, the kit's own, is unity
+  }
+  const frameOf = (tick) => Math.round(tick / division * usPerQuarter / 1e6 * rate / ratio);
+  return { notes, endTick, rate, ch, fileBpm, ratio, frameOf };
+}
+const stamp = () => [midFile, sfzFile].map((f) => (fs.existsSync(f) ? fs.statSync(f).mtimeMs : "missing")).join(" ");
+
+let kit, read = stamp();
+try { kit = load(); } catch (e) { refuse(e.message); }
+const rate = kit.rate, ch = kit.ch, FADE = Math.round(rate * FADE_SECONDS);
+
+// The notes in playing order, one at a time. `base` is the frame where the
+// kit now in use began and `passTick` the ticks it has played since, so a
+// repeat lands on the frame its tick rounds to and repeats don't drift.
+let base = 0, passTick = 0, pass = 0, idx = -1, played = 0;
+function following() {
+  idx++;
+  if (idx === kit.notes.length) {
+    pass++;
+    if (pass >= loops) return null;
+    idx = 0;
+    const now = stamp();
+    let fresh = null;
+    if (now !== read) {
+      read = now;
+      try {
+        fresh = load();
+        if (fresh.rate !== rate || fresh.ch !== ch) throw new Error("its sample rate or channel count changed");
+      } catch (e) { fresh = null; console.error(`rcy-player: the changed kit was not read (${e.message}); still playing the one read before`); }
+    }
+    if (fresh) {
+      base += kit.frameOf(passTick + kit.endTick); passTick = 0; kit = fresh;
+      console.error(`rcy-player: kit read again, playing it from repeat ${pass + 1}`);
+    } else passTick += kit.endTick;
+  }
+  const n = kit.notes[idx];
+  return { r: n.r, gain: n.gain, full: n.full, ratio: kit.ratio, at: base + kit.frameOf(passTick + n.tick) };
+}
+// One voice: a note ends where the next begins, with a fade so the cut doesn't click.
+let cur = null, nxt = following(), pos = 0;
+function step() {
+  cur = nxt;
+  if (!cur) return;
+  played++;
+  nxt = following();
+  cur.frames = cur.full; cur.choked = false;
+  if (nxt && nxt.at - cur.at < cur.full) { cur.frames = nxt.at - cur.at; cur.choked = true; }
+}
+step();
+// The next `n` frames as 16-bit PCM; shorter than asked, or empty, at the end.
+function next(n) {
+  const out = Buffer.alloc(n * ch * 2);
+  for (let j = 0; j < n; j++, pos++) {
+    while (cur && pos >= cur.at + cur.frames) step();
+    if (!cur) return out.subarray(0, j * ch * 2);
+    if (pos < cur.at) continue;
+    const s = cur, f = pos - s.at;
+    // linear interpolation between the two source frames around f * ratio
+    const x = f * s.ratio, i0 = Math.floor(x), i1 = Math.min(i0 + 1, Math.floor((s.frames - 1) * s.ratio)), w = x - i0;
+    const fade = s.choked && s.frames - f < FADE ? (s.frames - f) / FADE : 1;
+    for (let c = 0; c < ch; c++) {
+      const a = s.r.w.data.readInt16LE(((s.r.offset + i0) * ch + c) * 2), b = s.r.w.data.readInt16LE(((s.r.offset + i1) * ch + c) * 2);
+      out.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round((a + (b - a) * w) * s.gain * fade))), (j * ch + c) * 2);
+    }
+  }
+  return out;
+}
+
+const report = (extra) => console.log(JSON.stringify({ bpm: kit.fileBpm * kit.ratio, semitones: +(12 * Math.log2(kit.ratio)).toFixed(2), loops: forever ? "forever" : loops, ...extra }));
+if (outFile) {
+  const blocks = [];
+  for (let b = next(BLOCK_FRAMES); b.length; b = next(BLOCK_FRAMES)) blocks.push(b);
+  const pcm = Buffer.concat(blocks);
+  const h = Buffer.alloc(44);
+  h.write("RIFF", 0); h.writeUInt32LE(36 + pcm.length, 4); h.write("WAVEfmt ", 8);
+  h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(ch, 22); h.writeUInt32LE(rate, 24);
+  h.writeUInt32LE(rate * ch * 2, 28); h.writeUInt16LE(ch * 2, 32); h.writeUInt16LE(16, 34);
+  h.write("data", 36); h.writeUInt32LE(pcm.length, 40);
+  fs.writeFileSync(outFile, Buffer.concat([h, pcm]));
+  report({ notes: played, seconds: +(pcm.length / (ch * 2) / rate).toFixed(3), out: outFile });
+} else {
+  report({ notes_per_repeat: kit.notes.length, out: null });
+  // Observation (the Homebrew sox on macOS): `play` stops after a fraction of a second
+  // when its stdin is the socket Node gives a child, and plays everything
+  // when it reads a pipe, so `cat` stands between the two. The pair runs in
+  // its own process group so that one signal stops both.
+  const PLAY = ["-q", "-t", "raw", "-r", String(rate), "-e", "signed-integer", "-b", "16", "-c", String(ch), "-L", "-"];
+  const play = spawn("sh", ["-c", 'cat | play "$@"', "sh", ...PLAY], { stdio: ["pipe", "inherit", "inherit"], detached: true });
+  let stopped = false;
+  play.stdin.on("error", () => {}); // `play` has gone; its exit is handled below
+  play.on("exit", (code) => {
+    if (code === 127) refuse("sox's `play` was not found; install sox, or use --out FILE.wav");
+    process.exit(stopped || code === 0 ? 0 : 1);
+  });
+  const stop = () => { stopped = true; process.kill(-play.pid, "SIGTERM"); };
+  process.on("SIGINT", stop); process.on("SIGTERM", stop);
+  // A block is made only when `play` has taken the one before, so the program
+  // stays a fraction of a second ahead of the sound and a changed kit is heard soon.
+  const pump = () => {
+    for (;;) {
+      const b = next(BLOCK_FRAMES);
+      if (!b.length) { play.stdin.end(); return; }
+      if (!play.stdin.write(b)) { play.stdin.once("drain", pump); return; }
+    }
+  };
+  pump();
+}
