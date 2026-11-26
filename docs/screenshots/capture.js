@@ -24,6 +24,10 @@ const LAUNCH_BPM = "165";        // parameter: tempo stated at launch in the tem
 const REFUSED_BPM = "1";         // parameter: a tempo a MIDI file can't hold, typed to show the refusal
 const VIEW_SLICES = 3;           // parameter: slices in view in the --view and --select shot
 const SELECTED = 9;              // parameter: the slice --select names in that shot
+const ARRANGE_RESOLUTION = 4;    // parameter: slices per measure in the arranging shots, wide enough to read their numbers
+const MOVED_SLICE = 6;           // parameter: the slice dragged to the front in the arranging shots
+const REPEATED_SLOT = 3;         // parameter: the slot duplicated in the arranging shots
+const LOOP_SLOTS = 8;            // parameter: slots left in the loop after R is brought in
 
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "rcy-shots-"));
 const r = spawnSync("node", [path.join(ROOT, "export", "rcy-export"), "--input", path.join(ROOT, "presets", "amen.wav"),
@@ -106,5 +110,28 @@ const midY = (s) => s.plot.y + s.plot.height / 2;
     "--task", "The selected slice starts late. Move its left cut onto the hit, then Save."]);
   await w.shot("one-cut-in-view.png");
   w.close();
-  console.log("wrote 7 screenshots to " + OUT);
+
+  // Arranging in place: a slice dragged to the front, one repeated, then R brought in to set the loop.
+  w = await open("arrange", ["--split", "measures", "--resolution", String(ARRANGE_RESOLUTION),
+    "--task", "Arrange the slices into the loop you want, put L and R around it, then Save."]);
+  s = await w.state();
+  const stripY = s.plot.y - 12;
+  const slotMid = (t, k) => (xOf(t, t.shown[k - 1]) + xOf(t, t.shown[k])) / 2;
+  await w.page.mouse.move(slotMid(s, MOVED_SLICE), stripY); await w.page.mouse.down();
+  await w.page.mouse.move(xOf(s, s.shown[0]) + 14, stripY, { steps: 6 }); await w.page.mouse.up();
+  s = await w.state();
+  await w.page.mouse.click(slotMid(s, REPEATED_SLOT), stripY);
+  await w.page.keyboard.press("Meta+d");
+  s = await w.state();
+  if (s.order[0] !== MOVED_SLICE || s.order[REPEATED_SLOT] !== s.order[REPEATED_SLOT - 1]) throw new Error("the order is not the one the shot shows: " + s.order);
+  await w.shot("arranged-in-place.png");
+  const xR = xOf(s, s.shown[s.shown.length - 1]) - 5;
+  await w.page.mouse.move(xR, stripY); await w.page.mouse.down();
+  await w.page.mouse.move(xOf(s, s.shown[LOOP_SLOTS]) + 3, stripY, { steps: 8 }); await w.page.mouse.up();
+  s = await w.state();
+  if (s.loop[0] !== 1 || s.loop[1] !== LOOP_SLOTS) throw new Error("the loop is " + s.loop);
+  await w.page.mouse.move(xOf(s, s.shownFrames / 2), midY(s));
+  await w.shot("loop-markers.png");
+  w.close();
+  console.log("wrote 9 screenshots to " + OUT);
 })().catch((e) => { console.error(e); process.exit(1); });

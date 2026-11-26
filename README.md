@@ -4,7 +4,9 @@ rcy turns a recorded drum break into a sampler kit: one audio file per drum
 hit, with the instrument and MIDI files a sampler needs to play them. An
 agent prepares the cut and a person corrects it in a window. This page
 explains why the work is divided that way, what the division implies about
-agents and people working together, and how one break goes through it.
+agents and people working together, and how one break goes through it. The
+same window also rearranges the slices into a new loop, on the waveform,
+before anything is exported.
 
 ## Why a person still looks at the waveform
 
@@ -185,6 +187,41 @@ cut written into the instrument files as the start point. A cut that turns
 out a few milliseconds late can then be corrected in the sampler without
 going back to the window.
 
+## Arranging the break in place
+
+A break cut into slices is also a set of pieces that can play in another
+order. Much of what jungle and drum and bass did with these recordings was
+exactly that: the same eight or sixteen pieces restarted early, repeated or
+left out. The usual way to try an arrangement is to export the slices, load
+them into a sampler and draw MIDI notes, then return to the editor when a cut
+turns out to be wrong. The window does it on the waveform.
+
+Each slice has a handle and its number in the strip above the waveform.
+Dragging a slice by the strip moves it. With a slice selected, Cmd+C, Cmd+V,
+Cmd+D and Cmd+X copy, paste, duplicate and cut it. The waveform redraws in
+the new order and Space plays it as a loop, so the person sees and hears the
+arrangement while they make it. A slice keeps its source number wherever it
+plays, and the Source order button puts everything back.
+
+![The Amen break in sixteen slices with slice 6 dragged to the front and slice 2 playing twice: the strip reads 6 1 2 2 3 4 5 7 and so on](docs/screenshots/arranged-in-place.png)
+
+Cuts stay editable while the slices are out of order. Moving a line changes
+where that slice starts in the source, and every place the slice plays
+follows.
+
+L and R mark the loop. Each sits on a slice edge, and dragging its flag
+changes two things only: what Space plays and what Save keeps. The
+arrangement under the markers doesn't move.
+
+![The same arrangement with R brought in to the end of the eighth slot: the first eight slots are lit, the rest are shaded, and the status line reads "Loop: slot 1 to slot 8 (8 slices)"](docs/screenshots/loop-markers.png)
+
+Save writes the loop and discards the rest. The manifest's `order` lists the
+loop's slices as they play, and the kit's MIDI file has one note for each in
+that order, so the kit's instrument and MIDI file loaded into a DAW play the
+loop as it was arranged. A kit's slices are one unbroken stretch of the
+source, from the lowest-numbered slice the loop plays to the highest; a slice
+inside that stretch that the loop skips is still in the kit.
+
 ## Reference
 
 This is an alpha; the file formats and command lines can still change.
@@ -276,8 +313,8 @@ The example is shortened. Positions are in frames at 44.1 kHz.
 | `001.wav`, `002.wav`, ... | One WAV per slice, copied from the source without resampling, fades or gain change. |
 | `<name>.sfz` | An SFZ instrument, one region per slice from MIDI key 60 upward. |
 | `<name>.exs` | With `--exs`, a Logic Pro Sampler instrument. |
-| `<name>.mid` | A MIDI file that plays the slices in order at the kit's tempo. |
-| `<name>.rcy.json` | The manifest: source, tempo, cut positions in frames, and each slice's key and file. |
+| `<name>.mid` | A MIDI file that plays the slices at the kit's tempo, in the manifest's `order` when it has one and in source order otherwise. |
+| `<name>.rcy.json` | The manifest: source, tempo, cut positions in frames, each slice's key and file, and the play order when the slices were rearranged. |
 
 ```
 node export/rcy-export --input break.wav --measures 2 --resolution 8 --out /tmp/kit
@@ -345,13 +382,11 @@ cd rcy-sdk && node --test "test/*.test.ts"
 ```
 
 ```
-NODE_PATH=tools/window-runtime/node_modules node features/window/scenarios.js \
-    "$PWD/tools/window-runtime/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron" \
-    "$PWD/window/rcy-window" "$PWD/export/rcy-export" "$PWD/presets/amen.wav"
+bin/shortcuts/window-scenarios
 ```
 
 The window scenarios open real windows and drive them with the pointer and
-keyboard. Keep the machine's own pointer still while they run, and don't
+keyboard. An argument runs only the scenarios whose name contains it. Keep the machine's own pointer still while they run, and don't
 start them while someone is working on that screen.
 
 The Gherkin scenarios for `rcy-export` run through `uv run bin/trial`. They
