@@ -1,12 +1,12 @@
 # rcy
 
-rcy turns a recorded drum break into a sampler kit: one audio file per drum
-hit, with the instrument and MIDI files a sampler needs to play them. An
-agent prepares the cut and a person corrects it in a window. This page
+rcy cuts a recorded drum break into slices and lets a person rearrange them
+into a new loop on the waveform itself, hearing each change as they make it.
+What they save is a sampler kit: one audio file per slice, with an instrument
+file and a MIDI file that plays the slices in the arranged order. An agent
+prepares the cut and a person corrects and arranges it in a window. This page
 explains why the work is divided that way, what the division implies about
-agents and people working together, and how one break goes through it. The
-same window also rearranges the slices into a new loop, on the waveform,
-before anything is exported.
+agents and people working together, and how one break goes through it.
 
 ## Why a person still looks at the waveform
 
@@ -142,7 +142,9 @@ workflows/pick-hits presets/amen.wav 4 5 work/five
 ```
 
 Save stays unavailable while the count is wrong, as in the picture above,
-and becomes available when it matches:
+and becomes available when it matches. The count is of the slices Save
+would write, so it follows the loop described under "Arranging the break in
+place":
 
 ![The break with 5 slices after cuts were removed: the count reads "5 slices, as asked" and Save is available](docs/screenshots/pick-hits-count-met.png)
 
@@ -191,8 +193,7 @@ going back to the window.
 
 A break cut into slices is also a set of pieces that can play in another
 order. Much of what jungle and drum and bass did with these recordings was
-exactly that: the same eight or sixteen pieces restarted early, repeated or
-left out. The usual way to try an arrangement is to export the slices, load
+exactly that: the same eight or sixteen pieces, restarted early or repeated. The usual way to try an arrangement is to export the slices, load
 them into a sampler and draw MIDI notes, then return to the editor when a cut
 turns out to be wrong. The window does it on the waveform.
 
@@ -302,7 +303,10 @@ electron window/rcy-window --manifest KIT.rcy.json --out EDITED.rcy.json --recor
 }
 ```
 
-The example is shortened. Positions are in frames at 44.1 kHz.
+The example is shortened. Positions are in frames at 44.1 kHz. `opening`,
+`final` and each reorder, undo and redo event also hold `order`, the slice
+numbers as they play, and an event that moves L or R holds `loop`, the numbers
+of the loop's first and last slot. `final` holds what Save writes.
 
 ### Kits
 

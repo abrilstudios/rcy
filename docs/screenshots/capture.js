@@ -28,6 +28,11 @@ const ARRANGE_RESOLUTION = 4;    // parameter: slices per measure in the arrangi
 const MOVED_SLICE = 6;           // parameter: the slice dragged to the front in the arranging shots
 const REPEATED_SLOT = 3;         // parameter: the slot duplicated in the arranging shots
 const LOOP_SLOTS = 8;            // parameter: slots left in the loop after R is brought in
+const STRIP_ABOVE_PLOT = 12;     // parameter: pixels above the waveform where the pointer is inside the strip of slice numbers
+const INTO_FIRST_SLOT = 14;      // parameter: pixels past the first edge at which a dragged slice lands in front
+const ON_R_FLAG = 5;             // parameter: pixels left of the last edge, inside R's flag
+const PAST_EDGE = 3;             // parameter: pixels past the target edge when R is released, well inside its snap
+const DRAG_STEPS = 8;            // parameter: pointer moves per drag, enough for the window to see a drag and not a click
 
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "rcy-shots-"));
 const r = spawnSync("node", [path.join(ROOT, "export", "rcy-export"), "--input", path.join(ROOT, "presets", "amen.wav"),
@@ -115,19 +120,19 @@ const midY = (s) => s.plot.y + s.plot.height / 2;
   w = await open("arrange", ["--split", "measures", "--resolution", String(ARRANGE_RESOLUTION),
     "--task", "Arrange the slices into the loop you want, put L and R around it, then Save."]);
   s = await w.state();
-  const stripY = s.plot.y - 12;
+  const stripY = s.plot.y - STRIP_ABOVE_PLOT;
   const slotMid = (t, k) => (xOf(t, t.shown[k - 1]) + xOf(t, t.shown[k])) / 2;
   await w.page.mouse.move(slotMid(s, MOVED_SLICE), stripY); await w.page.mouse.down();
-  await w.page.mouse.move(xOf(s, s.shown[0]) + 14, stripY, { steps: 6 }); await w.page.mouse.up();
+  await w.page.mouse.move(xOf(s, s.shown[0]) + INTO_FIRST_SLOT, stripY, { steps: DRAG_STEPS }); await w.page.mouse.up();
   s = await w.state();
   await w.page.mouse.click(slotMid(s, REPEATED_SLOT), stripY);
   await w.page.keyboard.press("Meta+d");
   s = await w.state();
   if (s.order[0] !== MOVED_SLICE || s.order[REPEATED_SLOT] !== s.order[REPEATED_SLOT - 1]) throw new Error("the order is not the one the shot shows: " + s.order);
   await w.shot("arranged-in-place.png");
-  const xR = xOf(s, s.shown[s.shown.length - 1]) - 5;
+  const xR = xOf(s, s.shown[s.shown.length - 1]) - ON_R_FLAG;
   await w.page.mouse.move(xR, stripY); await w.page.mouse.down();
-  await w.page.mouse.move(xOf(s, s.shown[LOOP_SLOTS]) + 3, stripY, { steps: 8 }); await w.page.mouse.up();
+  await w.page.mouse.move(xOf(s, s.shown[LOOP_SLOTS]) + PAST_EDGE, stripY, { steps: DRAG_STEPS }); await w.page.mouse.up();
   s = await w.state();
   if (s.loop[0] !== 1 || s.loop[1] !== LOOP_SLOTS) throw new Error("the loop is " + s.loop);
   await w.page.mouse.move(xOf(s, s.shownFrames / 2), midY(s));
