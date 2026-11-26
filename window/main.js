@@ -30,6 +30,9 @@
   const ZOOM_STEP = 0.5;
   // CSS pixels. A press within this distance of a boundary's line acts on that boundary.
   const PICK_PIXELS = 6;
+  // CSS pixels. Width of the L and R flags in the strip; a press on a flag acts
+  // on its locator, so the flag a person sees is the handle they grab.
+  const FLAG_PIXELS = 12;
   // Milliseconds. Audition ends each slice with a fade to zero of this length, the value rcy uses.
   const TAIL_FADE_MS = 3;
   // Exponent (unitless). The fade gain is t^3 for t falling from 1 to 0, rcy's "exponential" curve.
@@ -50,7 +53,7 @@
   const TEMPO_GRAMMAR = /^\d+(\.\d+)?$/;
 
   const CONSTANTS = {
-    FIRST_KEY, LAST_KEY, MIN_VIEW_FRAMES, ZOOM_STEP, PICK_PIXELS, TAIL_FADE_MS,
+    FIRST_KEY, LAST_KEY, MIN_VIEW_FRAMES, ZOOM_STEP, PICK_PIXELS, FLAG_PIXELS, TAIL_FADE_MS,
     TAIL_FADE_POWER, DEFAULT_RESOLUTION, DEFAULT_SENSITIVITY, AUDITION_KEYS, TEMPO_DECIMALS,
   };
 
@@ -355,6 +358,9 @@
     let base = null; // { b, s }: the manifest's boundaries and slices while the order is not source order
     let slot = null; // the selected slot (index into order), for copy, paste, duplicate and cut
     let clip = null; // the copied slice (source index)
+    // W26: the loop is slots loopA to loopE - 1. L is drawn at the start of slot loopA and R at the end of slot loopE - 1.
+    let loopA = 0;
+    let loopE = 0;
     const ORDER_MAX_SLOTS = 256; // parameter: longest order paste and duplicate build; bounds the audio laid out
     let arrangedKey = ""; // names the order and cuts f32 was laid out for; empty for source order
     let info = null;
@@ -402,6 +408,7 @@
         boundaries: toSource().b,
         slices: toSource().s,
         order: order.map((v) => v + 1),
+        loop: [loopA + 1, loopE],
         shown: boundaries.slice(),
         viewStart,
         viewEnd,
@@ -430,12 +437,57 @@
       return { b: base.b.slice(), s: copySlices(base.s) };
     }
     // A snapshot holds source-order boundaries and slices, the tempo and the order.
-    const snapshot = () => { const src = toSource(); return { b: src.b, s: src.s, bpm, o: order.slice() }; };
-    // W25: cuts and locators are edited in source order only.
-    function cutsLocked() {
-      if (!reordered()) return false;
-      message("The slices are reordered: press Source order before editing cuts", true);
-      return true;
+    const snapshot = () => { const src = toSource(); return { b: src.b, s: src.s, bpm, o: order.slice(), l: [loopA, loopE] }; };
+    // W25: a shown line stands for a source cut: the start of the slice in the slot on its
+    // right, and the last line for the end of the last slot's slice.
+    function sourceCut(i) {
+      return i < order.length ? order[i] : order[order.length - 1] + 1;
+    }
+    // The order after source slices lo..hi (0-based) merge into slice lo. Slots that
+    // played the merged slices one after another become one slot. first[k] and last[k]
+    // are the new slots old slot k became.
+    function orderAfterMerge(o, lo, hi) {
+      const out = [], first = [], last = [];
+      let prev = null;
+      for (const v of o) {
+        const merged = v >= lo && v <= hi;
+        const follows = merged && prev !== null && prev >= lo && prev <= hi && v === prev + 1;
+        if (!follows) out.push(v < lo ? v : merged ? lo : v - (hi - lo));
+        first.push(out.length - 1); last.push(out.length - 1);
+        prev = v;
+      }
+      return { o: out, first, last };
+    }
+    // The order after source slice j splits in two: each slot of j plays both halves.
+    function orderAfterSplit(o, j) {
+      const out = [], first = [], last = [];
+      for (const v of o) {
+        first.push(out.length);
+        if (v < j) out.push(v); else if (v === j) out.push(j, j + 1); else out.push(v + 1);
+        last.push(out.length - 1);
+      }
+      return { o: out, first, last };
+    }
+    // W26: the loop holds the same slots after the order was rewritten.
+    const loopAfter = (m) => [m.first[loopA], m.last[loopE - 1] + 1];
+    const REGION_END = "The first and last line are the ends of the sliced region and stay where they are";
+    // W26: what Save keeps. The loop's slots name source slices lo to hi; the kit
+    // holds those slices and the order is the loop's slots numbered within them.
+    function kept() {
+      const src = toSource();
+      const o = order.slice(loopA, loopE);
+      const lo = Math.min(...o), hi = Math.max(...o);
+      const wasDefault = namesDefault(src.s);
+      const s = copySlices(src.s.slice(lo, hi + 1));
+      s.forEach((x, j) => { x.key -= lo; if (wasDefault) x.file = pad3(j + 1); });
+      return { b: src.b.slice(lo, hi + 2), s, o: o.map((v) => v - lo) };
+    }
+    // Both splits replace every slice, so they start from source order.
+    function toSourceOrder() {
+      if (!reordered()) return;
+      const src = toSource();
+      applySnapshot({ b: src.b, s: src.s, bpm, o: identity(src.s.length) });
+      slot = null; clip = null;
     }
     // Lays the audio out for the order: before L and after R as the source, between them the
     // slots end to end. The shown audio is longer or shorter than the source when slices repeat or are left out.
@@ -492,6 +544,10 @@
       boundaries = b;
       slices = copySlices(s);
       order = o.slice();
+      // a snapshot without a loop has the whole order as its loop
+      const l = snap.l || [0, o.length];
+      loopA = Math.min(Math.max(l[0], 0), o.length - 1);
+      loopE = Math.min(Math.max(l[1], loopA + 1), o.length);
       base = isIdentity(o, snap.s.length) ? null : { b: snap.b.slice(), s: copySlices(snap.s) };
       if (slot !== null && slot >= order.length) slot = null;
       arrange(snap.b);
@@ -500,16 +556,47 @@
       if (selected !== null && selected >= boundaries.length) selected = null;
     }
 
-    function commit(b, s, sel) {
+    function commit(b, s, sel, o, l) {
       history.length = hpos + 1;
-      history.push({ b: b.slice(), s: copySlices(s), bpm, o: identity(s.length) });
+      history.push({ b: b.slice(), s: copySlices(s), bpm, o: o ? o.slice() : identity(s.length), l: l ? l.slice() : null });
       hpos = history.length - 1;
       applySnapshot(history[hpos]);
       selected = sel === undefined ? selected : sel;
       if (selected !== null && selected >= boundaries.length) selected = null;
       transientSession = null;
       tempoSession = null;
-      lastEdit = logEvent("edit", { what: "", boundaries: boundaries.slice(), slices: slices.length, bpm });
+      const rec = { what: "", boundaries: toSource().b, slices: toSource().s.length, bpm };
+      if (reordered()) rec.order = order.map((v) => v + 1);
+      lastEdit = logEvent("edit", rec);
+      changed();
+    }
+    // W08: source cut c moves by delta frames, limited by its neighbours in the source.
+    // The order and the loop are kept. Returns false when nothing changed.
+    function moveSourceCut(c, delta, sel) {
+      const src = toSource(), n = src.b.length - 1;
+      if (c <= 0 || c >= n) { message(REGION_END); return false; }
+      const f = Math.min(Math.max(src.b[c] + delta, src.b[c - 1] + 1), src.b[c + 1] - 1);
+      if (f === src.b[c]) return false;
+      const nb = src.b.slice();
+      nb[c] = f;
+      commit(nb, src.s, sel, order, [loopA, loopE]);
+      message(`Moved cut ${c} to frame ${f}`);
+      return true;
+    }
+    // W26: L or R goes to a slice edge. Nothing else changes.
+    function setLoop(a, e, from) {
+      if (a === from[0] && e === from[1]) { changed(); return; }
+      const looping = voice !== null && voice.loop;
+      loopA = a; loopE = e;
+      history.length = hpos + 1;
+      history.push(snapshot());
+      hpos = history.length - 1;
+      transientSession = null;
+      tempoSession = null;
+      const text = `Loop: slot ${a + 1} to slot ${e} (${e - a} slice${e - a === 1 ? "" : "s"})`;
+      lastEdit = logEvent("edit", { what: text, boundaries: toSource().b, slices: toSource().s.length, bpm, order: order.map((v) => v + 1), loop: [a + 1, e] });
+      if (looping) playLoop();
+      message(text);
       changed();
     }
 
@@ -566,7 +653,7 @@
       if (hpos === 0) { message("Nothing to undo"); return; }
       hpos--;
       applySnapshot(history[hpos]);
-      logEvent("undo", { boundaries: toSource().b, order: order.map((v) => v + 1), bpm });
+      logEvent("undo", { boundaries: toSource().b, order: order.map((v) => v + 1), loop: [loopA + 1, loopE], bpm });
       message("Undo");
       changed();
     }
@@ -578,17 +665,17 @@
       if (hpos >= history.length - 1) { message("Nothing to redo"); return; }
       hpos++;
       applySnapshot(history[hpos]);
-      logEvent("redo", { boundaries: toSource().b, order: order.map((v) => v + 1), bpm });
+      logEvent("redo", { boundaries: toSource().b, order: order.map((v) => v + 1), loop: [loopA + 1, loopE], bpm });
       message("Redo");
       changed();
     }
 
     // W25: a new order is one edit. o holds source slice indexes in play order.
-    function setOrder(o, text, newSlot) {
+    function setOrder(o, text, newSlot, l) {
       const src = toSource();
       const looping = voice !== null && voice.loop; // the L-to-R loop goes on in the new order
       history.length = hpos + 1;
-      history.push({ b: src.b, s: src.s, bpm, o: o.slice() });
+      history.push({ b: src.b, s: src.s, bpm, o: o.slice(), l: l === undefined ? [loopA, loopE] : l });
       hpos = history.length - 1;
       applySnapshot(history[hpos]);
       if (looping) playLoop();
@@ -611,14 +698,15 @@
     }
     function sourceOrder() {
       if (!reordered()) return;
-      setOrder(identity(toSource().s.length), "Source order", null);
+      setOrder(identity(toSource().s.length), "Source order", null, null);
     }
     // W25: copy, paste, duplicate and cut act on the selected slot.
     function insertAfter(v, at, what) {
       if (order.length >= ORDER_MAX_SLOTS) { message(`${what} not applied: the order already holds ${ORDER_MAX_SLOTS} slices`, true); return; }
       const o = order.slice();
       o.splice(at + 1, 0, v);
-      setOrder(o, `${what} slice ${v + 1}: order ${orderText(o)}`, at + 1);
+      const l = at < loopA ? [loopA + 1, loopE + 1] : at < loopE ? [loopA, loopE + 1] : [loopA, loopE];
+      setOrder(o, `${what} slice ${v + 1}: order ${orderText(o)}`, at + 1, l);
     }
     function copySlot() {
       if (slot === null) { message("Click a slice's number to select it first"); return; }
@@ -640,7 +728,9 @@
       clip = order[slot];
       const o = order.slice();
       o.splice(slot, 1);
-      setOrder(o, `Cut slice ${clip + 1}: order ${orderText(o)}`, Math.min(slot, o.length - 1));
+      // a loop left with no slot becomes the whole order
+      const l = slot < loopA ? [loopA - 1, loopE - 1] : slot < loopE ? (loopE - 1 > loopA ? [loopA, loopE - 1] : null) : [loopA, loopE];
+      setOrder(o, `Cut slice ${clip + 1}: order ${orderText(o)}`, Math.min(slot, o.length - 1), l);
     }
     // The slot a slice dropped at x goes before: the number of slices whose middle is left of x.
     function dropSlot(x) {
@@ -655,58 +745,31 @@
       return Math.min(Math.max(f, lo), hi);
     }
 
-    // W08a: a locator moves freely; every cut at or beyond its new position is
-    // removed as W10 does (the slice on the left keeps key, file and role,
-    // later keys fall). `base` is the state the move starts from.
-    function locatorMove(base, left, f) {
-      const b = base.b, n = b.length - 1, wasDefault = namesDefault(base.s);
-      let nb, ns;
-      if (left) {
-        f = Math.min(Math.max(f, 0), b[n] - 1);
-        let c = 0;
-        while (1 + c < n && b[1 + c] <= f) c++;
-        nb = [f].concat(b.slice(1 + c));
-        ns = copySlices([base.s[0]].concat(base.s.slice(1 + c)));
-        for (let j = 1; j < ns.length; j++) ns[j].key -= c;
-      } else {
-        f = Math.min(Math.max(f, b[0] + 1), N);
-        let c = 0;
-        while (n - 1 - c > 0 && b[n - 1 - c] >= f) c++;
-        nb = b.slice(0, n - c).concat([f]);
-        ns = copySlices(base.s.slice(0, base.s.length - c));
-      }
-      if (wasDefault) ns.forEach((x, j) => { x.file = pad3(j + 1); });
-      return { b: nb, s: ns };
-    }
-
-    // W08: a move changes that boundary only; slices keep key, file and role.
+    // W08: a move changes that cut only; slices keep key, file and role.
     function moveBy(i, delta) {
-      if (cutsLocked()) return;
-      if (i === 0 || i === boundaries.length - 1) {
-        const r = locatorMove(snapshot(), i === 0, boundaries[i] + delta);
-        if (r.b.length === boundaries.length && r.b[i === 0 ? 0 : r.b.length - 1] === boundaries[i]) return;
-        commit(r.b, r.s, i === 0 ? 0 : r.b.length - 1);
-        return;
-      }
-      const b = boundaries.slice();
-      const f = clampMove(i, b[i] + delta, b);
-      if (f === b[i]) return;
-      b[i] = f;
-      commit(b, slices, i);
+      moveSourceCut(sourceCut(i), delta, i);
     }
 
     // W09
     function addCut(f) {
-      if (cutsLocked()) return;
-      const b = boundaries;
-      if (!(f > b[0] && f < b[b.length - 1])) { message("A cut must lie strictly between L and R"); return; }
+      const shown = boundaries;
+      if (!(f > shown[0] && f < shown[shown.length - 1])) { message("A cut must lie inside the sliced region"); return; }
       let k = 1;
-      while (b[k] < f) k++;
-      if (b[k] === f) { message(`Frame ${f} already is a boundary`); return; }
+      while (shown[k] < f) k++;
+      if (shown[k] === f) { message(`Frame ${f} already is a boundary`); return; }
+      // W25: the pointer is in slot k-1; the cut goes the same distance into that slot's slice
+      const src = toSource();
+      const b = src.b;
+      const at = k - 1;
+      const j = order[at];
+      f = b[j] + (f - shown[at]);
+      k = j + 1;
+      const m = orderAfterSplit(order, j);
+      if (m.o.length > ORDER_MAX_SLOTS) { message(`No cut added: the order would hold more than ${ORDER_MAX_SLOTS} slices`, true); return; }
       // the new cut goes between b[k-1] and b[k]; slice index k-1 (0-based) splits
-      const wasDefault = namesDefault(slices);
-      const left = slices[k - 1];
-      const s = copySlices(slices);
+      const wasDefault = namesDefault(src.s);
+      const left = src.s[k - 1];
+      const s = copySlices(src.s);
       const right = { key: left.key + 1, file: "", role: "" };
       for (let j = k; j < s.length; j++) s[j].key += 1;
       s.splice(k, 0, right);
@@ -724,26 +787,31 @@
       }
       const nb = b.slice();
       nb.splice(k, 0, f);
-      commit(nb, s, k);
+      slot = null; clip = null;
+      commit(nb, s, m.first[at] + 1, m.o, loopAfter(m));
       message(`Cut added at frame ${f}`);
     }
 
     // W10
     function removeCut(i) {
-      if (cutsLocked()) return;
-      if (i <= 0 || i >= boundaries.length - 1) { message("Locators can't be removed"); return; }
-      const wasDefault = namesDefault(slices);
-      const s = copySlices(slices);
+      const src = toSource();
+      // W25: the line is the start of the slice on its right; that slice merges into the one before it in the source
+      i = sourceCut(i);
+      if (i <= 0 || i >= src.b.length - 1) { message("The ends of the sliced region can't be removed"); return; }
+      const m = orderAfterMerge(order, i - 1, i);
+      const wasDefault = namesDefault(src.s);
+      const s = copySlices(src.s);
       s.splice(i, 1); // the slice on the cut's right merges into the one on its left
       for (let j = i; j < s.length; j++) s[j].key -= 1;
       // SPEC-GAP: W10 lowers every later key by one without a floor; a key
       // below 0 would make the manifest invalid, so such a removal is refused.
       if (s.some((x) => x.key < 0)) { message("Cut not removed: a slice key would fall below 0"); return; }
       if (wasDefault) s.forEach((x, j) => { x.file = pad3(j + 1); });
-      const nb = boundaries.slice();
+      const nb = src.b.slice();
       const f = nb[i];
       nb.splice(i, 1);
-      commit(nb, s, null);
+      slot = null; clip = null;
+      commit(nb, s, null, m.o, loopAfter(m));
       message(`Cut at frame ${f} removed`);
     }
 
@@ -755,7 +823,7 @@
 
     // W11
     function splitByMeasures() {
-      if (cutsLocked()) return;
+      toSourceOrder();
       const m = info.measures;
       const r = Number(selResolution.value);
       const L = boundaries[0];
@@ -792,7 +860,7 @@
     }
 
     function splitByTransients() {
-      if (cutsLocked()) return;
+      toSourceOrder();
       const L = boundaries[0];
       const R = boundaries[boundaries.length - 1];
       const sens = Number(rngSensitivity.value);
@@ -1212,8 +1280,8 @@
     }
 
     function playLoop() {
-      const L = boundaries[0];
-      const R = boundaries[boundaries.length - 1];
+      const L = boundaries[loopA];
+      const R = boundaries[loopE];
       if (!fullBuffer) {
         fullBuffer = actx.createBuffer(nch, N, sr);
         for (let c = 0; c < nch; c++) fullBuffer.copyToChannel(f32[c], c);
@@ -1338,8 +1406,8 @@
       return e;
     }
     function runReport() {
-      const src = toSource();
-      return { opening, events, final: { boundaries: src.b, slices: src.s, order: order.map((v) => v + 1), bpm, dirty: hpos !== 0 } };
+      const k = kept();
+      return { opening, events, final: { boundaries: k.b, slices: k.s, order: k.o.map((v) => v + 1), bpm, dirty: hpos !== 0 } };
     }
     let expectSlices = null;
     let editCursor = null; // frame of the last click on the waveform; where Add cut puts a cut
@@ -1355,7 +1423,26 @@
       return x >= o.x && x <= o.x + o.width && y >= o.y && y <= o.y + o.height;
     }
 
-    function pickBoundary(x) {
+    // W26: a press on the L or R flag in the strip; each flag reaches FLAG_PIXELS into the loop from its line.
+    function pickFlag(x, y) {
+      if (!(y >= layout.stripTop && y < layout.stripTop + STRIP_H)) return null;
+      const dl = x - xOfFrame(boundaries[loopA]);
+      const dr = xOfFrame(boundaries[loopE]) - x;
+      // a flag takes at most half of a narrow slot, so the slot can still be pressed to reorder
+      const wl = Math.min(K.FLAG_PIXELS, (xOfFrame(boundaries[loopA + 1]) - xOfFrame(boundaries[loopA])) / 2);
+      const wr = Math.min(K.FLAG_PIXELS, (xOfFrame(boundaries[loopE]) - xOfFrame(boundaries[loopE - 1])) / 2);
+      const onL = dl >= 0 && dl <= wl;
+      const onR = dr >= 0 && dr <= wr;
+      if (onL && onR) return dl <= dr ? "L" : "R";
+      return onL ? "L" : onR ? "R" : null;
+    }
+    // The slice edge nearest x, as an index into the shown boundaries.
+    function nearestEdge(x) {
+      let best = 0;
+      for (let i = 1; i < boundaries.length; i++) if (Math.abs(xOfFrame(boundaries[i]) - x) < Math.abs(xOfFrame(boundaries[best]) - x)) best = i;
+      return best;
+    }
+    function pickBoundary(x, y) {
       let best = null;
       let bestD = Infinity;
       const b = boundaries;
@@ -1388,12 +1475,17 @@
       if (!inPlotArea(x, y)) return;
       e.preventDefault();
       if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
-      const pick = pickBoundary(x);
+      const flag = e.altKey || e.shiftKey || e.metaKey || e.ctrlKey ? null : pickFlag(x, y);
+      if (flag) {
+        drag = { kind: "loop", which: flag, from: [loopA, loopE] };
+        changed();
+        return;
+      }
+      const pick = pickBoundary(x, y);
       if (e.altKey) {
         if (e.metaKey || e.ctrlKey) return;
         if (pick === null) addCut(pointerFrame(x));
-        else if (pick > 0 && pick < boundaries.length - 1) removeCut(pick);
-        else message("Locators can't be removed");
+        else removeCut(pick);
         return;
       }
       if (e.metaKey || e.ctrlKey) return;
@@ -1405,16 +1497,13 @@
         if (k >= 0) playRange(f, boundaries[k + 1]);
         return;
       }
-      if (pick !== null && reordered()) {
-        selected = pick;
-        cutsLocked();
-        changed();
-        return;
-      }
       if (pick !== null) {
+        // W25: the line follows the pointer and the source cut it stands for moves on release
+        const c = sourceCut(pick), src = toSource(), n = src.b.length - 1;
         selected = pick;
-        drag = { kind: "boundary", index: pick, origin: boundaries[pick], x0: x, base: snapshot(),
-                 locator: pick === 0 ? "L" : pick === boundaries.length - 1 ? "R" : null };
+        if (c <= 0 || c >= n) { message(REGION_END); changed(); return; }
+        drag = { kind: "boundary", index: pick, origin: boundaries[pick], x0: x, src: c, delta: 0, moved: false,
+                 lo: src.b[c - 1] + 1 - src.b[c], hi: src.b[c + 1] - 1 - src.b[c] };
         changed();
         return;
       }
@@ -1435,10 +1524,10 @@
       if (!ready || dialogOpen() || e.altKey || e.metaKey || e.ctrlKey || e.shiftKey) return;
       if (!inPlotArea(e.clientX, e.clientY)) return;
       e.preventDefault();
-      const pick = pickBoundary(e.clientX);
+      if (pickFlag(e.clientX, e.clientY)) return;
+      const pick = pickBoundary(e.clientX, e.clientY);
       if (pick === null) { stopAudio(); addCut(pointerFrame(e.clientX)); }
-      else if (pick > 0 && pick < boundaries.length - 1) removeCut(pick);
-      else message("Locators can't be removed");
+      else removeCut(pick);
     }
 
     function canAddAtCursor() {
@@ -1453,6 +1542,7 @@
       $("save").classList.toggle("dirty", hpos !== 0);
       $("unsaved").hidden = hpos === 0;
       if (expectSlices !== null) {
+        const slices = kept().s;
         const ok = slices.length === expectSlices;
         $("save").disabled = !ok;
         $("expect").textContent = ok ? `${expectSlices} slices, as asked` : `${slices.length} slices now, ${expectSlices} asked`;
@@ -1467,16 +1557,13 @@
       if (drag && drag.kind === "boundary") {
         if (e.clientX !== drag.x0) drag.moved = true;
         if (drag.moved) {
-          if (drag.locator) {
-            const r = locatorMove(drag.base, drag.locator === "L", pointerFrame(e.clientX));
-            boundaries = r.b; slices = r.s;
-            drag.index = selected = drag.locator === "L" ? 0 : r.b.length - 1;
-          } else {
-            const i = drag.index;
-            const f = clampMove(i, pointerFrame(e.clientX), boundaries);
-            if (f !== boundaries[i]) boundaries[i] = f;
-          }
+          drag.delta = Math.min(Math.max(pointerFrame(e.clientX) - drag.origin, drag.lo), drag.hi);
+          boundaries[drag.index] = drag.origin + drag.delta;
         }
+      } else if (drag && drag.kind === "loop") {
+        const i = nearestEdge(e.clientX);
+        if (drag.which === "L") loopA = Math.min(Math.max(i, 0), loopE - 1);
+        else loopE = Math.min(Math.max(i, loopA + 1), order.length);
       } else if (drag && drag.kind === "slice") {
         if (Math.abs(e.clientX - drag.x0) > K.PICK_PIXELS) drag.moved = true;
         if (drag.moved) drag.target = dropSlot(e.clientX);
@@ -1494,15 +1581,12 @@
       drag = null;
       if (d.kind === "boundary") {
         const i = d.index;
-        if (boundaries[i] !== d.origin || boundaries.length !== d.base.b.length) {
-          const b = boundaries.slice();
-          const ns = copySlices(slices);
-          applySnapshot(d.base); // the history entry holds the state before the drag
-          commit(b, ns, i);
-          message(`Moved ${boundaryName(i)} to frame ${b[i]}`);
-        } else {
-          changed();
-        }
+        boundaries[i] = d.origin;
+        if (!moveSourceCut(d.src, d.delta, i)) changed();
+      } else if (d.kind === "loop") {
+        const to = [loopA, loopE];
+        loopA = d.from[0]; loopE = d.from[1];
+        setLoop(to[0], to[1], d.from);
       } else if (d.kind === "slice") {
         if (d.moved) moveSlice(d.index, d.target);
         else if (d.wasPlaying) stopAudio(); // a click while audio plays stops it
@@ -1547,7 +1631,7 @@
       if (drag && drag.kind === "boundary") c = "ew-resize";
       else if (drag && drag.kind === "slice") c = "grabbing";
       else if (ready && inPlotArea(pointer.x, pointer.y)) {
-        c = pickBoundary(pointer.x) !== null ? (reordered() ? "default" : "ew-resize")
+        c = pickBoundary(pointer.x, pointer.y) !== null ? "ew-resize"
           : pointer.y < layout.stripTop + STRIP_H && slices.length > 1 ? "grab" : "crosshair";
       }
       else if (ready && inOverview(pointer.x, pointer.y)) c = "pointer";
@@ -1610,8 +1694,7 @@
         }
       } else if (key === "Delete" || key === "Backspace") {
         if (selected !== null && !drag) {
-          if (selected > 0 && selected < boundaries.length - 1) removeCut(selected);
-          else message("Locators can't be removed");
+          removeCut(selected);
         }
       } else if (key === " " || code === "Space") {
         if (!e.repeat) { if (voice) stopAudio(); else playLoop(); }
@@ -1648,15 +1731,16 @@
     let saving = false;
     async function save() {
       if (saving || !ready) return;
-      if (expectSlices !== null && slices.length !== expectSlices) {
-        message(`Not saved: this task needs ${expectSlices} slices and there are ${slices.length}`, true);
+      const k = kept();
+      if (expectSlices !== null && k.s.length !== expectSlices) {
+        message(`Not saved: this task needs ${expectSlices} slices and the loop holds ${k.s.length}`, true);
         return;
       }
       saving = true;
       message("Saving…");
       let r;
       try {
-        r = await ipcRenderer.invoke("rcy-save", { boundaries: toSource().b, slices: toSource().s, order: order.slice(), bpm, report: runReport() });
+        r = await ipcRenderer.invoke("rcy-save", { boundaries: k.b, slices: k.s, order: k.o, bpm, report: runReport() });
       } catch (err) {
         r = { ok: false, error: String(err && err.message ? err.message : err) };
       }
@@ -1685,9 +1769,9 @@
     }
 
     function boundaryName(i) {
-      if (i === 0) return "L";
-      if (i === boundaries.length - 1) return "R";
-      return `cut ${i}`;
+      if (i === 0) return "region start";
+      if (i === boundaries.length - 1) return "region end";
+      return `line ${i}`;
     }
 
     function valuesAt(f) {
@@ -2055,8 +2139,8 @@
       const bottom = layout.plotsBottom;
       const right = p.x + p.width;
       const b = boundaries;
-      const L = b[0];
-      const R = b[b.length - 1];
+      const L = b[loopA];
+      const R = b[loopE];
       const XL = xOfFrame(L);
       const XR = xOfFrame(R);
       // shade outside the locators
@@ -2084,7 +2168,7 @@
         const dragged = drag && drag.kind === "slice" && drag.moved && drag.index === k;
         if (dragged) { g.fillStyle = "rgba(243,192,79,0.25)"; g.fillRect(xa, top, xb - xa, STRIP_H - 2); }
         else if (slot === k) { g.fillStyle = "rgba(90,174,255,0.28)"; g.fillRect(xa, top, xb - xa, STRIP_H - 2); }
-        let tx = xa + (k === 0 ? 14 : 7);
+        let tx = xa + (k === loopA ? 14 : 7);
         // the handle: six dots, where a press starts a reorder drag (W25)
         if (slices.length > 1 && xb - xa >= 34) {
           g.fillStyle = dragged ? COLORS.cut : COLORS.labelDim;
@@ -2103,11 +2187,11 @@
       }
 
       // boundaries
-      const hoverPick = !drag && pointer.inside && inPlotArea(pointer.x, pointer.y) ? pickBoundary(pointer.x) : null;
+      const hoverPick = !drag && pointer.inside && inPlotArea(pointer.x, pointer.y) ? pickBoundary(pointer.x, pointer.y) : null;
       for (let i = 0; i < b.length; i++) {
         const X = xOfFrame(b[i]);
         if (X < p.x - 8 || X > right + 8) continue;
-        const isLoc = i === 0 || i === b.length - 1;
+        const isLoc = i === loopA || i === loopE;
         const isSel = i === selected;
         const xs = Math.round(X * dpr) / dpr + 0.5 / dpr;
         let col = isLoc ? COLORS.loc : COLORS.cut;
@@ -2122,8 +2206,8 @@
         g.fillStyle = col;
         if (isLoc) {
           // a flag with its letter, pointing into the region
-          const left = i === 0;
-          const fw = 12;
+          const left = i === loopA;
+          const fw = K.FLAG_PIXELS;
           g.beginPath();
           if (left) { g.moveTo(xs, top + 2); g.lineTo(xs + fw, top + 2); g.lineTo(xs + fw, top + 14); g.lineTo(xs, top + 18); }
           else { g.moveTo(xs, top + 2); g.lineTo(xs - fw, top + 2); g.lineTo(xs - fw, top + 14); g.lineTo(xs, top + 18); }
