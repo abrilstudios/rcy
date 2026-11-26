@@ -1,0 +1,140 @@
+#!/usr/bin/env node
+// rcy-player: plays a kit the way a sampler would, to check a kit by ear.
+//
+//   rcy-player KIT_DIR [LOOPS] [BPM] [--out FILE.wav]
+//
+// KIT_DIR holds <name>.mid, <name>.sfz and the slices, as rcy-export writes
+// them, where <name> is the directory's name. Each note of the MIDI file
+// triggers the SFZ region with that key, from the region's offset to its end,
+// at the note's time. One voice: a note ends where the next begins, with a
+// 2 ms fade. A note starts on its MIDI tick, so it can sit a few frames from
+// where the slice was cut; the output is what a sampler plays, not a copy of
+// the source.
+//
+// LOOPS repeats the MIDI file end to end (default 1). BPM plays it at that
+// tempo and resamples every slice by BPM / the file's tempo, so pitch rises
+// with speed as on a sampler; there is no time-stretch.
+//
+// Without --out the result is played through afplay and nothing is kept.
+// With --out it is written to FILE.wav and not played.
+// Exit codes: 0 played or written, 2 the command line or the kit was refused.
+"use strict";
+const fs = require("fs"), os = require("os"), path = require("path");
+const { spawnSync } = require("child_process");
+
+function refuse(why) { console.error("rcy-player: " + why); process.exit(2); }
+const argv = process.argv.slice(2);
+let outFile = null;
+const at = argv.indexOf("--out");
+if (at !== -1) {
+  if (at + 1 >= argv.length) refuse("--out needs a file");
+  outFile = argv[at + 1];
+  argv.splice(at, 2);
+}
+const [dir, loopsArg, bpmArg] = argv;
+if (!dir || argv.length > 3) refuse("usage: rcy-player KIT_DIR [LOOPS] [BPM] [--out FILE.wav]");
+if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) refuse("no such directory: " + dir);
+const loops = loopsArg === undefined ? 1 : Number(loopsArg);
+if (!Number.isInteger(loops) || loops < 1) refuse("LOOPS must be a whole number of 1 or more");
+if (bpmArg !== undefined && !(Number(bpmArg) > 0)) refuse("BPM must be a number above 0");
+const stem = path.basename(path.resolve(dir));
+for (const ext of [".mid", ".sfz"]) if (!fs.existsSync(path.join(dir, stem + ext))) refuse(`${path.join(dir, stem + ext)} is missing`);
+
+function wav(file) {
+  const d = fs.readFileSync(file);
+  let i = 12, fmt = null, data = null;
+  while (i + 8 <= d.length) {
+    const id = d.toString("latin1", i, i + 4), n = d.readUInt32LE(i + 4);
+    if (id === "fmt ") fmt = { channels: d.readUInt16LE(i + 10), rate: d.readUInt32LE(i + 12), bits: d.readUInt16LE(i + 22) };
+    if (id === "data") data = d.subarray(i + 8, i + 8 + n);
+    i += 8 + n + (n & 1);
+  }
+  if (!fmt || !data || fmt.bits !== 16) refuse("not a 16-bit PCM WAV: " + file);
+  return { ...fmt, data };
+}
+
+const regions = new Map();
+for (const line of fs.readFileSync(path.join(dir, stem + ".sfz"), "utf8").split("\n")) {
+  if (!line.startsWith("<region>")) continue;
+  const f = Object.fromEntries(line.slice(8).trim().split(/\s+/).map((kv) => kv.split("=")));
+  regions.set(Number(f.key), { w: wav(path.join(dir, f.sample)), offset: Number(f.offset || 0), end: f.end === undefined ? null : Number(f.end) });
+}
+
+const m = fs.readFileSync(path.join(dir, stem + ".mid"));
+const division = m.readUInt16BE(12);
+let usPerQuarter = 500000;
+const notes = [];
+let p = 14, endTick = 0;
+while (p < m.length) {
+  const len = m.readUInt32BE(p + 4), stop = p + 8 + len;
+  let i = p + 8, tick = 0, status = 0;
+  while (i < stop) {
+    let v = 0, b;
+    do { b = m[i++]; v = (v << 7) | (b & 0x7f); } while (b & 0x80);
+    tick += v;
+    if (m[i] === 0xff) {
+      const type = m[i + 1], n = m[i + 2];
+      if (type === 0x51) usPerQuarter = m.readUIntBE(i + 3, 3);
+      i += 3 + n;
+      continue;
+    }
+    if (m[i] & 0x80) status = m[i++];
+    const key = m[i], vel = m[i + 1];
+    i += 2;
+    if ((status & 0xf0) === 0x90 && vel > 0) notes.push({ tick, key, vel });
+  }
+  endTick = Math.max(endTick, tick);
+  p = stop;
+}
+
+if (regions.size === 0) refuse("the SFZ file has no region");
+if (notes.length === 0) refuse("the MIDI file has no note");
+const any = regions.values().next().value.w;
+const rate = any.rate, ch = any.channels;
+const fileBpm = 6e7 / usPerQuarter;
+const ratio = bpmArg ? Number(bpmArg) / fileBpm : 1;
+const frameOf = (tick) => Math.round(tick / division * usPerQuarter / 1e6 * rate / ratio);
+const once = notes.slice();
+for (let l = 1; l < loops; l++) for (const n of once) notes.push({ tick: n.tick + l * endTick, key: n.key, vel: n.vel });
+let total = 0;
+const plan = notes.map((n) => {
+  const r = regions.get(n.key);
+  if (!r) refuse(`the MIDI file plays key ${n.key} and the SFZ file has no region for it`);
+  const srcFrames = (r.end === null ? r.w.data.length / (2 * ch) : r.end + 1) - r.offset;
+  const frames = Math.floor(srcFrames / ratio);
+  const at = frameOf(n.tick);
+  total = Math.max(total, at + frames);
+  return { r, at, frames, key: n.key, gain: n.vel / 100 }; // velocity 100, the kit's own, is unity
+});
+// One voice: a note ends where the next begins, with a 2 ms fade so the cut doesn't click.
+plan.sort((a, b) => a.at - b.at);
+const FADE = Math.round(rate * 0.002);
+plan.forEach((s, i) => { if (i + 1 < plan.length && plan[i + 1].at - s.at < s.frames) { s.frames = plan[i + 1].at - s.at; s.choked = true; } });
+total = Math.max(...plan.map((s) => s.at + s.frames));
+const mix = new Int32Array(total * ch);
+for (const s of plan) {
+  for (let f = 0; f < s.frames; f++) for (let c = 0; c < ch; c++) {
+    // linear interpolation between the two source frames around f * ratio
+    const x = f * ratio, i0 = Math.floor(x), i1 = Math.min(i0 + 1, Math.floor((s.frames - 1) * ratio)), w = x - i0;
+    const a = s.r.w.data.readInt16LE(((s.r.offset + i0) * ch + c) * 2), b = s.r.w.data.readInt16LE(((s.r.offset + i1) * ch + c) * 2);
+    mix[(s.at + f) * ch + c] += Math.round((a + (b - a) * w) * s.gain * (s.choked && s.frames - f < FADE ? (s.frames - f) / FADE : 1));
+  }
+}
+const out = Buffer.alloc(44 + mix.length * 2);
+out.write("RIFF", 0); out.writeUInt32LE(36 + mix.length * 2, 4); out.write("WAVEfmt ", 8);
+out.writeUInt32LE(16, 16); out.writeUInt16LE(1, 20); out.writeUInt16LE(ch, 22); out.writeUInt32LE(rate, 24);
+out.writeUInt32LE(rate * ch * 2, 28); out.writeUInt16LE(ch * 2, 32); out.writeUInt16LE(16, 34);
+out.write("data", 36); out.writeUInt32LE(mix.length * 2, 40);
+for (let i = 0; i < mix.length; i++) out.writeInt16LE(Math.max(-32768, Math.min(32767, mix[i])), 44 + i * 2);
+const report = (file) => console.log(JSON.stringify({ notes: plan.length, bpm: fileBpm * ratio, semitones: +(12 * Math.log2(ratio)).toFixed(2), loops, seconds: +(total / rate).toFixed(3), out: file }));
+if (outFile) {
+  fs.writeFileSync(outFile, out);
+  report(outFile);
+} else {
+  const tmp = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "rcy-player-")), stem + ".wav");
+  fs.writeFileSync(tmp, out);
+  report(null);
+  const r = spawnSync("afplay", [tmp], { stdio: "inherit" });
+  fs.rmSync(path.dirname(tmp), { recursive: true });
+  if (r.error) refuse("afplay could not be run (" + r.error.code + "); use --out FILE.wav");
+}

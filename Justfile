@@ -12,6 +12,10 @@ export *ARGS:
 window *ARGS:
     tools/window-runtime/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron window/rcy-window {{ARGS}}
 
+# Play a kit's MIDI file against its slices, to check it by ear: just player KIT_DIR [LOOPS] [BPM] [--out FILE.wav]
+player *ARGS:
+    node player/rcy-player {{ARGS}}
+
 # Install Electron and Playwright for the window and its scenarios
 setup-window:
     npm ci --prefix tools/window-runtime

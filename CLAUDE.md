@@ -41,6 +41,7 @@ done
 - `workflows/new-kit`, `workflows/pick-hits`, `workflows/recut` - Whole tasks: prepare the manifest, open the window, cut the kit on Save. Start here; see `README.md`
 - `just export ...` - Cut a kit (`node export/rcy-export`); `SPEC.md` states every option
 - `just window ...` - Open the slicing window (`window/rcy-window` under Electron); `WINDOW.md` states its behaviour
+- `just player KIT_DIR [LOOPS] [BPM]` - Play a kit's MIDI file against its slices (`player/rcy-player`), to check a kit by ear; BPM resamples the slices, `--out FILE.wav` writes instead of playing
 - `just build` - Rebuild the SDK and both programs after editing a source
 - `just test` - SDK tests and the window scenarios
 - `just setup-window` - Install Electron and Playwright
@@ -193,6 +194,7 @@ Examples:
 SPEC.md, WINDOW.md   # behaviour of rcy-export and rcy-window
 export/              # rcy-export: main.js (source) and the built program
 window/              # rcy-window: main.js (source) and the built program
+player/              # rcy-player: plays a kit's MIDI file against its slices
 rcy-sdk/             # file formats: WAV, MIDI, SFZ, EXS, manifest
 features/            # acceptance scenarios
 presets/             # preset catalog and audio
