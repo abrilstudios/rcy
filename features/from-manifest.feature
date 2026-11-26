@@ -42,6 +42,51 @@ Feature: rebuild a kit from a manifest
       ]
       """
 
+  @R15 @R21
+  Scenario: midi-follows-the-manifest-order
+    An order lists slice numbers in play order. A slice may fill several
+    slots or none; the MIDI file lays the slots end to end from the region
+    start, and the slice files are the same as without an order.
+
+    Given a 1-channel 44100 Hz 16-bit WAV "in.wav" of 88200 frames
+    When the client runs the command as "cut" with arguments:
+      """
+      ["--input", "in.wav", "--measures", "1", "--out", "kit"]
+      """
+    And the client derives "kit/ordered.json" from "kit/kit.rcy.json" with:
+      """
+      {"order": [3, 1, 1]}
+      """
+    And the client runs the command as "rebuild" with arguments:
+      """
+      ["--from-manifest", "kit/ordered.json", "--out", "kit2"]
+      """
+    And the observer reads the directory "kit2"
+    And the observer compares "kit2/001.wav" with frames 0 to 22050 of "in.wav"
+    And the observer compares "kit2/003.wav" with frames 44100 to 66150 of "in.wav"
+    Then the recorded trace contains:
+      """
+      [
+        {"event": "process_exit", "name": "rebuild", "code": 0, "stderr_lines": 0},
+        {"event": "midi_event", "track": 1, "tick": 0, "kind": "note_on", "channel": 0, "key": 62, "velocity": 100},
+        {"event": "midi_event", "track": 1, "tick": 960, "kind": "note_off", "channel": 0, "key": 62},
+        {"event": "midi_event", "track": 1, "tick": 960, "kind": "note_on", "channel": 0, "key": 60, "velocity": 100},
+        {"event": "midi_event", "track": 1, "tick": 1920, "kind": "note_off", "channel": 0, "key": 60},
+        {"event": "midi_event", "track": 1, "tick": 1920, "kind": "note_on", "channel": 0, "key": 60, "velocity": 100},
+        {"event": "midi_event", "track": 1, "tick": 2880, "kind": "note_off", "channel": 0, "key": 60},
+        {"event": "json", "file": "kit2/kit2.rcy.json", "data.order": [3, 1, 1]},
+        {"event": "frames_compared", "file": "kit2/001.wav", "equal": true},
+        {"event": "frames_compared", "file": "kit2/003.wav", "equal": true}
+      ]
+      """
+    And the recorded trace has these counts:
+      """
+      [
+        {"match": {"event": "midi_event", "kind": "note_on"}, "equals": 3},
+        {"match": {"event": "file", "file": "kit2/004.wav"}, "equals": 1}
+      ]
+      """
+
   @R15 @baseline_red
   Scenario: midi-ticks-round-to-the-nearest-tick
     At 100 BPM frame 20000 is 725.6 ticks from the region start, so the first
@@ -232,6 +277,10 @@ Feature: rebuild a kit from a manifest
       | slices.1.key   | "60"       | key must be an integer, got "60"                  |
       | slices.1.file  | "a/b.wav"  | slice 2 file 'a/b.wav' must be a bare file name   |
       | slices.1.file  | ".."       | slice 2 file '..' must be a bare file name        |
+      | order          | [0, 1]     | order must be a list of slice numbers from 1 to 8 |
+      | order          | [9]        | order must be a list of slice numbers from 1 to 8 |
+      | order          | []         | order must be a list of slice numbers from 1 to 8 |
+      | order          | "2 1"      | order must be a list of slice numbers from 1 to 8 |
       | slices.1.file  | "kit2.sfz" | slice 2 file 'kit2.sfz' is a kit file name        |
       | slices.1.file  | "kit2.exs" | slice 2 file 'kit2.exs' is a kit file name        |
       | bpm            | 3          | tempo 3.00 BPM cannot be written to MIDI          |

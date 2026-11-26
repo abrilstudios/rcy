@@ -245,6 +245,12 @@ const MANIFEST_VERSION = 1;
                                                                  
      
                     
+     
+                                                                            
+                                                                             
+                                           
+     
+                   
  
 
 /** The whole number of frames nearest `ms` milliseconds at `sampleRate`. */
@@ -280,6 +286,13 @@ function manifestText(m          )         {
   if (m.slices.length !== m.boundaries.length - 1) throw new RangeError("slices must number one fewer than boundaries");
   const b = m.boundaries;
   const comma = (i        , n        ) => (i < n - 1 ? "," : "");
+  const order = m.order ?? [];
+  if (order.length > 0) {
+    if (order.some((v) => !Number.isInteger(v) || v < 1 || v > m.slices.length)) {
+      throw new RangeError("order must hold slice numbers");
+    }
+  }
+  const reordered = order.length > 0 && (order.length !== m.slices.length || order.some((v, i) => v !== i + 1));
   const lines = [
     "{",
     `  "rcy": ${MANIFEST_VERSION},`,
@@ -307,7 +320,7 @@ function manifestText(m          )         {
       `      "role": ${jsonString(s.role)}`,
       `    }${comma(i, m.slices.length)}`,
     ]),
-    "  ]",
+    ...(reordered ? ["  ],", '  "order": [', ...order.map((v, i) => `    ${v}${comma(i, order.length)}`), "  ]"] : ["  ]"]),
     "}",
   ];
   return lines.join("\n") + "\n";
@@ -554,6 +567,9 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
   const ZOOM_STEP = 0.5;
   // CSS pixels. A press within this distance of a boundary's line acts on that boundary.
   const PICK_PIXELS = 6;
+  // CSS pixels. Width of the L and R flags in the strip; a press on a flag acts
+  // on its locator, so the flag a person sees is the handle they grab.
+  const FLAG_PIXELS = 12;
   // Milliseconds. Audition ends each slice with a fade to zero of this length, the value rcy uses.
   const TAIL_FADE_MS = 3;
   // Exponent (unitless). The fade gain is t^3 for t falling from 1 to 0, rcy's "exponential" curve.
@@ -574,7 +590,7 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
   const TEMPO_GRAMMAR = /^\d+(\.\d+)?$/;
 
   const CONSTANTS = {
-    FIRST_KEY, LAST_KEY, MIN_VIEW_FRAMES, ZOOM_STEP, PICK_PIXELS, TAIL_FADE_MS,
+    FIRST_KEY, LAST_KEY, MIN_VIEW_FRAMES, ZOOM_STEP, PICK_PIXELS, FLAG_PIXELS, TAIL_FADE_MS,
     TAIL_FADE_POWER, DEFAULT_RESOLUTION, DEFAULT_SENSITIVITY, AUDITION_KEYS, TEMPO_DECIMALS,
   };
 
@@ -723,6 +739,16 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
       slices.push({ key: sl.key, file: sl.file, role: sl.role === undefined ? "" : sl.role });
     }
 
+    // 5a. order (W25): absent, or each slice number from 1 to the slice count once.
+    let order = slices.map((_, i) => i);
+    if (Object.prototype.hasOwnProperty.call(m, "order")) {
+      const o = m.order;
+      const ok = Array.isArray(o) && o.length >= 1 &&
+        o.every((v) => typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= slices.length);
+      if (!ok) refuse(`order must be a list of slice numbers from 1 to ${slices.length}`);
+      order = o.map((v) => v - 1);
+    }
+
     // 6. source.
     if (typeof m.source !== "string" || m.source === "") refuse("source is not a file name");
     const sourcePath = path.resolve(path.dirname(manifestPath), m.source);
@@ -767,6 +793,7 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
       bufferMs: Number.isInteger(m.buffer_ms) && m.buffer_ms > 0 ? m.buffer_ms : 0,
       boundaries: b.slice(),
       slices,
+      order,
     };
   }
 
@@ -803,8 +830,12 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
     return typeof bpm === "number" && Number.isFinite(bpm) && rcySdk.tempoWritable(bpm);
   }
 
-  function saveManifest(boundaries, slices, bpm) {
+  function saveManifest(boundaries, slices, bpm, order) {
     if (!validEdit(boundaries, slices)) return { ok: false, error: "the edit is not a valid manifest" };
+    if (!Array.isArray(order) || order.length < 1 ||
+        !order.every((v) => Number.isInteger(v) && v >= 0 && v < slices.length)) {
+      return { ok: false, error: "the slice order is not valid" };
+    }
     if (!validTempo(bpm)) return { ok: false, error: "the tempo cannot be written to MIDI" };
     const rel = path.relative(path.dirname(launch.outPath), launch.sourcePath).split(path.sep).join("/");
     let text;
@@ -818,6 +849,7 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
         bufferMs: launch.bufferMs,
         boundaries,
         slices: slices.map((s) => ({ key: s.key, file: s.file, role: s.role })),
+        order: order.map((v) => v + 1),
       });
     } catch (e) {
       return { ok: false, error: e.message };
@@ -851,13 +883,31 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
     let N = 0;
     let sr = 44100;
     let nch = 1;
+    // f32, i16 and pyramid hold the audio as the window shows and plays it:
+    // the source, with the slices between L and R laid out in play order (W25).
     let f32 = []; // per channel, -1..1
     let i16 = []; // per channel, the stored values
     let pyramid = []; // per channel, min/max/sum-of-squares levels for drawing
+    let srcF32 = []; // the source as read, per channel
+    let srcI16 = [];
+    let srcPyramid = [];
+    let srcN = 0; // the source's frame count; N is the length of the audio as shown
+    let base = null; // { b, s }: the manifest's boundaries and slices while the order is not source order
+    let slot = null; // the selected slot (index into order), for copy, paste, duplicate and cut
+    let clip = null; // the copied slice (source index)
+    // W26: the loop is slots loopA to loopE - 1. L is drawn at the start of slot loopA and R at the end of slot loopE - 1.
+    let loopA = 0;
+    let loopE = 0;
+    const ORDER_MAX_SLOTS = 256; // parameter: longest order paste and duplicate build; bounds the audio laid out
+    let arrangedKey = ""; // names the order and cuts f32 was laid out for; empty for source order
     let info = null;
 
+    // boundaries and slices are in play order, as shown: slot i of the plot
+    // holds source slice order[i] (0-based). In source order they are the
+    // manifest's own; toSource() gives the manifest's at any time.
     let boundaries = [];
     let slices = [];
+    let order = [];
     let bpm = 0; // beats per minute; the manifest's value until the tempo control or --bpm changes it
     let tempoSession = null; // the history position of the latest edit while it is a tempo change
     let history = []; // snapshots; history[0] is the manifest as read
@@ -889,9 +939,14 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
       const p = layout.plot;
       return {
         ready,
-        frames: N,
-        boundaries: boundaries.slice(),
-        slices: slices.map((s) => ({ key: s.key, file: s.file, role: s.role })),
+        frames: srcN,
+        shownFrames: N,
+        slot,
+        boundaries: toSource().b,
+        slices: toSource().s,
+        order: order.map((v) => v + 1),
+        loop: [loopA + 1, loopE],
+        shown: boundaries.slice(),
         viewStart,
         viewEnd,
         plot: { x: p.x, y: p.y, width: p.width, height: p.height },
@@ -909,7 +964,109 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
 
     const pad3 = (n) => String(n).padStart(3, "0") + ".wav";
     const copySlices = (ss) => ss.map((s) => ({ key: s.key, file: s.file, role: s.role }));
-    const snapshot = () => ({ b: boundaries.slice(), s: copySlices(slices), bpm });
+    const identity = (n) => Array.from({ length: n }, (_, i) => i);
+    const reordered = () => base !== null;
+    const isIdentity = (o, n) => o.length === n && o.every((v, i) => v === i);
+    const orderText = (o) => o.map((v) => v + 1).join(" ");
+    // The manifest's boundaries and slices: the shown ones put back in source order.
+    function toSource() {
+      if (base === null) return { b: boundaries.slice(), s: copySlices(slices) };
+      return { b: base.b.slice(), s: copySlices(base.s) };
+    }
+    // A snapshot holds source-order boundaries and slices, the tempo and the order.
+    const snapshot = () => { const src = toSource(); return { b: src.b, s: src.s, bpm, o: order.slice(), l: [loopA, loopE] }; };
+    // W25: a shown line stands for a source cut: the start of the slice in the slot on its
+    // right, and the last line for the end of the last slot's slice.
+    function sourceCut(i) {
+      return i < order.length ? order[i] : order[order.length - 1] + 1;
+    }
+    // The order after source slices lo..hi (0-based) merge into slice lo. Slots that
+    // played the merged slices one after another become one slot. first[k] and last[k]
+    // are the new slots old slot k became.
+    function orderAfterMerge(o, lo, hi) {
+      const out = [], first = [], last = [];
+      let prev = null;
+      for (const v of o) {
+        const merged = v >= lo && v <= hi;
+        const follows = merged && prev !== null && prev >= lo && prev <= hi && v === prev + 1;
+        if (!follows) out.push(v < lo ? v : merged ? lo : v - (hi - lo));
+        first.push(out.length - 1); last.push(out.length - 1);
+        prev = v;
+      }
+      return { o: out, first, last };
+    }
+    // The order after source slice j splits in two: each slot of j plays both halves.
+    function orderAfterSplit(o, j) {
+      const out = [], first = [], last = [];
+      for (const v of o) {
+        first.push(out.length);
+        if (v < j) out.push(v); else if (v === j) out.push(j, j + 1); else out.push(v + 1);
+        last.push(out.length - 1);
+      }
+      return { o: out, first, last };
+    }
+    // W26: the loop holds the same slots after the order was rewritten.
+    const loopAfter = (m) => [m.first[loopA], m.last[loopE - 1] + 1];
+    const REGION_END = "The first and last line are the ends of the sliced region and stay where they are";
+    // W26: what Save keeps. The loop's slots name source slices lo to hi; the kit
+    // holds those slices and the order is the loop's slots numbered within them.
+    function kept() {
+      const src = toSource();
+      const o = order.slice(loopA, loopE);
+      const lo = Math.min(...o), hi = Math.max(...o);
+      const wasDefault = namesDefault(src.s);
+      const s = copySlices(src.s.slice(lo, hi + 1));
+      s.forEach((x, j) => { x.key -= lo; if (wasDefault) x.file = pad3(j + 1); });
+      return { b: src.b.slice(lo, hi + 2), s, o: o.map((v) => v - lo) };
+    }
+    // Both splits replace every slice, so they start from source order.
+    function toSourceOrder() {
+      if (!reordered()) return;
+      const src = toSource();
+      applySnapshot({ b: src.b, s: src.s, bpm, o: identity(src.s.length) });
+      slot = null; clip = null;
+    }
+    // Lays the audio out for the order: before L and after R as the source, between them the
+    // slots end to end. The shown audio is longer or shorter than the source when slices repeat or are left out.
+    function arrange(srcB) {
+      const key = reordered() ? order.join(",") + "|" + srcB.join(",") : "";
+      if (key === arrangedKey) return;
+      arrangedKey = key;
+      const oldN = N;
+      if (key === "") { f32 = srcF32; i16 = srcI16; pyramid = srcPyramid; N = srcN; }
+      else {
+        const L = srcB[0];
+        const R = srcB[srcB.length - 1];
+        let total = 0;
+        for (const v of order) total += srcB[v + 1] - srcB[v];
+        const n = srcN - (R - L) + total;
+        const lay = (src, Type) => src.map((x) => {
+          const d = new Type(n);
+          d.set(x.subarray(0, L), 0);
+          let pos = L;
+          for (const v of order) {
+            const seg = x.subarray(srcB[v], srcB[v + 1]);
+            d.set(seg, pos);
+            pos += seg.length;
+          }
+          d.set(x.subarray(R), pos);
+          return d;
+        });
+        f32 = lay(srcF32, Float32Array);
+        i16 = lay(srcI16, Int16Array);
+        pyramid = f32.map(buildPyramid);
+        N = n;
+      }
+      if (ready && N !== oldN) {
+        const full = viewStart <= 0 && viewEnd >= oldN;
+        if (full) { viewStart = 0; viewEnd = N; } else setView(Math.min(viewStart, Math.max(0, N - 1)), Math.min(viewEnd, N) - Math.min(viewStart, Math.max(0, N - 1)));
+      }
+      stopAudio();
+      fullBuffer = null;
+      candidates = null;
+      overviewCache = null;
+      if (ready) scheduleWave();
+    }
     const tempoText = (v) => String(Number(v.toFixed(K.TEMPO_DECIMALS)));
     let tempoRefused = false; // the press or key now being handled made the control refuse its text
     let tempoTouched = false; // the person typed or stepped in the tempo control since the window last wrote it
@@ -917,23 +1074,66 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
     const namesDefault = (ss) => ss.every((s, i) => s.file === pad3(i + 1));
 
     function applySnapshot(snap) {
-      boundaries = snap.b.slice();
-      slices = copySlices(snap.s);
+      const o = snap.o;
+      const b = [snap.b[0]];
+      const s = [];
+      for (let i = 0; i < o.length; i++) { b.push(b[i] + snap.b[o[i] + 1] - snap.b[o[i]]); s.push(snap.s[o[i]]); }
+      boundaries = b;
+      slices = copySlices(s);
+      order = o.slice();
+      // a snapshot without a loop has the whole order as its loop
+      const l = snap.l || [0, o.length];
+      loopA = Math.min(Math.max(l[0], 0), o.length - 1);
+      loopE = Math.min(Math.max(l[1], loopA + 1), o.length);
+      base = isIdentity(o, snap.s.length) ? null : { b: snap.b.slice(), s: copySlices(snap.s) };
+      if (slot !== null && slot >= order.length) slot = null;
+      arrange(snap.b);
       bpm = snap.bpm;
       showTempo();
       if (selected !== null && selected >= boundaries.length) selected = null;
     }
 
-    function commit(b, s, sel) {
+    function commit(b, s, sel, o, l) {
       history.length = hpos + 1;
-      history.push({ b: b.slice(), s: copySlices(s), bpm });
+      history.push({ b: b.slice(), s: copySlices(s), bpm, o: o ? o.slice() : identity(s.length), l: l ? l.slice() : null });
       hpos = history.length - 1;
       applySnapshot(history[hpos]);
       selected = sel === undefined ? selected : sel;
       if (selected !== null && selected >= boundaries.length) selected = null;
       transientSession = null;
       tempoSession = null;
-      lastEdit = logEvent("edit", { what: "", boundaries: boundaries.slice(), slices: slices.length, bpm });
+      const rec = { what: "", boundaries: toSource().b, slices: toSource().s.length, bpm };
+      if (reordered()) rec.order = order.map((v) => v + 1);
+      lastEdit = logEvent("edit", rec);
+      changed();
+    }
+    // W08: source cut c moves by delta frames, limited by its neighbours in the source.
+    // The order and the loop are kept. Returns false when nothing changed.
+    function moveSourceCut(c, delta, sel) {
+      const src = toSource(), n = src.b.length - 1;
+      if (c <= 0 || c >= n) { message(REGION_END); return false; }
+      const f = Math.min(Math.max(src.b[c] + delta, src.b[c - 1] + 1), src.b[c + 1] - 1);
+      if (f === src.b[c]) return false;
+      const nb = src.b.slice();
+      nb[c] = f;
+      commit(nb, src.s, sel, order, [loopA, loopE]);
+      message(`Moved cut ${c} to frame ${f}`);
+      return true;
+    }
+    // W26: L or R goes to a slice edge. Nothing else changes.
+    function setLoop(a, e, from) {
+      if (a === from[0] && e === from[1]) { changed(); return; }
+      const looping = voice !== null && voice.loop;
+      loopA = a; loopE = e;
+      history.length = hpos + 1;
+      history.push(snapshot());
+      hpos = history.length - 1;
+      transientSession = null;
+      tempoSession = null;
+      const text = `Loop: slot ${a + 1} to slot ${e} (${e - a} slice${e - a === 1 ? "" : "s"})`;
+      lastEdit = logEvent("edit", { what: text, boundaries: toSource().b, slices: toSource().s.length, bpm, order: order.map((v) => v + 1), loop: [a + 1, e] });
+      if (looping) playLoop();
+      message(text);
       changed();
     }
 
@@ -952,14 +1152,14 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
         if (follows) history[hpos].bpm = value;
         else {
           history.length = hpos + 1;
-          history.push({ b: boundaries.slice(), s: copySlices(slices), bpm: value });
+          history.push(Object.assign(snapshot(), { bpm: value }));
           hpos = history.length - 1;
         }
         tempoSession = hpos;
       }
       applySnapshot(history[hpos]);
       transientSession = null;
-      logEvent("edit", { what: `Tempo ${tempoText(bpm)} bpm`, boundaries: boundaries.slice(), slices: slices.length, bpm });
+      logEvent("edit", { what: `Tempo ${tempoText(bpm)} bpm`, boundaries: toSource().b, slices: slices.length, bpm });
       message(`Tempo ${tempoText(bpm)} bpm`);
       changed();
     }
@@ -990,7 +1190,7 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
       if (hpos === 0) { message("Nothing to undo"); return; }
       hpos--;
       applySnapshot(history[hpos]);
-      logEvent("undo", { boundaries: boundaries.slice(), bpm });
+      logEvent("undo", { boundaries: toSource().b, order: order.map((v) => v + 1), loop: [loopA + 1, loopE], bpm });
       message("Undo");
       changed();
     }
@@ -1002,9 +1202,78 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
       if (hpos >= history.length - 1) { message("Nothing to redo"); return; }
       hpos++;
       applySnapshot(history[hpos]);
-      logEvent("redo", { boundaries: boundaries.slice(), bpm });
+      logEvent("redo", { boundaries: toSource().b, order: order.map((v) => v + 1), loop: [loopA + 1, loopE], bpm });
       message("Redo");
       changed();
+    }
+
+    // W25: a new order is one edit. o holds source slice indexes in play order.
+    function setOrder(o, text, newSlot, l) {
+      const src = toSource();
+      const looping = voice !== null && voice.loop; // the L-to-R loop goes on in the new order
+      history.length = hpos + 1;
+      history.push({ b: src.b, s: src.s, bpm, o: o.slice(), l: l === undefined ? [loopA, loopE] : l });
+      hpos = history.length - 1;
+      applySnapshot(history[hpos]);
+      if (looping) playLoop();
+      slot = newSlot === undefined || newSlot === null || newSlot >= order.length ? null : newSlot;
+      selected = null;
+      editCursor = null;
+      transientSession = null;
+      tempoSession = null;
+      lastEdit = logEvent("edit", { what: text, boundaries: src.b, slices: slices.length, bpm, order: order.map((v) => v + 1) });
+      message(text);
+      changed();
+    }
+    // Moves the slice in slot i so that it sits before the slice now in slot j (j = slice count: last).
+    function moveSlice(i, j) {
+      if (j === i || j === i + 1) return;
+      const o = order.slice();
+      const v = o.splice(i, 1)[0];
+      o.splice(j > i ? j - 1 : j, 0, v);
+      setOrder(o, `Order ${orderText(o)}`, j > i ? j - 1 : j);
+    }
+    function sourceOrder() {
+      if (!reordered()) return;
+      setOrder(identity(toSource().s.length), "Source order", null, null);
+    }
+    // W25: copy, paste, duplicate and cut act on the selected slot.
+    function insertAfter(v, at, what) {
+      if (order.length >= ORDER_MAX_SLOTS) { message(`${what} not applied: the order already holds ${ORDER_MAX_SLOTS} slices`, true); return; }
+      const o = order.slice();
+      o.splice(at + 1, 0, v);
+      const l = at < loopA ? [loopA + 1, loopE + 1] : at < loopE ? [loopA, loopE + 1] : [loopA, loopE];
+      setOrder(o, `${what} slice ${v + 1}: order ${orderText(o)}`, at + 1, l);
+    }
+    function copySlot() {
+      if (slot === null) { message("Click a slice's number to select it first"); return; }
+      clip = order[slot];
+      message(`Copied slice ${clip + 1}`);
+    }
+    function pasteSlot() {
+      if (clip === null) { message("Nothing copied"); return; }
+      if (clip >= toSource().s.length) { message("The copied slice no longer exists"); return; }
+      insertAfter(clip, slot === null ? order.length - 1 : slot, "Pasted");
+    }
+    function duplicateSlot() {
+      if (slot === null) { message("Click a slice's number to select it first"); return; }
+      insertAfter(order[slot], slot, "Duplicated");
+    }
+    function cutSlot() {
+      if (slot === null) { message("Click a slice's number to select it first"); return; }
+      if (order.length === 1) { message("The last slice can't be cut"); return; }
+      clip = order[slot];
+      const o = order.slice();
+      o.splice(slot, 1);
+      // a loop left with no slot becomes the whole order
+      const l = slot < loopA ? [loopA - 1, loopE - 1] : slot < loopE ? (loopE - 1 > loopA ? [loopA, loopE - 1] : null) : [loopA, loopE];
+      setOrder(o, `Cut slice ${clip + 1}: order ${orderText(o)}`, Math.min(slot, o.length - 1), l);
+    }
+    // The slot a slice dropped at x goes before: the number of slices whose middle is left of x.
+    function dropSlot(x) {
+      let j = 0;
+      for (let i = 0; i < slices.length; i++) if ((xOfFrame(boundaries[i]) + xOfFrame(boundaries[i + 1])) / 2 < x) j++;
+      return j;
     }
 
     function clampMove(i, f, b) {
@@ -1013,56 +1282,31 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
       return Math.min(Math.max(f, lo), hi);
     }
 
-    // W08a: a locator moves freely; every cut at or beyond its new position is
-    // removed as W10 does (the slice on the left keeps key, file and role,
-    // later keys fall). `base` is the state the move starts from.
-    function locatorMove(base, left, f) {
-      const b = base.b, n = b.length - 1, wasDefault = namesDefault(base.s);
-      let nb, ns;
-      if (left) {
-        f = Math.min(Math.max(f, 0), b[n] - 1);
-        let c = 0;
-        while (1 + c < n && b[1 + c] <= f) c++;
-        nb = [f].concat(b.slice(1 + c));
-        ns = copySlices([base.s[0]].concat(base.s.slice(1 + c)));
-        for (let j = 1; j < ns.length; j++) ns[j].key -= c;
-      } else {
-        f = Math.min(Math.max(f, b[0] + 1), N);
-        let c = 0;
-        while (n - 1 - c > 0 && b[n - 1 - c] >= f) c++;
-        nb = b.slice(0, n - c).concat([f]);
-        ns = copySlices(base.s.slice(0, base.s.length - c));
-      }
-      if (wasDefault) ns.forEach((x, j) => { x.file = pad3(j + 1); });
-      return { b: nb, s: ns };
-    }
-
-    // W08: a move changes that boundary only; slices keep key, file and role.
+    // W08: a move changes that cut only; slices keep key, file and role.
     function moveBy(i, delta) {
-      if (i === 0 || i === boundaries.length - 1) {
-        const r = locatorMove(snapshot(), i === 0, boundaries[i] + delta);
-        if (r.b.length === boundaries.length && r.b[i === 0 ? 0 : r.b.length - 1] === boundaries[i]) return;
-        commit(r.b, r.s, i === 0 ? 0 : r.b.length - 1);
-        return;
-      }
-      const b = boundaries.slice();
-      const f = clampMove(i, b[i] + delta, b);
-      if (f === b[i]) return;
-      b[i] = f;
-      commit(b, slices, i);
+      moveSourceCut(sourceCut(i), delta, i);
     }
 
     // W09
     function addCut(f) {
-      const b = boundaries;
-      if (!(f > b[0] && f < b[b.length - 1])) { message("A cut must lie strictly between L and R"); return; }
+      const shown = boundaries;
+      if (!(f > shown[0] && f < shown[shown.length - 1])) { message("A cut must lie inside the sliced region"); return; }
       let k = 1;
-      while (b[k] < f) k++;
-      if (b[k] === f) { message(`Frame ${f} already is a boundary`); return; }
+      while (shown[k] < f) k++;
+      if (shown[k] === f) { message(`Frame ${f} already is a boundary`); return; }
+      // W25: the pointer is in slot k-1; the cut goes the same distance into that slot's slice
+      const src = toSource();
+      const b = src.b;
+      const at = k - 1;
+      const j = order[at];
+      f = b[j] + (f - shown[at]);
+      k = j + 1;
+      const m = orderAfterSplit(order, j);
+      if (m.o.length > ORDER_MAX_SLOTS) { message(`No cut added: the order would hold more than ${ORDER_MAX_SLOTS} slices`, true); return; }
       // the new cut goes between b[k-1] and b[k]; slice index k-1 (0-based) splits
-      const wasDefault = namesDefault(slices);
-      const left = slices[k - 1];
-      const s = copySlices(slices);
+      const wasDefault = namesDefault(src.s);
+      const left = src.s[k - 1];
+      const s = copySlices(src.s);
       const right = { key: left.key + 1, file: "", role: "" };
       for (let j = k; j < s.length; j++) s[j].key += 1;
       s.splice(k, 0, right);
@@ -1080,25 +1324,31 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
       }
       const nb = b.slice();
       nb.splice(k, 0, f);
-      commit(nb, s, k);
+      slot = null; clip = null;
+      commit(nb, s, m.first[at] + 1, m.o, loopAfter(m));
       message(`Cut added at frame ${f}`);
     }
 
     // W10
     function removeCut(i) {
-      if (i <= 0 || i >= boundaries.length - 1) { message("Locators can't be removed"); return; }
-      const wasDefault = namesDefault(slices);
-      const s = copySlices(slices);
+      const src = toSource();
+      // W25: the line is the start of the slice on its right; that slice merges into the one before it in the source
+      i = sourceCut(i);
+      if (i <= 0 || i >= src.b.length - 1) { message("The ends of the sliced region can't be removed"); return; }
+      const m = orderAfterMerge(order, i - 1, i);
+      const wasDefault = namesDefault(src.s);
+      const s = copySlices(src.s);
       s.splice(i, 1); // the slice on the cut's right merges into the one on its left
       for (let j = i; j < s.length; j++) s[j].key -= 1;
       // SPEC-GAP: W10 lowers every later key by one without a floor; a key
       // below 0 would make the manifest invalid, so such a removal is refused.
       if (s.some((x) => x.key < 0)) { message("Cut not removed: a slice key would fall below 0"); return; }
       if (wasDefault) s.forEach((x, j) => { x.file = pad3(j + 1); });
-      const nb = boundaries.slice();
+      const nb = src.b.slice();
       const f = nb[i];
       nb.splice(i, 1);
-      commit(nb, s, null);
+      slot = null; clip = null;
+      commit(nb, s, null, m.o, loopAfter(m));
       message(`Cut at frame ${f} removed`);
     }
 
@@ -1110,6 +1360,7 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
 
     // W11
     function splitByMeasures() {
+      toSourceOrder();
       const m = info.measures;
       const r = Number(selResolution.value);
       const L = boundaries[0];
@@ -1146,6 +1397,7 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
     }
 
     function splitByTransients() {
+      toSourceOrder();
       const L = boundaries[0];
       const R = boundaries[boundaries.length - 1];
       const sens = Number(rngSensitivity.value);
@@ -1170,7 +1422,7 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
       const L = boundaries[0];
       const R = boundaries[boundaries.length - 1];
       const snap = transientSnapshot(sens, L, R);
-      history[hpos] = { b: snap.b, s: snap.s, bpm };
+      history[hpos] = { b: snap.b, s: snap.s, bpm, o: identity(snap.s.length) };
       applySnapshot(history[hpos]);
       selected = null;
       transientSession.sens = sens;
@@ -1565,8 +1817,8 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
     }
 
     function playLoop() {
-      const L = boundaries[0];
-      const R = boundaries[boundaries.length - 1];
+      const L = boundaries[loopA];
+      const R = boundaries[loopE];
       if (!fullBuffer) {
         fullBuffer = actx.createBuffer(nch, N, sr);
         for (let c = 0; c < nch; c++) fullBuffer.copyToChannel(f32[c], c);
@@ -1691,7 +1943,8 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
       return e;
     }
     function runReport() {
-      return { opening, events, final: { boundaries: boundaries.slice(), slices: copySlices(slices), bpm, dirty: hpos !== 0 } };
+      const k = kept();
+      return { opening, events, final: { boundaries: k.b, slices: k.s, order: k.o.map((v) => v + 1), bpm, dirty: hpos !== 0 } };
     }
     let expectSlices = null;
     let editCursor = null; // frame of the last click on the waveform; where Add cut puts a cut
@@ -1707,7 +1960,26 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
       return x >= o.x && x <= o.x + o.width && y >= o.y && y <= o.y + o.height;
     }
 
-    function pickBoundary(x) {
+    // W26: a press on the L or R flag in the strip; each flag reaches FLAG_PIXELS into the loop from its line.
+    function pickFlag(x, y) {
+      if (!(y >= layout.stripTop && y < layout.stripTop + STRIP_H)) return null;
+      const dl = x - xOfFrame(boundaries[loopA]);
+      const dr = xOfFrame(boundaries[loopE]) - x;
+      // a flag takes at most half of a narrow slot, so the slot can still be pressed to reorder
+      const wl = Math.min(K.FLAG_PIXELS, (xOfFrame(boundaries[loopA + 1]) - xOfFrame(boundaries[loopA])) / 2);
+      const wr = Math.min(K.FLAG_PIXELS, (xOfFrame(boundaries[loopE]) - xOfFrame(boundaries[loopE - 1])) / 2);
+      const onL = dl >= 0 && dl <= wl;
+      const onR = dr >= 0 && dr <= wr;
+      if (onL && onR) return dl <= dr ? "L" : "R";
+      return onL ? "L" : onR ? "R" : null;
+    }
+    // The slice edge nearest x, as an index into the shown boundaries.
+    function nearestEdge(x) {
+      let best = 0;
+      for (let i = 1; i < boundaries.length; i++) if (Math.abs(xOfFrame(boundaries[i]) - x) < Math.abs(xOfFrame(boundaries[best]) - x)) best = i;
+      return best;
+    }
+    function pickBoundary(x, y) {
       let best = null;
       let bestD = Infinity;
       const b = boundaries;
@@ -1740,12 +2012,17 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
       if (!inPlotArea(x, y)) return;
       e.preventDefault();
       if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
-      const pick = pickBoundary(x);
+      const flag = e.altKey || e.shiftKey || e.metaKey || e.ctrlKey ? null : pickFlag(x, y);
+      if (flag) {
+        drag = { kind: "loop", which: flag, from: [loopA, loopE] };
+        changed();
+        return;
+      }
+      const pick = pickBoundary(x, y);
       if (e.altKey) {
         if (e.metaKey || e.ctrlKey) return;
         if (pick === null) addCut(pointerFrame(x));
-        else if (pick > 0 && pick < boundaries.length - 1) removeCut(pick);
-        else message("Locators can't be removed");
+        else removeCut(pick);
         return;
       }
       if (e.metaKey || e.ctrlKey) return;
@@ -1758,16 +2035,24 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
         return;
       }
       if (pick !== null) {
+        // W25: the line follows the pointer and the source cut it stands for moves on release
+        const c = sourceCut(pick), src = toSource(), n = src.b.length - 1;
         selected = pick;
-        drag = { kind: "boundary", index: pick, origin: boundaries[pick], x0: x, base: snapshot(),
-                 locator: pick === 0 ? "L" : pick === boundaries.length - 1 ? "R" : null };
+        if (c <= 0 || c >= n) { message(REGION_END); changed(); return; }
+        drag = { kind: "boundary", index: pick, origin: boundaries[pick], x0: x, src: c, delta: 0, moved: false,
+                 lo: src.b[c - 1] + 1 - src.b[c], hi: src.b[c + 1] - 1 - src.b[c] };
         changed();
         return;
       }
       editCursor = pointerFrame(x);
       changed();
-      if (voice) { stopAudio(); return; }
       const k = sliceAt(Math.min(N - 1, Math.max(0, Math.floor(frameAtX(x)))));
+      // W25: a press on a slice in the strip above the plots may become a drag that reorders.
+      // Audio already playing goes on until the release shows whether it was a click.
+      const onHandle = k >= 0 && slices.length > 1 && y < layout.stripTop + STRIP_H;
+      if (onHandle) { slot = k; drag = { kind: "slice", index: k, x0: x, moved: false, target: k, wasPlaying: voice !== null }; }
+      else if (y < layout.stripTop + STRIP_H) slot = k >= 0 ? k : null;
+      if (voice) { if (!onHandle) stopAudio(); return; }
       if (k >= 0) playSlice(k);
     }
 
@@ -1776,10 +2061,10 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
       if (!ready || dialogOpen() || e.altKey || e.metaKey || e.ctrlKey || e.shiftKey) return;
       if (!inPlotArea(e.clientX, e.clientY)) return;
       e.preventDefault();
-      const pick = pickBoundary(e.clientX);
+      if (pickFlag(e.clientX, e.clientY)) return;
+      const pick = pickBoundary(e.clientX, e.clientY);
       if (pick === null) { stopAudio(); addCut(pointerFrame(e.clientX)); }
-      else if (pick > 0 && pick < boundaries.length - 1) removeCut(pick);
-      else message("Locators can't be removed");
+      else removeCut(pick);
     }
 
     function canAddAtCursor() {
@@ -1790,9 +2075,11 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
     function updateButtons() {
       $("add-cut").disabled = !canAddAtCursor();
       $("delete-cut").disabled = !(selected !== null && selected > 0 && selected < boundaries.length - 1);
+      $("source-order").disabled = !reordered();
       $("save").classList.toggle("dirty", hpos !== 0);
       $("unsaved").hidden = hpos === 0;
       if (expectSlices !== null) {
+        const slices = kept().s;
         const ok = slices.length === expectSlices;
         $("save").disabled = !ok;
         $("expect").textContent = ok ? `${expectSlices} slices, as asked` : `${slices.length} slices now, ${expectSlices} asked`;
@@ -1807,16 +2094,16 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
       if (drag && drag.kind === "boundary") {
         if (e.clientX !== drag.x0) drag.moved = true;
         if (drag.moved) {
-          if (drag.locator) {
-            const r = locatorMove(drag.base, drag.locator === "L", pointerFrame(e.clientX));
-            boundaries = r.b; slices = r.s;
-            drag.index = selected = drag.locator === "L" ? 0 : r.b.length - 1;
-          } else {
-            const i = drag.index;
-            const f = clampMove(i, pointerFrame(e.clientX), boundaries);
-            if (f !== boundaries[i]) boundaries[i] = f;
-          }
+          drag.delta = Math.min(Math.max(pointerFrame(e.clientX) - drag.origin, drag.lo), drag.hi);
+          boundaries[drag.index] = drag.origin + drag.delta;
         }
+      } else if (drag && drag.kind === "loop") {
+        const i = nearestEdge(e.clientX);
+        if (drag.which === "L") loopA = Math.min(Math.max(i, 0), loopE - 1);
+        else loopE = Math.min(Math.max(i, loopA + 1), order.length);
+      } else if (drag && drag.kind === "slice") {
+        if (Math.abs(e.clientX - drag.x0) > K.PICK_PIXELS) drag.moved = true;
+        if (drag.moved) drag.target = dropSlot(e.clientX);
       } else if (drag && drag.kind === "overview") {
         overviewTo(e.clientX);
       }
@@ -1831,15 +2118,15 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
       drag = null;
       if (d.kind === "boundary") {
         const i = d.index;
-        if (boundaries[i] !== d.origin || boundaries.length !== d.base.b.length) {
-          const b = boundaries.slice();
-          const ns = copySlices(slices);
-          applySnapshot(d.base); // the history entry holds the state before the drag
-          commit(b, ns, i);
-          message(`Moved ${boundaryName(i)} to frame ${b[i]}`);
-        } else {
-          changed();
-        }
+        boundaries[i] = d.origin;
+        if (!moveSourceCut(d.src, d.delta, i)) changed();
+      } else if (d.kind === "loop") {
+        const to = [loopA, loopE];
+        loopA = d.from[0]; loopE = d.from[1];
+        setLoop(to[0], to[1], d.from);
+      } else if (d.kind === "slice") {
+        if (d.moved) moveSlice(d.index, d.target);
+        else if (d.wasPlaying) stopAudio(); // a click while audio plays stops it
       }
       onMouseMove(e);
     }
@@ -1879,7 +2166,11 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
     function updateCursor() {
       let c = "default";
       if (drag && drag.kind === "boundary") c = "ew-resize";
-      else if (ready && inPlotArea(pointer.x, pointer.y)) c = pickBoundary(pointer.x) !== null ? "ew-resize" : "crosshair";
+      else if (drag && drag.kind === "slice") c = "grabbing";
+      else if (ready && inPlotArea(pointer.x, pointer.y)) {
+        c = pickBoundary(pointer.x, pointer.y) !== null ? "ew-resize"
+          : pointer.y < layout.stripTop + STRIP_H && slices.length > 1 ? "grab" : "crosshair";
+      }
       else if (ready && inOverview(pointer.x, pointer.y)) c = "pointer";
       if (overCanvas.style.cursor !== c) overCanvas.style.cursor = c;
     }
@@ -1915,6 +2206,13 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
           if (e.shiftKey) redo(); else undo();
           return;
         }
+        // W25: copy, paste, duplicate and cut the selected slot; the tempo control keeps its own while it has focus
+        if (!inTempo && !e.shiftKey && ready && !drag && "cvdx".indexOf(lower) >= 0 && lower.length === 1) {
+          e.preventDefault(); e.stopPropagation();
+          if (e.repeat) return;
+          if (lower === "c") copySlot(); else if (lower === "v") pasteSlot(); else if (lower === "d") duplicateSlot(); else cutSlot();
+          return;
+        }
         return;
       }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -1933,8 +2231,7 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
         }
       } else if (key === "Delete" || key === "Backspace") {
         if (selected !== null && !drag) {
-          if (selected > 0 && selected < boundaries.length - 1) removeCut(selected);
-          else message("Locators can't be removed");
+          removeCut(selected);
         }
       } else if (key === " " || code === "Space") {
         if (!e.repeat) { if (voice) stopAudio(); else playLoop(); }
@@ -1947,7 +2244,7 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
       } else if (lower === "z") {
         fitSliceUnderPointer();
       } else if (key.length === 1 && K.AUDITION_KEYS.indexOf(lower) >= 0) {
-        if (!e.repeat) playSlice(K.AUDITION_KEYS.indexOf(lower));
+        if (!e.repeat) playSlice(order.indexOf(K.AUDITION_KEYS.indexOf(lower)));
       } else {
         handled = false;
       }
@@ -1971,15 +2268,16 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
     let saving = false;
     async function save() {
       if (saving || !ready) return;
-      if (expectSlices !== null && slices.length !== expectSlices) {
-        message(`Not saved: this task needs ${expectSlices} slices and there are ${slices.length}`, true);
+      const k = kept();
+      if (expectSlices !== null && k.s.length !== expectSlices) {
+        message(`Not saved: this task needs ${expectSlices} slices and the loop holds ${k.s.length}`, true);
         return;
       }
       saving = true;
       message("Saving…");
       let r;
       try {
-        r = await ipcRenderer.invoke("rcy-save", { boundaries: boundaries.slice(), slices: copySlices(slices), bpm, report: runReport() });
+        r = await ipcRenderer.invoke("rcy-save", { boundaries: k.b, slices: k.s, order: k.o, bpm, report: runReport() });
       } catch (err) {
         r = { ok: false, error: String(err && err.message ? err.message : err) };
       }
@@ -2008,9 +2306,9 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
     }
 
     function boundaryName(i) {
-      if (i === 0) return "L";
-      if (i === boundaries.length - 1) return "R";
-      return `cut ${i}`;
+      if (i === 0) return "region start";
+      if (i === boundaries.length - 1) return "region end";
+      return `line ${i}`;
     }
 
     function valuesAt(f) {
@@ -2378,8 +2676,8 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
       const bottom = layout.plotsBottom;
       const right = p.x + p.width;
       const b = boundaries;
-      const L = b[0];
-      const R = b[b.length - 1];
+      const L = b[loopA];
+      const R = b[loopE];
       const XL = xOfFrame(L);
       const XR = xOfFrame(R);
       // shade outside the locators
@@ -2404,11 +2702,21 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
         g.beginPath();
         g.rect(xa + 1, top, xb - xa - 2, STRIP_H);
         g.clip();
-        const tx = xa + (k === 0 ? 14 : 7);
-        g.fillStyle = COLORS.label;
-        g.fillText(String(k + 1), tx, top + 19);
+        const dragged = drag && drag.kind === "slice" && drag.moved && drag.index === k;
+        if (dragged) { g.fillStyle = "rgba(243,192,79,0.25)"; g.fillRect(xa, top, xb - xa, STRIP_H - 2); }
+        else if (slot === k) { g.fillStyle = "rgba(90,174,255,0.28)"; g.fillRect(xa, top, xb - xa, STRIP_H - 2); }
+        let tx = xa + (k === loopA ? 14 : 7);
+        // the handle: six dots, where a press starts a reorder drag (W25)
+        if (slices.length > 1 && xb - xa >= 34) {
+          g.fillStyle = dragged ? COLORS.cut : COLORS.labelDim;
+          for (let hx = 0; hx < 2; hx++) for (let hy = 0; hy < 3; hy++) g.fillRect(tx + hx * 4, top + 10 + hy * 4, 2, 2);
+          tx += 12;
+        }
+        const num = String(order[k] + 1); // a slice keeps its source number wherever it plays
+        g.fillStyle = order[k] === k ? COLORS.label : COLORS.cut;
+        g.fillText(num, tx, top + 19);
         if (role) {
-          const w = g.measureText(String(k + 1)).width;
+          const w = g.measureText(num).width;
           g.fillStyle = COLORS.labelDim;
           g.fillText(role, tx + w + 5, top + 19);
         }
@@ -2416,11 +2724,11 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
       }
 
       // boundaries
-      const hoverPick = !drag && pointer.inside && inPlotArea(pointer.x, pointer.y) ? pickBoundary(pointer.x) : null;
+      const hoverPick = !drag && pointer.inside && inPlotArea(pointer.x, pointer.y) ? pickBoundary(pointer.x, pointer.y) : null;
       for (let i = 0; i < b.length; i++) {
         const X = xOfFrame(b[i]);
         if (X < p.x - 8 || X > right + 8) continue;
-        const isLoc = i === 0 || i === b.length - 1;
+        const isLoc = i === loopA || i === loopE;
         const isSel = i === selected;
         const xs = Math.round(X * dpr) / dpr + 0.5 / dpr;
         let col = isLoc ? COLORS.loc : COLORS.cut;
@@ -2435,8 +2743,8 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
         g.fillStyle = col;
         if (isLoc) {
           // a flag with its letter, pointing into the region
-          const left = i === 0;
-          const fw = 12;
+          const left = i === loopA;
+          const fw = K.FLAG_PIXELS;
           g.beginPath();
           if (left) { g.moveTo(xs, top + 2); g.lineTo(xs + fw, top + 2); g.lineTo(xs + fw, top + 14); g.lineTo(xs, top + 18); }
           else { g.moveTo(xs, top + 2); g.lineTo(xs - fw, top + 2); g.lineTo(xs - fw, top + 14); g.lineTo(xs, top + 18); }
@@ -2455,6 +2763,13 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
           g.closePath();
           g.fill();
         }
+      }
+
+      // the place a dragged slice would drop
+      if (drag && drag.kind === "slice" && drag.moved) {
+        const X = Math.min(right, Math.max(p.x, xOfFrame(b[drag.target])));
+        g.fillStyle = COLORS.cutSel;
+        g.fillRect(X - 1.5, top, 3, bottom - top);
       }
 
       // hover: the frame a press would act on
@@ -2564,11 +2879,14 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
     overCanvas.addEventListener("wheel", onWheel, { passive: false });
     window.addEventListener("contextmenu", (e) => e.preventDefault());
     window.addEventListener("resize", onResize);
+    // the toolbar can grow by a line (the unsaved mark appearing); the plots follow the area
+    new ResizeObserver(() => { if (ready) onResize(); }).observe(area);
     window.addEventListener("dragover", (e) => e.preventDefault());
     window.addEventListener("drop", (e) => e.preventDefault());
 
     btnMeasures.addEventListener("click", () => { btnMeasures.blur(); if (ready) splitByMeasures(); });
     btnTransients.addEventListener("click", () => { btnTransients.blur(); if (ready) splitByTransients(); });
+    $("source-order").addEventListener("click", () => { $("source-order").blur(); if (ready) sourceOrder(); });
     selResolution.addEventListener("change", () => { selResolution.blur(); });
     rngSensitivity.addEventListener("input", onSensitivity);
     rngSensitivity.addEventListener("change", onSensitivity);
@@ -2599,10 +2917,8 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
         f32.push(f);
       }
       pyramid = f32.map(buildPyramid);
-      boundaries = init.boundaries.slice();
-      slices = copySlices(init.slices);
-      bpm = init.bpm;
-      showTempo();
+      srcF32 = f32; srcI16 = i16; srcPyramid = pyramid; srcN = N;
+      applySnapshot({ b: init.boundaries, s: init.slices, bpm: init.bpm, o: init.order });
       history = [snapshot()];
       hpos = 0;
       viewStart = 0;
@@ -2630,7 +2946,7 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
       if (o.task !== null || expectSlices !== null) { $("task").hidden = false; onResize(); }
       events = [];
       tempoSession = null;
-      opening = { boundaries: boundaries.slice(), slices: copySlices(slices), bpm, viewStart, viewEnd, selected,
+      opening = { boundaries: toSource().b, slices: toSource().s, order: order.map((v) => v + 1), bpm, viewStart, viewEnd, selected,
                   resolution: Number(selResolution.value), sensitivity: Number(rngSensitivity.value) };
       changed();
       setTimeout(() => { ensureCandidates(); }, 30);
@@ -2720,6 +3036,7 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
   <div class="group">
     <button id="add-cut" type="button" tabindex="-1" disabled title="Adds a cut where you last clicked the waveform">Add cut</button>
     <button id="delete-cut" type="button" tabindex="-1" disabled title="Removes the selected cut">Delete cut</button>
+    <button id="source-order" type="button" tabindex="-1" disabled title="Puts reordered slices back in the order they have in the source">Source order</button>
   </div>
   <div id="file"><div id="file-name"></div><div id="file-info"></div></div>
   <div class="group end">
@@ -2730,7 +3047,7 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
 </div>
 <div id="task" hidden><span id="task-text"></span><span id="expect"></span></div>
 <div id="area"><canvas id="wave"></canvas><canvas id="over"></canvas></div>
-<div id="hint">Click a slice to hear it · drag a line to move it · double-click the waveform to add a cut, double-click a cut to remove it · scroll or = and − to zoom, F for the whole file · Space plays L to R · Save when done</div>
+<div id="hint">Click a slice to hear it · drag a line to move it · drag a slice's number to reorder, ⌘C ⌘V ⌘D ⌘X copy, paste, duplicate, cut it · double-click the waveform to add a cut, double-click a cut to remove it · scroll or = and − to zoom, F for the whole file · Space plays L to R · Save when done</div>
 <div id="status"><span id="status-readout">Loading…</span><span id="status-msg"></span></div>
 <div id="discard-confirm" hidden><div id="discard-box">
   <p>The slices have unsaved edits. Close and discard them?</p>
@@ -2789,6 +3106,7 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
     pcm: new Uint8Array(launch.wav.data), // a copy of the frames only
     boundaries: launch.boundaries,
     slices: launch.slices,
+    order: launch.order,
     bpm: launch.bpm,
     measures: launch.measures,
     tempoGrammar: TEMPO_GRAMMAR,
@@ -2797,7 +3115,7 @@ return Object.freeze({ VERSION: "0.1.0", ...m_numbers, ...m_wav, ...m_midi, ...m
   }));
 
   ipcMain.handle("rcy-save", (_e, edit) => {
-    const r = saveManifest(edit && edit.boundaries, edit && edit.slices, edit && edit.bpm);
+    const r = saveManifest(edit && edit.boundaries, edit && edit.slices, edit && edit.bpm, edit && edit.order);
     if (r.ok) { pageReport = edit.report; setImmediate(() => exitWith(0)); }
     return r;
   });

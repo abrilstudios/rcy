@@ -1,0 +1,17 @@
+#!/bin/sh
+# Runs the window scenarios against this checkout's built programs. They open
+# real windows. An optional argument runs only the scenarios whose name
+# contains it. Electron and Playwright come from this checkout's
+# tools/window-runtime, or from the main checkout's when this is a worktree
+# without them (`just setup-window` installs them).
+set -eu
+root=$(cd "$(dirname "$0")/../.." && pwd)
+modules=$root/tools/window-runtime/node_modules
+if [ ! -d "$modules/electron" ]; then
+    main=$(cd "$(git -C "$root" rev-parse --git-common-dir)/.." && pwd)
+    modules=$main/tools/window-runtime/node_modules
+fi
+[ -d "$modules/electron" ] || { echo "window-scenarios: no Electron under $modules; run 'just setup-window'" >&2; exit 2; }
+NODE_PATH=$modules exec node "$root/features/window/scenarios.js" \
+    "$modules/electron/dist/Electron.app/Contents/MacOS/Electron" \
+    "$root/window/rcy-window" "$root/export/rcy-export" "$root/presets/amen.wav" "$@"
