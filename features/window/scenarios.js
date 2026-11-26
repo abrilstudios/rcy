@@ -272,33 +272,35 @@ const scenarios = {
     await w.page.waitForFunction(() => !rcyWindowState().playing, null, { timeout: 2000 });
     w.kill();
   },
-  "13 a locator passes cuts and removes them": async () => {
-    const out = path.join(scratch, "locator.rcy.json"), a = read(amenManifest);
+  "13 L and R snap to slice edges and change no cut; Save keeps what lies between them": async () => {
+    const out = path.join(scratch, "locator.rcy.json"), a = read(amenManifest), n = a.slices.length;
     const w = await open(amenManifest, out);
-    const s = await w.state(), y = midY(s);
-    const xR = xOf(s, 307411), xIn = xOf(s, (a.boundaries[13] + a.boundaries[14]) / 2);
-    await w.page.mouse.move(xR, y); await w.page.mouse.down();
-    await w.page.mouse.move((xR + xIn) / 2, y); await w.page.mouse.move(xIn, y);
-    let t = await w.state();
-    assert.deepEqual(t.boundaries.slice(0, 14), a.boundaries.slice(0, 14));
-    assert.equal(t.boundaries.length, 15, "two cuts passed: " + JSON.stringify(t.boundaries));
-    near(t.boundaries[14], frameAt(s, xIn), (s.viewEnd - s.viewStart) / s.plot.width + 1, "R locator");
-    await w.page.mouse.move(xOf(s, (a.boundaries[15] + a.boundaries[16]) / 2), y);
-    assert.equal((await w.state()).boundaries.length, 17, "cuts restored within the drag");
-    await w.page.mouse.move(xIn, y); await w.page.mouse.up();
-    const xL = xOf(s, 0), xL2 = xOf(s, (a.boundaries[1] + a.boundaries[2]) / 2);
-    await w.page.mouse.move(xL, y); await w.page.mouse.down();
-    await w.page.mouse.move((xL + xL2) / 2, y); await w.page.mouse.move(xL2, y); await w.page.mouse.up();
-    t = await w.state();
-    assert.equal(t.boundaries.length, 14);
-    assert.deepEqual(t.boundaries.slice(1, 13), a.boundaries.slice(2, 14));
-    assert.deepEqual(t.slices.map((v) => v.key), Array.from({ length: 13 }, (_, i) => 60 + i));
+    let s = await w.state();
+    assert.deepEqual(s.loop, [1, n], "the loop opens on every slice");
+    const stripY = s.plot.y - 12, edge = (i) => xOf(s, a.boundaries[i]);
+    // R's flag, released a third of a slice left of edge 14: R goes to edge 14
+    const third = (edge(14) - edge(13)) / 3;
+    await w.page.mouse.move(edge(n) - 5, stripY); await w.page.mouse.down();
+    await w.page.mouse.move(edge(15), stripY, { steps: 4 }); await w.page.mouse.move(edge(14) - third, stripY, { steps: 4 });
+    assert.deepEqual((await w.state()).loop, [1, 14], "R follows the pointer edge by edge");
+    await w.page.mouse.up();
+    await w.page.mouse.move(edge(0) + 5, stripY); await w.page.mouse.down();
+    await w.page.mouse.move(edge(2) + third, stripY, { steps: 6 }); await w.page.mouse.up();
+    s = await w.state();
+    assert.deepEqual(s.loop, [3, 14]);
+    assert.deepEqual(s.boundaries, a.boundaries, "no cut moved or was removed");
+    assert.deepEqual(s.order, a.slices.map((_, i) => i + 1), "the order is unchanged");
     await w.page.keyboard.press("Meta+z"); await w.page.keyboard.press("Meta+z");
-    assert.deepEqual((await w.state()).boundaries, a.boundaries);
+    assert.deepEqual((await w.state()).loop, [1, n]);
     await w.page.keyboard.press("Shift+Meta+z"); await w.page.keyboard.press("Shift+Meta+z");
+    assert.deepEqual((await w.state()).loop, [3, 14]);
     await leave(w.page.locator("#save").click());
     assert.equal(await w.exitCode(), 0, "save button");
-    assert.deepEqual(read(out).boundaries, t.boundaries);
+    const m = read(out);
+    assert.deepEqual(m.boundaries, a.boundaries.slice(2, 15), "the kit holds slices 3 to 14");
+    assert.deepEqual(m.slices.map((v) => v.key), Array.from({ length: 12 }, (_, i) => 60 + i));
+    assert.deepEqual(m.slices.map((v) => v.file), Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(3, "0") + ".wav"));
+    assert.equal(m.order, undefined);
     acceptedByExport(out);
   },
   "14 double-click and the buttons add and remove cuts": async () => {
@@ -438,7 +440,7 @@ const scenarios = {
     const bpmLine = (f) => fs.readFileSync(f, "utf8").split("\n").find((l) => l.includes('"bpm"'));
     assert.equal(bpmLine(out), bpmLine(amenManifest), "the saved tempo is the text read");
   },
-  "19 dragging a slice's handle reorders playback; cuts are locked until Source order": async () => {
+  "19 dragging a slice's handle reorders playback; Source order restores it": async () => {
     const out = path.join(scratch, "ordered.rcy.json"), a = read(amenManifest);
     const w = await open(amenManifest, out);
     const errors = []; w.page.on("pageerror", (e) => errors.push(String(e)));
@@ -453,9 +455,6 @@ const scenarios = {
     assert.deepEqual(s.order, want); assert.deepEqual(s.boundaries, a.boundaries, "the manifest's boundaries stay in source order");
     assert.equal(s.shown[2] - s.shown[1], a.boundaries[3] - a.boundaries[2], "slot 2 shows slice 3");
     assert.equal(s.dirty, true);
-    // a cut can't be added while reordered
-    await w.page.mouse.dblclick(xOf(s, s.shown[4] + 9000), midY(s));
-    assert.equal((await w.state()).boundaries.length, a.boundaries.length);
     // a second drag straight after, made while Space loops: slice 1 to after slot 2; the loop goes on
     await w.page.keyboard.press("Space"); assert.equal((await w.state()).playing, true);
     s = await w.state();
@@ -519,11 +518,101 @@ const scenarios = {
     await leave(w.page.keyboard.press("Meta+s"));
     assert.equal(await w.exitCode(), 0);
     const m = read(out);
-    assert.deepEqual(m.order, [2, 2].concat(ident.slice(2))); assert.deepEqual(m.boundaries, a.boundaries); assert.deepEqual(meta(m), meta(a));
+    // W26: no slot plays slice 1, so the kit starts at slice 2, which is saved as slice 1
+    assert.deepEqual(m.order, [1, 1].concat(ident.slice(1, n - 1))); assert.deepEqual(m.boundaries, a.boundaries.slice(1));
+    assert.deepEqual(meta(m), meta(a).slice(0, n - 1));
     acceptedByExport(out);
     const w2 = await open(out, path.join(scratch, "repeats2.rcy.json"));
     const s2 = await w2.state();
-    assert.deepEqual(s2.order, m.order); assert.equal(s2.shownFrames, s2.frames + len(2) - len(1));
+    assert.deepEqual(s2.order, m.order); assert.equal(s2.shownFrames, s2.frames + len(2), "the source before the kit's first slice is shown unsliced");
+    w2.kill();
+  },
+  "21 a loop over a reordered break plays and saves its own slots": async () => {
+    const out = path.join(scratch, "loop-order.rcy.json"), a = read(amenManifest), n = a.slices.length;
+    const w = await open(amenManifest, out);
+    let s = await w.state();
+    const stripY = s.plot.y - 12, mid = (k) => (xOf(s, s.shown[k - 1]) + xOf(s, s.shown[k])) / 2;
+    // slice 6 to the front: 6 1 2 3 4 5 7 ...
+    await w.page.mouse.move(mid(6), stripY); await w.page.mouse.down();
+    await w.page.mouse.move(xOf(s, s.shown[0]) + 14, stripY, { steps: 6 }); await w.page.mouse.up();
+    s = await w.state();
+    const order = [6, 1, 2, 3, 4, 5].concat(a.slices.map((_, i) => i + 1).slice(6));
+    assert.deepEqual(s.order, order); assert.deepEqual(s.loop, [1, n]);
+    // R in to the end of slot 3: the loop is slices 6 1 2
+    await w.page.mouse.move(xOf(s, s.shown[n]) - 5, stripY); await w.page.mouse.down();
+    await w.page.mouse.move(xOf(s, s.shown[3]) + 3, stripY, { steps: 8 }); await w.page.mouse.up();
+    s = await w.state();
+    assert.deepEqual(s.loop, [1, 3]); assert.deepEqual(s.order, order, "moving R changed no slot");
+    assert.deepEqual(s.boundaries, a.boundaries);
+    // a slot inside the loop still drags: 1 6 2
+    await w.page.mouse.move(mid(2), stripY); await w.page.mouse.down();
+    await w.page.mouse.move(xOf(s, s.shown[0]) + 14, stripY, { steps: 6 }); await w.page.mouse.up();
+    s = await w.state();
+    assert.deepEqual(s.order.slice(0, 3), [1, 6, 2]); assert.deepEqual(s.loop, [1, 3]);
+    await w.page.keyboard.press("Space");
+    assert.equal((await w.state()).playing, true);
+    await leave(w.page.keyboard.press("Meta+s"));
+    assert.equal(await w.exitCode(), 0);
+    // slots 1 6 2 name source slices 1 to 6; the kit holds those and plays three of them
+    const m = read(out);
+    assert.deepEqual(m.boundaries, a.boundaries.slice(0, 7));
+    assert.deepEqual(m.order, [1, 6, 2]);
+    acceptedByExport(out);
+    const dir = path.join(scratch, "re-" + path.basename(out, ".json"));
+    const mid1 = fs.readFileSync(path.join(dir, fs.readdirSync(dir).find((f) => f.endsWith(".mid"))));
+    let noteOns = 0;
+    for (let i = 0; i + 1 < mid1.length; i++) if (mid1[i] >= 60 && mid1[i] <= 65 && mid1[i + 1] === 100) noteOns++;
+    assert.equal(noteOns, 3, "one note per slot of the loop");
+  },
+  "22 cuts are edited while reordered; the source cuts change and the order follows": async () => {
+    const out = path.join(scratch, "edit-reordered.rcy.json"), a = read(amenManifest), n = a.slices.length;
+    const w = await open(amenManifest, out);
+    const errors = []; w.page.on("pageerror", (e) => errors.push(String(e)));
+    let s = await w.state();
+    const stripY = s.plot.y - 12, mid = (k) => (xOf(s, s.shown[k - 1]) + xOf(s, s.shown[k])) / 2;
+    const rising = (b) => b.every((v, i) => i === 0 || v > b[i - 1]);
+    const framesPerPx = () => (s.viewEnd - s.viewStart) / s.plot.width;
+    // slice 3 twice: 1 3 3 2 4 ...
+    await w.page.mouse.move(mid(2), stripY); await w.page.mouse.down();
+    await w.page.mouse.move(mid(3) + 4, stripY, { steps: 6 }); await w.page.mouse.up();
+    s = await w.state();
+    await w.page.mouse.click(mid(2), stripY); await w.page.keyboard.press("Meta+d");
+    s = await w.state();
+    const order = [1, 3, 3, 2].concat(a.slices.map((_, i) => i + 1).slice(3));
+    assert.deepEqual(s.order, order);
+    // the line before the first slot of slice 3 is source cut 3: drag it 20 px right
+    const fpp = framesPerPx();
+    const x1 = xOf(s, s.shown[1]);
+    await w.page.mouse.move(x1, midY(s)); await w.page.mouse.down();
+    await w.page.mouse.move(x1 + 20, midY(s), { steps: 5 }); await w.page.mouse.up();
+    s = await w.state();
+    near(s.boundaries[2], a.boundaries[2] + 20 * fpp, 2 * fpp + 2, "source cut 3 moved with the pointer");
+    assert.deepEqual(s.boundaries.filter((_, i) => i !== 2), a.boundaries.filter((_, i) => i !== 2), "no other cut moved");
+    assert.deepEqual(s.order, order); assert.ok(rising(s.boundaries));
+    const len3 = s.boundaries[3] - s.boundaries[2];
+    assert.equal(s.shown[2] - s.shown[1], len3, "the first slot of slice 3 has its new length");
+    assert.equal(s.shown[3] - s.shown[2], len3, "and so does the second");
+    const moved = s.boundaries.slice();
+    // a cut added in the middle of the first slot (slice 1): every slot of slice 1 plays both halves
+    await w.page.mouse.dblclick((xOf(s, s.shown[0]) + xOf(s, s.shown[1])) / 2, midY(s));
+    s = await w.state();
+    assert.equal(s.boundaries.length, moved.length + 1); assert.ok(rising(s.boundaries));
+    assert.deepEqual(s.order, [1, 2, 4, 4, 3].concat(order.slice(4).map((v) => v + 1)));
+    // removing it again: the line before slot 2 is the start of the new slice 2
+    await w.page.mouse.dblclick(xOf(s, s.shown[1]), midY(s));
+    s = await w.state();
+    assert.deepEqual(s.boundaries, moved); assert.deepEqual(s.order, order);
+    assert.deepEqual(errors, []);
+    await leave(w.page.keyboard.press("Meta+s"));
+    assert.equal(await w.exitCode(), 0);
+    const m = read(out);
+    assert.deepEqual(m.order, order); assert.deepEqual(m.boundaries, s.boundaries); assert.ok(rising(m.boundaries));
+    acceptedByExport(out);
+    // a split replaces every slice and starts from source order
+    const w2 = await open(out, path.join(scratch, "edit-reordered2.rcy.json"));
+    await w2.page.locator("#split-measures").click();
+    const s2 = await w2.state();
+    assert.deepEqual(s2.order, s2.boundaries.slice(1).map((_, i) => i + 1));
     w2.kill();
   },
 };

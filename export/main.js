@@ -339,7 +339,8 @@
    * @typedef {{
    *   srcAbs: string, wav: Wav, outAbs: string, stem: string,
    *   bpm: number, measures: number, boundaries: number[],
-   *   slices: {key: number, file: string, role: string}[]
+   *   slices: {key: number, file: string, role: string}[],
+   *   bufferMs?: number, order?: number[] | null
    * }} KitPlan
    */
 
@@ -441,6 +442,7 @@
       boundaries: boundaries.slice(),
       slices: plan.slices.map((s) => ({ key: s.key, file: s.file, role: s.role })),
       bufferMs: plan.bufferMs,
+      order: plan.order ?? undefined,
     };
 
     const sliceFiles = plan.slices.map((s, idx) => {
@@ -477,13 +479,20 @@
       exs = rcySdk.encodeExs(instrument);
     }
 
-    const regionStart = boundaries[0];
-    const notes = plan.slices.map((s, idx) => ({
-      key: s.key,
-      velocity: MIDI_VELOCITY,
-      onTick: rcySdk.tickAtFrame(boundaries[idx] - regionStart, plan.bpm, MIDI_DIVISION, SAMPLE_RATE),
-      offTick: rcySdk.tickAtFrame(boundaries[idx + 1] - regionStart, plan.bpm, MIDI_DIVISION, SAMPLE_RATE),
-    }));
+    // R15: one note per slot of the play order, laid end to end from the region start.
+    const playOrder = plan.order ?? plan.slices.map((_, idx) => idx + 1);
+    let at = 0; // frames from the region start to the slot's start
+    const notes = playOrder.map((number) => {
+      const idx = number - 1;
+      const s = at;
+      at += boundaries[idx + 1] - boundaries[idx];
+      return {
+        key: plan.slices[idx].key,
+        velocity: MIDI_VELOCITY,
+        onTick: rcySdk.tickAtFrame(s, plan.bpm, MIDI_DIVISION, SAMPLE_RATE),
+        offTick: rcySdk.tickAtFrame(at, plan.bpm, MIDI_DIVISION, SAMPLE_RATE),
+      };
+    });
     // SPEC-GAP: if encodeMidi throws for notes the spec allows (e.g. ticks that
     // collide in a hand-edited manifest), the run fails with exit 1 before any write.
     const mid = rcySdk.encodeMidi({ division: MIDI_DIVISION, bpm: plan.bpm, notes });
@@ -740,6 +749,15 @@
     for (const s of slices) {
       if (kitNames.has(s.file)) throw new Refusal(`slice ${s.index} file '${s.file}' is a kit file name`);
     }
+    // R22: order, when present, lists slice numbers in play order (WINDOW.md W25).
+    let order = null;
+    if (Object.hasOwn(m, "order")) {
+      const o = m.order;
+      const ok = Array.isArray(o) && o.length >= 1 &&
+        o.every((v) => isInteger(v) && v >= 1 && v <= slices.length);
+      if (!ok) throw new Refusal(`order must be a list of slice numbers from 1 to ${slices.length}`);
+      order = o.slice();
+    }
     checkTempo(bpm);
 
     const srcAbs = path.resolve(manifestDir, source);
@@ -766,6 +784,7 @@
       boundaries: boundaries.slice(),
       slices: slices.map((s) => ({ key: s.key, file: s.file, role: Object.hasOwn(s, "role") ? s.role : "" })),
       bufferMs,
+      order,
     };
     checkNoOverwrite(plan);
     return { plan, resolutionValue: plan.slices.length / plan.measures };

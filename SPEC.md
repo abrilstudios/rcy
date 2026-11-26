@@ -225,9 +225,15 @@ frame range, where the source path is the manifest's `source` value (R17).
 Slice WAV files are written in both dialects.
 
 **R15. `<stem>.mid`.** The file's bytes are `rcySdk.encodeMidi` with division
-`MIDI_DIVISION`, the kit's tempo, and one note per slice in slice order with
-the slice's key and velocity `MIDI_VELOCITY`. A slice that starts `s` frames
-and ends `e` frames after the region start has
+`MIDI_DIVISION`, the kit's tempo, and one note per slot of the play order
+with the slot's slice's key and velocity `MIDI_VELOCITY`. The play order is
+the manifest's `order` (R21): a list of slice numbers, each entry a slot, in
+which a slice may fill several slots or none. Without one it is every slice
+once in slice order. The slots are laid end to end from the region start,
+each as long as its slice, so the file replays the break from the region
+start in play order, and in slice order it ends at the region end. A slot
+that starts `s` frames and ends `e` frames after the region start in that
+layout has
 
 ```
 onTick  = rcySdk.tickAtFrame(s, bpm, MIDI_DIVISION, SAMPLE_RATE)
@@ -304,8 +310,11 @@ each slice's `key`, `file` and `role` from the manifest. Each slice's `start`
 and `end` are taken from `boundaries`; the values stored in the slice objects
 are ignored on read, may be absent, and are rewritten on write. A slice object
 without `role` has the empty role. The written manifest's `source` is recomputed for the new
-output directory by R17. The manifest's `order` member (WINDOW.md W25), when present, is not read, and the
-written manifest has none.
+output directory by R17. The manifest's `order` member (WINDOW.md W25), when
+present, is the play order of R15, and the written manifest holds it as
+`rcySdk.manifestText` writes it: no member for slice order. It changes the
+MIDI file and nothing else; the slice files, their keys and the SFZ and EXS
+instruments are the same for every order.
 
 **R22.** A manifest refusal names the first defect in this order. `<path>` is
 the manifest path as given, `<source>` is the absolute path of the source, and
@@ -350,6 +359,7 @@ The literals `NaN`, `Infinity` and `-Infinity` make the file invalid JSON.
 | A slice's `file` contains `/` or `\`, or is `.` or `..` | `slice <i> file '<file>' must be a bare file name` |
 | Two slices share a `file` | `slice file '<file>' is used by more than one slice` |
 | A slice's `file` is `<stem>.sfz`, `<stem>.mid`, `<stem>.rcy.json` or `<stem>.exs` for the output directory | `slice <i> file '<file>' is a kit file name` |
+| `order` is present and not a non-empty array of integers from 1 to the slice count | `order must be a list of slice numbers from 1 to <s>` |
 | The tempo fails the range check of R15 | the R15 message |
 | The source file doesn't exist | `source audio not found: <source>` |
 | The source fails R05 | the R05 message |
